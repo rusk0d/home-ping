@@ -134,7 +134,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             val request = Request.Builder()
-                .url("https://www.example.com/api/register_token")
+                .url("${BuildConfig.API_BASE_URL}/api/register_token")
                 .post(body)
                 .addHeader("Authorization", authHeader)
                 .build()
@@ -169,18 +169,18 @@ class MainActivity : AppCompatActivity() {
 class HomeFragment : Fragment() {
 
     private val credentials = "${BuildConfig.API_USER}:${BuildConfig.API_PASS}"
-    private val latestAllUrl = "https://www.example.com/api/latest_all"
-    private val devicesUrl = "https://www.example.com/api/devices"
-    private val stats24hUrl = "https://www.example.com/api/stats24h_combined"
-    private val historyCombinedUrl = "https://www.example.com/api/history_combined"
-    private val occupancyArmUrl = "https://www.example.com/api/occupancy_arm"
-    private val occupancyStatusUrl = "https://www.example.com/api/occupancy_status"
+    private val latestAllUrl = "${BuildConfig.API_BASE_URL}/api/latest_all"
+    private val devicesUrl = "${BuildConfig.API_BASE_URL}/api/devices"
+    private val stats24hUrl = "${BuildConfig.API_BASE_URL}/api/stats24h_combined"
+    private val historyCombinedUrl = "${BuildConfig.API_BASE_URL}/api/history_combined"
+    private val occupancyArmUrl = "${BuildConfig.API_BASE_URL}/api/occupancy_arm"
+    private val occupancyStatusUrl = "${BuildConfig.API_BASE_URL}/api/occupancy_status"
 
-    private val airUrl = "https://www.example.com/api/air"
+    private val airUrl = "${BuildConfig.API_BASE_URL}/api/air"
 
-    private val hourlyUrl = "https://www.example.com/api/hourly"
+    private val hourlyUrl = "${BuildConfig.API_BASE_URL}/api/hourly"
 
-    private val restartsUrl = "https://www.example.com/api/restarts"
+    private val restartsUrl = "${BuildConfig.API_BASE_URL}/api/restarts"
 
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var occupancySwitch: Switch
@@ -750,7 +750,7 @@ class HomeFragment : Fragment() {
 // Plants Monitor Fragment
 class PlantsFragment : Fragment() {
 
-    private val soilLatestUrl = "https://www.example.com/api/soil/latest"
+    private val soilLatestUrl = "${BuildConfig.API_BASE_URL}/api/soil/latest"
     private val credentials = "${BuildConfig.API_USER}:${BuildConfig.API_PASS}"
 
     private lateinit var swipeRefresh: SwipeRefreshLayout

@@ -22,6 +22,7 @@ android {
 
         buildConfigField("String", "API_USER", "\"${localProps.getProperty("API_USER", "")}\"")
         buildConfigField("String", "API_PASS", "\"${localProps.getProperty("API_PASS", "")}\"")
+        buildConfigField("String", "API_BASE_URL", "\"${localProps.getProperty("API_BASE_URL", "https://www.example.com").trimEnd('/')}\"")
     }
 
     buildFeatures {
