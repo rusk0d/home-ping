@@ -22,7 +22,7 @@ import com.david.homeenv.BuildConfig
 class HomeEnvWidget : AppWidgetProvider() {
 
     companion object {
-        private const val DATA_URL = "https://www.example.com/api/latest"
+        private val DATA_URL = "${BuildConfig.API_BASE_URL}/api/latest"
         private val AUTH = "${BuildConfig.API_USER}:${BuildConfig.API_PASS}"
         private const val ACTION_AUTO_UPDATE = "com.david.homeenv.AUTO_UPDATE"
         private const val UPDATE_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes
