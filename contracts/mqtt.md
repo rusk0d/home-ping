@@ -17,7 +17,7 @@ Sources read: `firmware/co2_node/co2_node.ino`, `firmware/main_node/main_node.in
 | Keep-alive | 60 s (`setKeepAlive(60)`) | paho default (60 s) | mqtt.js default (60 s) |
 | Clean session | PubSubClient default (true) | paho default (true) | mqtt.js default (true) |
 | Last will (LWT) | **none** set (`connect(id, user, pass)` has no will args) | none | none |
-| Publish QoS | 0 (PubSubClient can only publish at QoS 0) | does not publish | does not publish |
+| Publish QoS | 0 (PubSubClient can only publish at QoS 0) | 0, only `home/backend/occupancy_hourly` | does not publish |
 | Subscribe QoS | n/a | 0 (`client.subscribe(TOPIC)`, default) | 0 (default) |
 
 There are **no status, availability or last-will topics**. The backend decides
@@ -31,6 +31,7 @@ whether a device is online from the `devices.last_seen` timestamp in the DB
 | `home/esp32/bme280` | main_node (`home_ping_esp32`) | backend (via `home/esp32/#`) | 30 s | yes | 0 |
 | `home/esp32/presence` | main_node (`home_ping_esp32`) **and** eink_node (`hallway_presence_esp32`) | backend (via `home/esp32/#`) | 5 s per node | yes | 0 |
 | `home/esp32/co2` | co2_node (`co2_sensor_esp32`) | backend (via `home/esp32/#`) | 60 s | yes | 0 |
+| `home/backend/occupancy_hourly` | backend | web page | 300 s + on every (re)connect | yes | 0 |
 | `home/esp32/dht11` | **nobody** | web page | n/a | n/a | 0 |
 | (soil topic, name unknown) | **nobody in this repo** | backend (via `home/esp32/#`, matched by payload) | unknown | unknown | unknown |
 
@@ -161,6 +162,36 @@ Backend handling: env handler (no `presence`, no `moisture`/`raw`). Stores a
 `pressure` are NULL. Keeps `co2_ok` **in memory only** (`CO2_SENSOR_OK` dict,
 lost on restart) and serves it via `/api/latest_all`. Temp/humidity alerts are
 skipped because `temp_c` and `humidity` are absent.
+
+---
+
+## `home/backend/occupancy_hourly`
+
+- Publisher: `backend/server.py` (`publish_hourly_occupancy()`), using the backend's
+  `MQTT_USER`. The broker ACL must allow that user to publish here, and the web
+  page's read-only user to subscribe.
+- Interval: every 300 s (`OCCUPANCY_HOURLY_INTERVAL`) from a background thread,
+  plus once in `on_connect` (startup and every reconnect).
+- Retained: yes, so a new subscriber gets today's chart immediately. QoS 0.
+- Outside `home/esp32/#`, so the backend doesn't receive its own messages.
+- Same data as the occupancy part of `GET /api/hourly`: `presence_readings` for
+  `PRESENCE_DEVICE` (`home_ping_esp32`) only, since **local midnight**.
+
+| Field | Type | Unit | Notes |
+|---|---|---|---|
+| `device` | string | n/a | `PRESENCE_DEVICE` (`"home_ping_esp32"`) |
+| `date` | string | n/a | `YYYY-MM-DD`, server local date |
+| `updated` | string | n/a | `YYYY-MM-DD HH:MM:SS`, server local time of this publish |
+| `hours` | array | n/a | one entry per hour from `00:00` to the current hour, oldest first |
+| `hours[].hour` | string | n/a | `HH:00` |
+| `hours[].occupancy` | integer or null | % | mean(`occupied`)×100, rounded. `null` = no radar rows that hour (unlike `/api/hourly`, which omits the hour) |
+
+Example:
+
+```json
+{"device":"home_ping_esp32","date":"2026-10-14","updated":"2026-10-14 20:55:34",
+ "hours":[{"hour":"00:00","occupancy":0},{"hour":"01:00","occupancy":null},{"hour":"20:00","occupancy":75}]}
+```
 
 ---
 

@@ -8,6 +8,7 @@ import paho.mqtt.client as mqtt
 from functools import wraps
 from dotenv import load_dotenv
 import time
+import threading
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 import requests
@@ -59,6 +60,9 @@ UPTIME_DROP_TOLERANCE = 120   # seconds; see note below
 # PIR "occupied" fields from other devices are ignored.
 PRESENCE_DEVICE = "home_ping_esp32"
 PRESENCE_SIGNAL_THRESHOLD = 15   # stationary readings below this energy are treated as noise
+# Hourly occupancy for the web page (outside home/esp32/# so we don't receive our own messages)
+OCCUPANCY_HOURLY_TOPIC = "home/backend/occupancy_hourly"
+OCCUPANCY_HOURLY_INTERVAL = 300  # seconds
 
 app = Flask(__name__)
 
@@ -663,9 +667,53 @@ def on_message(client, userdata, msg):
 # -------------------------
 # MQTT SETUP
 # -------------------------
+def hourly_occupancy_today():
+    """{'YYYY-MM-DD HH:00': mean(occupied)*100} for PRESENCE_DEVICE since local midnight."""
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("""
+        SELECT
+            strftime('%Y-%m-%d %H:00', ts),
+            AVG(occupied)*100
+        FROM presence_readings
+        WHERE device = ? AND ts >= datetime('now','localtime','start of day')
+        GROUP BY 1
+    """, (PRESENCE_DEVICE,))
+    rows = {r[0]: r[1] for r in c.fetchall()}
+    conn.close()
+    return rows
+
+def publish_hourly_occupancy():
+    occ = hourly_occupancy_today()
+    now = datetime.now()
+    day = now.strftime("%Y-%m-%d")
+    hours = []
+    for h in range(now.hour + 1):
+        v = occ.get(f"{day} {h:02d}:00")
+        hours.append({"hour": f"{h:02d}:00", "occupancy": round(v) if v is not None else None})
+    payload = {
+        "device": PRESENCE_DEVICE,
+        "date": day,
+        "updated": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "hours": hours,
+    }
+    mqttc.publish(OCCUPANCY_HOURLY_TOPIC, json.dumps(payload), qos=0, retain=True)
+
+def hourly_occupancy_loop():
+    while True:
+        time.sleep(OCCUPANCY_HOURLY_INTERVAL)
+        try:
+            publish_hourly_occupancy()
+        except Exception as e:
+            print("[MQTT] hourly occupancy publish failed:", e)
+
 def on_connect(client, userdata, flags, rc):
     print(f"[MQTT] Connected, rc={rc}")
     client.subscribe(TOPIC)
+    try:
+        publish_hourly_occupancy()
+    except Exception as e:
+        print("[MQTT] hourly occupancy publish failed:", e)
 
 mqttc = mqtt.Client()
 mqttc.username_pw_set(MQTT_USER, MQTT_PASS)
@@ -678,6 +726,8 @@ def on_disconnect(client, userdata, rc):
     print(f"[MQTT] Disconnected, rc={rc}")
 
 mqttc.on_disconnect = on_disconnect
+
+threading.Thread(target=hourly_occupancy_loop, daemon=True).start()
 # -------------------------
 # API ROUTES
 # -------------------------
@@ -1025,17 +1075,8 @@ def hourly():
         GROUP BY 1
     """, (device,))
     env_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
-
-    c.execute("""
-        SELECT
-            strftime('%Y-%m-%d %H:00', ts),
-            AVG(occupied)*100
-        FROM presence_readings
-        WHERE device = ? AND ts >= datetime('now','localtime','start of day')
-        GROUP BY 1
-    """, (PRESENCE_DEVICE,))
-    occ_rows = {r[0]: r[1] for r in c.fetchall()}
     conn.close()
+    occ_rows = hourly_occupancy_today()
 
     hours = sorted(set(env_rows) | set(occ_rows), reverse=True)
     out = []
