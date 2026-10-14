@@ -1,0 +1,119 @@
+<script src="config.js"></script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ESP32 DHT11 Dashboard</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #1f1c2c, #928dab);
+    color: #fff;
+    text-align: center;
+    padding: 30px;
+  }
+  h1 { margin-bottom: 40px; }
+  .card {
+    background: rgba(255,255,255,0.1);
+    border-radius: 15px;
+    display: inline-block;
+    padding: 30px;
+    margin: 20px;
+    min-width: 200px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.3);
+  }
+  .card span {
+    font-size: 2em;
+    font-weight: bold;
+    display: block;
+    margin-top: 10px;
+  }
+  #history {
+    margin-top: 50px;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: left;
+  }
+  #history table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  #history th, #history td {
+    padding: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.3);
+  }
+  #history th { color: #ffecb3; }
+</style>
+</head>
+<body>
+<h1>ESP32 DHT11 Dashboard</h1>
+
+<div class="card">
+  Temp (°C)
+  <span id="temp">--</span>
+</div>
+<div class="card">
+  Humidity (%)
+  <span id="hum">--</span>
+</div>
+<div class="card">
+  Uptime (s)
+  <span id="uptime">--</span>
+</div>
+
+<div id="history">
+  <h2>History</h2>
+  <table>
+    <thead>
+      <tr><th>Time</th><th>Temp (°C)</th><th>Humidity (%)</th></tr>
+    </thead>
+    <tbody id="historyBody"></tbody>
+  </table>
+</div>
+
+<script>
+  const MAX_HISTORY = 20; // number of past entries to keep
+  let history = [];
+
+const client = mqtt.connect(MQTT_CONFIG.url, {
+  username: MQTT_CONFIG.username,
+  password: MQTT_CONFIG.password
+
+});
+
+  client.on('connect', () => {
+    console.log('Connected to MQTT broker');
+    client.subscribe('home/esp32/dht11');
+  });
+
+  client.on('message', (topic, message) => {
+    try {
+      const data = JSON.parse(message.toString());
+
+      // update main cards
+      document.getElementById('temp').textContent = data.temp_c;
+      document.getElementById('hum').textContent = data.humidity;
+      document.getElementById('uptime').textContent = data.uptime;
+
+      // save to history
+      const now = new Date().toLocaleTimeString();
+      history.unshift({ time: now, temp: data.temp_c, hum: data.humidity });
+      if (history.length > MAX_HISTORY) history.pop();
+
+      // update table
+      const tbody = document.getElementById('historyBody');
+      tbody.innerHTML = '';
+      history.forEach(entry => {
+        const row = `<tr><td>${entry.time}</td><td>${entry.temp}</td><td>${entry.hum}</td></tr>`;
+        tbody.innerHTML += row;
+      });
+
+    } catch(e) {
+      console.error('Invalid JSON', e);
+    }
+  });
+</script>
+</body>
+</html>

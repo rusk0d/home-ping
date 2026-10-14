@@ -1,0 +1,42 @@
+# Secrets and local config
+.env
+secrets.h
+keystore.properties
+*.jks
+*.keystore
+*.pem
+*.key
+
+# Data
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+.idea/
+
+# Web
+node_modules/
+dist/
+
+# Arduino / PlatformIO
+.pio/
+
+backend/*service_account*.json
+backend/firebase*.json
+backend/client_secret*.json
+backend/token.json
+
+web/config.js
