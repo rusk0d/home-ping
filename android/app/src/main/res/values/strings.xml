@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">homeenv</string>
+    <string name="widget_description">Temperature, humidity, CO₂ and occupancy at a glance</string>
 </resources>
