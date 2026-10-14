@@ -5,7 +5,7 @@ notifications via Firebase. A small web page and an Android app display the data
 
 # Layout
 - /firmware  Arduino sketches: co2_node, eink_node, main_node
-- /backend   Flask app (server.py), init_db.py, test_push.py
+- /backend   Flask app (server.py, creates the DB schema on start), test_push.py
 - /web       single-file HTML page, connects to MQTT directly from the browser
 - /android   Kotlin app, talks only to the backend's REST API
 - /contracts MQTT topics/payloads, REST API, DB schema (source of truth)
