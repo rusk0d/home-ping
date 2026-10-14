@@ -544,16 +544,25 @@
     $('configError').hidden = false;
     setStatus('down', 'Not configured');
   } else {
+    // Back off between reconnects (5 s doubling to 30 s). mqtt.js retries every 1 s by
+    // default, which floods nginx with errors while the broker is down and can get the
+    // viewer's IP banned by fail2ban.
+    const RECONNECT_MIN = 5000, RECONNECT_MAX = 30000;
     const client = mqtt.connect(MQTT_CONFIG.url, {
       username: MQTT_CONFIG.username,
-      password: MQTT_CONFIG.password
+      password: MQTT_CONFIG.password,
+      reconnectPeriod: RECONNECT_MIN
     });
 
     client.on('connect', () => {
+      client.options.reconnectPeriod = RECONNECT_MIN;
       setStatus('live', 'Live');
       client.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC]);
     });
-    client.on('reconnect', () => setStatus('', 'Reconnecting…'));
+    client.on('reconnect', () => {
+      client.options.reconnectPeriod = Math.min(client.options.reconnectPeriod * 2, RECONNECT_MAX);
+      setStatus('', 'Reconnecting…');
+    });
     client.on('offline', () => setStatus('down', 'Offline'));
     client.on('error', err => { console.error('MQTT error', err); setStatus('down', 'Connection error'); });
 
