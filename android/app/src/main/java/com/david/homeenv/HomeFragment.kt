@@ -23,6 +23,7 @@ import com.david.homeenv.ui.Co2GaugeView
 import com.david.homeenv.ui.Level
 import com.david.homeenv.ui.Levels
 import com.david.homeenv.ui.OccupancyBarsView
+import com.david.homeenv.ui.SparklineView
 import com.google.android.material.switchmaterial.SwitchMaterial
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -76,9 +77,13 @@ class HomeFragment : Fragment() {
     private lateinit var tempValue: TextView
     private lateinit var tempChip: TextView
     private lateinit var tempAge: TextView
+    private lateinit var tempSpark: SparklineView
+    private lateinit var tempRange: TextView
     private lateinit var humidityValue: TextView
     private lateinit var humidityChip: TextView
     private lateinit var humidityAge: TextView
+    private lateinit var humiditySpark: SparklineView
+    private lateinit var humidityRange: TextView
     private lateinit var pressureValue: TextView
     private lateinit var pressureChip: TextView
     private lateinit var pressureTrend: TextView
@@ -130,9 +135,13 @@ class HomeFragment : Fragment() {
         tempValue = view.findViewById(R.id.temp_value)
         tempChip = view.findViewById(R.id.temp_chip)
         tempAge = view.findViewById(R.id.temp_age)
+        tempSpark = view.findViewById(R.id.temp_spark)
+        tempRange = view.findViewById(R.id.temp_range)
         humidityValue = view.findViewById(R.id.humidity_value)
         humidityChip = view.findViewById(R.id.humidity_chip)
         humidityAge = view.findViewById(R.id.humidity_age)
+        humiditySpark = view.findViewById(R.id.humidity_spark)
+        humidityRange = view.findViewById(R.id.humidity_range)
         pressureValue = view.findViewById(R.id.pressure_value)
         pressureChip = view.findViewById(R.id.pressure_chip)
         pressureTrend = view.findViewById(R.id.pressure_trend)
@@ -332,19 +341,29 @@ class HomeFragment : Fragment() {
     }
 
     private fun renderHourly(hourly: JSONArray) {
-        // Buckets since the server's local midnight, newest first. Assumes the phone
-        // is in the same timezone as the server. A missing hour = no data.
-        val now = Calendar.getInstance()
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(now.time)
+        // Buckets since the server's local midnight, newest first; a missing hour = no
+        // data. "Today" and the current hour come from the newest bucket (as on the web)
+        // so the chart is right even if the phone is in another timezone than the server.
+        val newest = hourly.optJSONObject(0)?.optString("hour").orEmpty()
+        val today = if (newest.length >= 13) newest.substring(0, 10)
+            else SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val current = newest.takeIf { it.length >= 13 }?.substring(11, 13)?.toIntOrNull()
+            ?: Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         val byHour = mutableMapOf<Int, Double>()
+        val temps = sortedMapOf<Int, Double>()
+        val hums = sortedMapOf<Int, Double>()
         for (i in 0 until hourly.length()) {
             val item = hourly.optJSONObject(i) ?: continue
             val hour = item.optString("hour")              // "YYYY-MM-DD HH:00"
             if (!hour.startsWith(today) || hour.length < 13) continue
             val h = hour.substring(11, 13).toIntOrNull() ?: continue
+            item.optNum("avg_temp")?.let { temps[h] = it }
+            item.optNum("avg_humidity")?.let { hums[h] = it }
             byHour[h] = item.optNum("avg_occupancy") ?: continue
         }
-        val current = now.get(Calendar.HOUR_OF_DAY)
+        // Sparklines: hourly averages since midnight (/api/hourly; no finer data in the API yet)
+        renderSpark(tempSpark, tempRange, temps.values.toList(), "%.1f", "°")
+        renderSpark(humiditySpark, humidityRange, hums.values.toList(), "%.0f", "%")
         occBars.setData(byHour, current)
 
         val total = byHour.values.sum() / 100.0
@@ -353,6 +372,12 @@ class HomeFragment : Fragment() {
             append("≈ %.1f h occupied".format(Locale.US, total))
             if (peak != null) append(" · busiest %02d:00".format(peak.key))
         }
+    }
+
+    private fun renderSpark(spark: SparklineView, range: TextView, values: List<Double>, fmt: String, unit: String) {
+        spark.setPoints(values)
+        range.text = if (values.size < 2) "" else
+            "today ${fmt.format(Locale.US, values.min())}–${fmt.format(Locale.US, values.max())}$unit"
     }
 
     private fun renderDevices(devices: JSONArray?, latest: JSONObject?) {
@@ -509,7 +534,7 @@ class HomeFragment : Fragment() {
 
     private fun buildLegend(): CharSequence {
         val ctx = requireContext()
-        val items = listOf(R.color.good to "≥60%", R.color.ok to "20–59%", R.color.muted to "1–19%", R.color.faint to "no data")
+        val items = listOf(R.color.good to "≥60%", R.color.ok to "20–59%", R.color.muted to "1–19%", R.color.faint to "0%")
         return SpannableStringBuilder().apply {
             items.forEachIndexed { i, (color, label) ->
                 if (i > 0) append("   ")
@@ -518,6 +543,7 @@ class HomeFragment : Fragment() {
                 setSpan(ForegroundColorSpan(Levels.color(ctx, color)), start, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 append(" ").append(label)
             }
+            append("   hatched: no data")
         }
     }
 
