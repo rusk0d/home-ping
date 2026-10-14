@@ -25,6 +25,24 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"${localProps.getProperty("API_BASE_URL", "https://www.example.com").trimEnd('/')}\"")
     }
 
+    buildTypes {
+        // Side-by-side test build (./gradlew assemblePreview): own package ID and
+        // launcher name, so installing it doesn't replace the regular app.
+        // No Firebase entry exists for this package, so push is disabled in it.
+        create("preview") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            matchingFallbacks += "debug"
+            manifestPlaceholders["appLabel"] = "homeenv preview"
+            buildConfigField("boolean", "PUSH_ENABLED", "false")
+        }
+    }
+    buildTypes.matching { it.name != "preview" }.configureEach {
+        manifestPlaceholders["appLabel"] = "homeenv"
+        buildConfigField("boolean", "PUSH_ENABLED", "true")
+    }
+
     buildFeatures {
         buildConfig = true
     }
@@ -39,6 +57,9 @@ android {
     }
 }
 
+
+// google-services.json has no client for the preview package; skip it there
+tasks.matching { it.name == "processPreviewGoogleServices" }.configureEach { enabled = false }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")

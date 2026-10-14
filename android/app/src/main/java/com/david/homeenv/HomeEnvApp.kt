@@ -7,7 +7,7 @@ class HomeEnvApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // Initialize Firebase once for the entire app
-        FirebaseApp.initializeApp(this)
+        // Initialize Firebase once for the entire app (not in the preview build)
+        if (BuildConfig.PUSH_ENABLED) FirebaseApp.initializeApp(this)
     }
 }
