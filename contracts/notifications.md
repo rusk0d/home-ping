@@ -114,7 +114,6 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 - `/api/next-events` and `get_access_token()` reference Google OAuth/calendar code that is
   incomplete. It's not related to FCM.
-- `CLAUDE.md` lists `backend/test_push.py`, but **that file doesn't exist** in the repo.
 
 ## Summary table
 
