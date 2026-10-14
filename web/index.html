@@ -1,119 +1,454 @@
-<script src="config.js"></script>
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>ESP32 DHT11 Dashboard</title>
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Ping</title>
+<script src="config.js"></script>
+<script src="https://unpkg.com/mqtt@5.16.0/dist/mqtt.min.js"></script>
 <style>
+  :root {
+    --bg: #0f1218;
+    --bg-glow: #1a2233;
+    --card: #171c26;
+    --card-edge: #252c3a;
+    --text: #e8ecf3;
+    --muted: #8a93a6;
+    --faint: #3a4254;
+    --good: #3ecf8e;
+    --ok: #f2c14e;
+    --poor: #f28c38;
+    --bad: #ef5b5b;
+    --temp: #ff8a5c;
+    --hum: #4fb3ff;
+    --pres: #b18cff;
+    --co2: #3ecf8e;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f3f5f9;
+      --bg-glow: #e3e9f5;
+      --card: #ffffff;
+      --card-edge: #dfe4ee;
+      --text: #1b2130;
+      --muted: #667085;
+      --faint: #d4d9e3;
+      --good: #12a36b;
+      --ok: #c7920c;
+      --poor: #d56a12;
+      --bad: #d63c3c;
+      --temp: #e5602b;
+      --hum: #1f8ad6;
+      --pres: #7c55e0;
+      --co2: #12a36b;
+      color-scheme: light;
+    }
+  }
+
+  * { box-sizing: border-box; }
   body {
-    font-family: 'Segoe UI', sans-serif;
-    background: linear-gradient(135deg, #1f1c2c, #928dab);
-    color: #fff;
-    text-align: center;
-    padding: 30px;
+    margin: 0;
+    min-height: 100vh;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: var(--text);
+    background: radial-gradient(ellipse at top, var(--bg-glow), var(--bg) 60%) fixed, var(--bg);
   }
-  h1 { margin-bottom: 40px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 48px; }
+
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 28px;
+  }
+  h1 { font-size: 1.6rem; font-weight: 650; margin: 0; letter-spacing: -0.02em; }
+  h1 small { display: block; font-size: 0.8rem; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-top: 2px; }
+  .status {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--card-edge);
+    font-size: 0.85rem; color: var(--muted);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .status.live .dot { background: var(--good); box-shadow: 0 0 0 0 var(--good); animation: pulse 2s infinite; }
+  .status.down .dot { background: var(--bad); }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 60%, transparent); }
+    70% { box-shadow: 0 0 0 8px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  .banner {
+    padding: 12px 16px; margin-bottom: 20px; border-radius: 12px;
+    background: color-mix(in srgb, var(--bad) 14%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent);
+  }
+  .banner code { font-size: 0.9em; }
+
+  .grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  }
   .card {
-    background: rgba(255,255,255,0.1);
-    border-radius: 15px;
-    display: inline-block;
-    padding: 30px;
-    margin: 20px;
-    min-width: 200px;
-    box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    position: relative; overflow: hidden;
+    background: var(--card); border: 1px solid var(--card-edge);
+    border-radius: 18px; padding: 18px 20px 14px;
+    display: flex; flex-direction: column; gap: 6px;
+    transition: border-color .3s, opacity .3s;
   }
-  .card span {
-    font-size: 2em;
-    font-weight: bold;
-    display: block;
-    margin-top: 10px;
+  .card::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+    background: var(--accent);
   }
-  #history {
-    margin-top: 50px;
-    max-width: 600px;
-    margin-left: auto;
-    margin-right: auto;
-    text-align: left;
+  .card.stale { opacity: 0.55; }
+  .card .label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
   }
-  #history table {
-    width: 100%;
-    border-collapse: collapse;
+  .card .label svg { width: 16px; height: 16px; color: var(--accent); }
+  .value { font-size: 2.6rem; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .value .unit { font-size: 1rem; font-weight: 500; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+  .sub { font-size: 0.85rem; color: var(--muted); min-height: 1.2em; }
+  .chip {
+    display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+    background: color-mix(in srgb, var(--chip) 18%, transparent); color: var(--chip);
   }
-  #history th, #history td {
-    padding: 8px;
-    border-bottom: 1px solid rgba(255,255,255,0.3);
+  .spark { width: 100%; height: 44px; margin-top: 4px; }
+  .spark path.line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .spark path.area { fill: color-mix(in srgb, var(--accent) 16%, transparent); stroke: none; }
+  .foot { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); }
+
+  .temp { --accent: var(--temp); }
+  .hum  { --accent: var(--hum); }
+  .pres { --accent: var(--pres); }
+  .co2  { --accent: var(--co2); }
+
+  .gauge { position: relative; height: 8px; border-radius: 999px; margin: 6px 0 2px;
+    /* 400–3000 ppm scale: 800 = 15.4%, 1200 = 30.8%, 2000 = 61.5% (matches co2Level) */
+    background: linear-gradient(90deg, var(--good) 0 15.4%, var(--ok) 15.4% 30.8%, var(--poor) 30.8% 61.5%, var(--bad) 61.5% 100%);
+    opacity: 0.9; }
+  .gauge .needle { position: absolute; top: -4px; width: 4px; height: 16px; border-radius: 2px;
+    background: var(--text); box-shadow: 0 0 0 2px var(--card); transform: translateX(-50%); transition: left .6s ease; }
+  .gauge-scale { position: relative; height: 1.1em; font-size: 0.7rem; color: var(--muted); }
+  .gauge-scale span { position: absolute; transform: translateX(-50%); }
+  .gauge-scale span:first-child { transform: none; }
+  .gauge-scale span:last-child { transform: translateX(-100%); }
+  .card .foot { margin-top: auto; }
+
+  h2 { font-size: 1rem; font-weight: 600; margin: 36px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  .devices { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .device {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--card); border: 1px solid var(--card-edge); border-radius: 14px; padding: 12px 16px;
   }
-  #history th { color: #ffecb3; }
+  .device .name { font-weight: 600; }
+  .device .meta { font-size: 0.8rem; color: var(--muted); }
+  .device .dot { flex: none; background: var(--faint); }
+  .device.on .dot { background: var(--good); }
+  .device.off .dot { background: var(--bad); }
+
+  .log { background: var(--card); border: 1px solid var(--card-edge); border-radius: 14px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  th, td { padding: 9px 14px; text-align: left; white-space: nowrap; }
+  th { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--card-edge); }
+  tbody tr + tr td { border-top: 1px solid var(--card-edge); }
+  td.empty { color: var(--muted); text-align: center; padding: 20px; }
+  .src { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: var(--accent); }
 </style>
 </head>
 <body>
-<h1>ESP32 DHT11 Dashboard</h1>
+<div class="wrap">
+  <header>
+    <h1>Home Ping<small>Live readings over MQTT</small></h1>
+    <span class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></span>
+  </header>
 
-<div class="card">
-  Temp (°C)
-  <span id="temp">--</span>
-</div>
-<div class="card">
-  Humidity (%)
-  <span id="hum">--</span>
-</div>
-<div class="card">
-  Uptime (s)
-  <span id="uptime">--</span>
-</div>
+  <div class="banner" id="configError" hidden>
+    <strong>No MQTT config.</strong> Create <code>web/config.js</code> defining
+    <code>MQTT_CONFIG = { url, username, password }</code> (see <code>config.example.js</code>).
+  </div>
 
-<div id="history">
-  <h2>History</h2>
-  <table>
-    <thead>
-      <tr><th>Time</th><th>Temp (°C)</th><th>Humidity (%)</th></tr>
-    </thead>
-    <tbody id="historyBody"></tbody>
-  </table>
+  <section class="grid">
+    <article class="card temp" id="card-temp">
+      <div class="label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+        Temperature
+      </div>
+      <div class="value"><span id="temp">--</span><span class="unit">°C</span></div>
+      <div class="sub" id="temp-sub"></div>
+      <svg class="spark" id="temp-spark" viewBox="0 0 100 30" preserveAspectRatio="none"></svg>
+      <div class="foot"><span id="temp-range"></span><span id="temp-age">waiting…</span></div>
+    </article>
+
+    <article class="card hum" id="card-hum">
+      <div class="label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.7s-6 6.6-6 11.3a6 6 0 0 0 12 0c0-4.7-6-11.3-6-11.3z"/></svg>
+        Humidity
+      </div>
+      <div class="value"><span id="hum">--</span><span class="unit">%</span></div>
+      <div class="sub" id="hum-sub"></div>
+      <svg class="spark" id="hum-spark" viewBox="0 0 100 30" preserveAspectRatio="none"></svg>
+      <div class="foot"><span id="hum-range"></span><span id="hum-age">waiting…</span></div>
+    </article>
+
+    <article class="card pres" id="card-pres">
+      <div class="label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-4"/><path d="M12 7v1M7 12h1M16 12h1"/></svg>
+        Pressure
+      </div>
+      <div class="value"><span id="pres">--</span><span class="unit">hPa</span></div>
+      <div class="sub" id="pres-sub"></div>
+      <svg class="spark" id="pres-spark" viewBox="0 0 100 30" preserveAspectRatio="none"></svg>
+      <div class="foot"><span id="pres-range"></span><span id="pres-age">waiting…</span></div>
+    </article>
+
+    <article class="card co2" id="card-co2">
+      <div class="label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 15a4 4 0 0 1 2.5-7.4A6 6 0 0 1 18 9a3.5 3.5 0 0 1 0 7H6"/><path d="M8 20h8"/></svg>
+        CO₂
+      </div>
+      <div class="value"><span id="co2">--</span><span class="unit">ppm</span></div>
+      <div class="sub" id="co2-sub"></div>
+      <div class="gauge"><div class="needle" id="co2-needle" style="left:0" hidden></div></div>
+      <div class="gauge-scale"><span style="left:0">400</span><span style="left:15.4%">800</span><span style="left:30.8%">1200</span><span style="left:61.5%">2000</span><span style="left:100%">3000+</span></div>
+      <svg class="spark" id="co2-spark" viewBox="0 0 100 30" preserveAspectRatio="none"></svg>
+      <div class="foot"><span id="co2-range"></span><span id="co2-age">waiting…</span></div>
+    </article>
+  </section>
+
+  <h2>Devices</h2>
+  <section class="devices">
+    <div class="device" id="dev-main">
+      <span class="dot"></span>
+      <div><div class="name">Main node</div><div class="meta" id="dev-main-meta">no data yet</div></div>
+    </div>
+    <div class="device" id="dev-co2">
+      <span class="dot"></span>
+      <div><div class="name">CO₂ node</div><div class="meta" id="dev-co2-meta">no data yet</div></div>
+    </div>
+  </section>
+
+  <h2>Recent readings</h2>
+  <div class="log">
+    <table>
+      <thead><tr><th>Received</th><th>Source</th><th>Temp</th><th>Humidity</th><th>Pressure</th><th>CO₂</th></tr></thead>
+      <tbody id="historyBody"><tr><td class="empty" colspan="6">Waiting for the first message…</td></tr></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
-  const MAX_HISTORY = 20; // number of past entries to keep
-  let history = [];
+  // Topics and payloads: see contracts/mqtt.md
+  const TOPIC_ENV = 'home/esp32/bme280';  // main_node, every 30 s, retained
+  const TOPIC_CO2 = 'home/esp32/co2';     // co2_node, every 60 s, retained
+  const STALE_AFTER = { env: 90, co2: 180 }; // seconds, ~3 missed publishes
+  const MAX_POINTS = 120;   // sparkline points kept per metric (browser memory only)
+  const MAX_HISTORY = 20;   // rows in the recent readings table
 
-const client = mqtt.connect(MQTT_CONFIG.url, {
-  username: MQTT_CONFIG.username,
-  password: MQTT_CONFIG.password
+  const $ = id => document.getElementById(id);
+  const series = { temp: [], hum: [], pres: [], co2: [] };
+  const lastSeen = { env: null, co2: null };   // { at: ms, retained: bool }
+  const history = [];
 
-});
+  // ---------- formatting ----------
+  const fmt = (v, d) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '--';
 
-  client.on('connect', () => {
-    console.log('Connected to MQTT broker');
-    client.subscribe('home/esp32/dht11');
-  });
+  function fmtUptime(s) {
+    if (typeof s !== 'number') return '--';
+    const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    return `${m}m ${Math.floor(s % 60)}s`;
+  }
 
-  client.on('message', (topic, message) => {
-    try {
-      const data = JSON.parse(message.toString());
+  function fmtAge(info) {
+    if (!info) return 'waiting…';
+    const s = Math.round((Date.now() - info.at) / 1000);
+    if (info.retained && s < 5) return 'last known value';
+    if (s < 5) return 'just now';
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    return `${Math.floor(s / 3600)}h ago`;
+  }
 
-      // update main cards
-      document.getElementById('temp').textContent = data.temp_c;
-      document.getElementById('hum').textContent = data.humidity;
-      document.getElementById('uptime').textContent = data.uptime;
+  function chip(text, color) {
+    const el = document.createElement('span');
+    el.className = 'chip';
+    el.style.setProperty('--chip', `var(--${color})`);
+    el.textContent = text;
+    return el;
+  }
 
-      // save to history
-      const now = new Date().toLocaleTimeString();
-      history.unshift({ time: now, temp: data.temp_c, hum: data.humidity });
-      if (history.length > MAX_HISTORY) history.pop();
+  function setSub(id, text, color) {
+    const el = $(id);
+    el.replaceChildren(color ? chip(text, color) : document.createTextNode(text || ''));
+  }
 
-      // update table
-      const tbody = document.getElementById('historyBody');
-      tbody.innerHTML = '';
-      history.forEach(entry => {
-        const row = `<tr><td>${entry.time}</td><td>${entry.temp}</td><td>${entry.hum}</td></tr>`;
-        tbody.innerHTML += row;
-      });
+  // ---------- levels ----------
+  function co2Level(ppm) {
+    if (ppm < 800)  return ['Fresh', 'good'];
+    if (ppm < 1200) return ['OK', 'ok'];
+    if (ppm < 2000) return ['Stuffy – open a window', 'poor'];
+    return ['Poor – ventilate now', 'bad'];
+  }
+  function humLevel(h) {
+    if (h < 30) return ['Very dry', 'poor'];
+    if (h < 40) return ['Dry', 'ok'];
+    if (h <= 60) return ['Comfortable', 'good'];
+    if (h <= 70) return ['Humid', 'ok'];
+    return ['Very humid', 'poor'];
+  }
+  function tempLevel(t) {
+    if (t < 18) return ['Cold', 'hum'];
+    if (t < 20) return ['Cool', 'ok'];
+    if (t <= 24) return ['Comfortable', 'good'];
+    if (t <= 27) return ['Warm', 'ok'];
+    return ['Hot', 'bad'];
+  }
 
-    } catch(e) {
-      console.error('Invalid JSON', e);
+  // ---------- sparklines ----------
+  function push(key, v) {
+    if (typeof v !== 'number' || !isFinite(v)) return;
+    series[key].push(v);
+    if (series[key].length > MAX_POINTS) series[key].shift();
+  }
+
+  function drawSpark(key, digits) {
+    const pts = series[key];
+    const svg = $(`${key}-spark`);
+    if (pts.length < 2) { svg.replaceChildren(); return; }
+    let min = Math.min(...pts), max = Math.max(...pts);
+    if (max - min < 1e-9) { min -= 1; max += 1; }
+    const xy = pts.map((v, i) => [
+      (i / (pts.length - 1)) * 100,
+      28 - ((v - min) / (max - min)) * 26
+    ]);
+    const line = 'M' + xy.map(p => p.map(n => n.toFixed(2)).join(',')).join('L');
+    const ns = 'http://www.w3.org/2000/svg';
+    const area = document.createElementNS(ns, 'path');
+    area.setAttribute('class', 'area');
+    area.setAttribute('d', `${line}L100,30L0,30Z`);
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('class', 'line');
+    path.setAttribute('d', line);
+    svg.replaceChildren(area, path);
+    $(`${key}-range`).textContent = `${fmt(Math.min(...pts), digits)} – ${fmt(Math.max(...pts), digits)}`;
+  }
+
+  // ---------- message handlers ----------
+  function onEnv(d, retained) {
+    lastSeen.env = { at: Date.now(), retained };
+    $('temp').textContent = fmt(d.temp_c, 1);
+    $('hum').textContent = fmt(d.humidity, 0);
+    $('pres').textContent = fmt(d.pressure, 0);
+
+    if (typeof d.temp_c === 'number') setSub('temp-sub', ...tempLevel(d.temp_c));
+    if (typeof d.humidity === 'number') setSub('hum-sub', ...humLevel(d.humidity));
+    setSub('pres-sub', 'Sea level ≈ 1013 hPa');
+
+    push('temp', d.temp_c); push('hum', d.humidity); push('pres', d.pressure);
+    drawSpark('temp', 1); drawSpark('hum', 0); drawSpark('pres', 0);
+
+    $('dev-main-meta').textContent = `${d.device || 'home_ping_esp32'} · up ${fmtUptime(d.uptime)}`;
+    addHistory('env', { temp: fmt(d.temp_c, 1) + ' °C', hum: fmt(d.humidity, 0) + ' %', pres: fmt(d.pressure, 0) + ' hPa' });
+  }
+
+  function onCo2(d, retained) {
+    lastSeen.co2 = { at: Date.now(), retained };
+    const valid = d.co2_ok && typeof d.co2 === 'number';
+    const needle = $('co2-needle');
+
+    if (valid) {
+      $('co2').textContent = d.co2;
+      const [text, color] = co2Level(d.co2);
+      setSub('co2-sub', text, color);
+      $('card-co2').style.setProperty('--accent', `var(--${color})`);
+      // Gauge spans 400–3000 ppm; segment stops match co2Level()
+      const pct = Math.min(100, Math.max(0, (d.co2 - 400) / 2600 * 100));
+      needle.style.left = pct + '%';
+      needle.hidden = false;
+      push('co2', d.co2);
+      drawSpark('co2', 0);
+    } else {
+      $('co2').textContent = '--';
+      needle.hidden = true;
+      setSub('co2-sub', d.warming ? 'Sensor warming up (~3 min)' : `No valid reading (err ${d.err ?? '?'})`, 'ok');
     }
-  });
+
+    const rssi = typeof d.rssi === 'number' ? ` · ${d.rssi} dBm` : '';
+    $('dev-co2-meta').textContent = `${d.device || 'co2_sensor_esp32'} · up ${fmtUptime(d.uptime)}${rssi}`;
+    addHistory('co2', { co2: valid ? d.co2 + ' ppm' : (d.warming ? 'warming' : 'invalid') });
+  }
+
+  function addHistory(source, values) {
+    history.unshift({ time: new Date().toLocaleTimeString(), source, ...values });
+    if (history.length > MAX_HISTORY) history.pop();
+
+    const rows = history.map(e => {
+      const tr = document.createElement('tr');
+      const src = document.createElement('td');
+      const dot = document.createElement('span');
+      dot.className = 'src ' + (e.source === 'env' ? 'temp' : 'co2');
+      src.append(dot, e.source === 'env' ? 'Main node' : 'CO₂ node');
+      const cells = [e.time, null, e.temp, e.hum, e.pres, e.co2].map((v, i) => {
+        if (i === 1) return src;
+        const td = document.createElement('td');
+        td.textContent = v ?? '—';
+        return td;
+      });
+      tr.append(...cells);
+      return tr;
+    });
+    $('historyBody').replaceChildren(...rows);
+  }
+
+  // ---------- ages / staleness (every second) ----------
+  function tick() {
+    const now = Date.now();
+    for (const [kind, cards, dev] of [['env', ['temp', 'hum', 'pres'], 'dev-main'], ['co2', ['co2'], 'dev-co2']]) {
+      const info = lastSeen[kind];
+      const stale = info && (now - info.at) / 1000 > STALE_AFTER[kind];
+      cards.forEach(c => {
+        $(`${c}-age`).textContent = fmtAge(info);
+        $(`card-${c}`).classList.toggle('stale', !!stale);
+      });
+      $(dev).classList.toggle('on', !!info && !stale);
+      $(dev).classList.toggle('off', !!stale);
+    }
+  }
+  setInterval(tick, 1000);
+
+  // ---------- connection ----------
+  function setStatus(state, text) {
+    $('status').className = 'status ' + state;
+    $('statusText').textContent = text;
+  }
+
+  if (typeof MQTT_CONFIG === 'undefined') {
+    $('configError').hidden = false;
+    setStatus('down', 'Not configured');
+  } else {
+    const client = mqtt.connect(MQTT_CONFIG.url, {
+      username: MQTT_CONFIG.username,
+      password: MQTT_CONFIG.password
+    });
+
+    client.on('connect', () => {
+      setStatus('live', 'Live');
+      client.subscribe([TOPIC_ENV, TOPIC_CO2]);
+    });
+    client.on('reconnect', () => setStatus('', 'Reconnecting…'));
+    client.on('offline', () => setStatus('down', 'Offline'));
+    client.on('error', err => { console.error('MQTT error', err); setStatus('down', 'Connection error'); });
+
+    client.on('message', (topic, message, packet) => {
+      let data;
+      try { data = JSON.parse(message.toString()); }
+      catch (e) { console.error('Invalid JSON on', topic, e); return; }
+      if (topic === TOPIC_ENV) onEnv(data, packet.retain);
+      else if (topic === TOPIC_CO2) onCo2(data, packet.retain);
+    });
+  }
 </script>
 </body>
 </html>
