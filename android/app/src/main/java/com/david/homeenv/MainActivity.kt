@@ -45,11 +45,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Initialize Firebase
-        if (FirebaseApp.getApps(this).isEmpty()) {
-            FirebaseApp.initializeApp(this)
-        }
-
         // Check and request exact alarm permission for Android 12+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
@@ -63,6 +58,30 @@ class MainActivity : AppCompatActivity() {
                     e.printStackTrace()
                 }
             }
+        }
+
+        // Push notifications (off in the preview build, which has no Firebase config)
+        if (BuildConfig.PUSH_ENABLED) setupPush()
+
+        // Setup ViewPager and TabLayout
+        viewPager = findViewById(R.id.viewPager)
+        tabLayout = findViewById(R.id.tabLayout)
+
+        val adapter = ViewPagerAdapter(this)
+        viewPager.adapter = adapter
+
+        TabLayoutMediator(tabLayout, viewPager) { tab, position ->
+            tab.text = when (position) {
+                0 -> "Home"
+                1 -> "Plants"
+                else -> "Tab $position"
+            }
+        }.attach()
+    }
+
+    private fun setupPush() {
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            FirebaseApp.initializeApp(this)
         }
 
         // Subscribe to topic for notifications
@@ -83,21 +102,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             getAndRegisterToken()
         }
-
-        // Setup ViewPager and TabLayout
-        viewPager = findViewById(R.id.viewPager)
-        tabLayout = findViewById(R.id.tabLayout)
-
-        val adapter = ViewPagerAdapter(this)
-        viewPager.adapter = adapter
-
-        TabLayoutMediator(tabLayout, viewPager) { tab, position ->
-            tab.text = when (position) {
-                0 -> "Home"
-                1 -> "Plants"
-                else -> "Tab $position"
-            }
-        }.attach()
     }
 
     private val requestPermissionLauncher =
