@@ -134,6 +134,27 @@
   .gauge-scale span:last-child { transform: translateX(-100%); }
   .card .foot { margin-top: auto; }
 
+  .occ { --accent: var(--good); margin-top: 16px; }
+  .occ-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .occ-summary { font-size: 0.85rem; color: var(--muted); }
+  .occ-summary strong { color: var(--text); font-size: 1.1rem; }
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 120px; margin-top: 10px; }
+  .bars .col {
+    flex: 1; height: 100%; display: flex; align-items: flex-end;
+    border-radius: 4px; background: color-mix(in srgb, var(--faint) 30%, transparent);
+  }
+  .bars .col.future { background: color-mix(in srgb, var(--faint) 12%, transparent); }
+  .bars .col.nodata { background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--faint) 45%, transparent) 0 3px, transparent 3px 6px); }
+  .bars .col.now { box-shadow: inset 0 0 0 1px var(--muted); }
+  .bars .bar { width: 100%; height: 0; border-radius: 4px 4px 2px 2px; transition: height .5s ease, background .3s; }
+  .axis { display: flex; gap: 3px; font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
+  .axis span { flex: 1; text-align: center; overflow: visible; white-space: nowrap; }
+  .axis span.now { color: var(--text); font-weight: 600; }
+  #occ-age { white-space: nowrap; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  @media (max-width: 480px) { .bars, .axis { gap: 2px; } }
+
   h2 { font-size: 1rem; font-weight: 600; margin: 36px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
 
   .devices { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
@@ -216,6 +237,27 @@
     </article>
   </section>
 
+  <article class="card occ" id="card-occ">
+    <div class="occ-head">
+      <div class="label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="7" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+        Occupancy today
+      </div>
+      <div class="occ-summary" id="occ-summary"></div>
+    </div>
+    <div class="bars" id="occ-bars"></div>
+    <div class="axis" id="occ-axis"></div>
+    <div class="foot">
+      <span class="legend">
+        <span><i style="background:var(--good)"></i>≥60%</span>
+        <span><i style="background:var(--ok)"></i>20–59%</span>
+        <span><i style="background:var(--muted)"></i>1–19%</span>
+        <span><i style="background:repeating-linear-gradient(-45deg,var(--faint) 0 2px,transparent 2px 4px)"></i>no data</span>
+      </span>
+      <span id="occ-age">waiting…</span>
+    </div>
+  </article>
+
   <h2>Devices</h2>
   <section class="devices">
     <div class="device" id="dev-main">
@@ -241,13 +283,14 @@
   // Topics and payloads: see contracts/mqtt.md
   const TOPIC_ENV = 'home/esp32/bme280';  // main_node, every 30 s, retained
   const TOPIC_CO2 = 'home/esp32/co2';     // co2_node, every 60 s, retained
-  const STALE_AFTER = { env: 90, co2: 180 }; // seconds, ~3 missed publishes
+  const TOPIC_OCC = 'home/backend/occupancy_hourly'; // backend, every 5 min, retained
+  const STALE_AFTER = { env: 90, co2: 180, occ: 900 }; // seconds, ~3 missed publishes
   const MAX_POINTS = 120;   // sparkline points kept per metric (browser memory only)
   const MAX_HISTORY = 20;   // rows in the recent readings table
 
   const $ = id => document.getElementById(id);
   const series = { temp: [], hum: [], pres: [], co2: [] };
-  const lastSeen = { env: null, co2: null };   // { at: ms, retained: bool }
+  const lastSeen = { env: null, co2: null, occ: null };   // { at: ms, retained: bool }
   const history = [];
 
   // ---------- formatting ----------
@@ -380,6 +423,74 @@
     addHistory('co2', { co2: valid ? d.co2 + ' ppm' : (d.warming ? 'warming' : 'invalid') });
   }
 
+  // ---------- hourly occupancy ----------
+  const pad2 = n => String(n).padStart(2, '0');
+  const localDate = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  let occDate = null;
+
+  const occCols = Array.from({ length: 24 }, (_, h) => {
+    const col = document.createElement('div');
+    col.className = 'col future';
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    col.append(bar);
+    return col;
+  });
+  const occLabels = Array.from({ length: 24 }, (_, h) => {
+    const s = document.createElement('span');
+    s.textContent = h % 3 === 0 ? pad2(h) : '';
+    return s;
+  });
+  $('occ-bars').append(...occCols);
+  $('occ-axis').append(...occLabels);
+
+  function occColor(v) {
+    if (v >= 60) return 'good';
+    if (v >= 20) return 'ok';
+    if (v > 0) return 'muted';
+    return 'faint';
+  }
+
+  function onOcc(d) {
+    // `updated` is server local time; assumes the browser is in the same timezone
+    const updated = new Date(String(d.updated).replace(' ', 'T'));
+    lastSeen.occ = { at: isNaN(updated) ? Date.now() : updated.getTime(), retained: false };
+    occDate = d.date;
+
+    const byHour = {};
+    (d.hours || []).forEach(e => { byHour[parseInt(e.hour, 10)] = e.occupancy; });
+    const hoursSent = Object.keys(byHour).map(Number);
+    const current = hoursSent.length ? Math.max(...hoursSent) : -1;
+
+    let sum = 0, peak = null;
+    occCols.forEach((col, h) => {
+      const v = byHour[h];
+      const bar = col.firstChild;
+      const has = typeof v === 'number';
+      col.classList.toggle('future', h > current);
+      col.classList.toggle('nodata', h <= current && !has);
+      col.classList.toggle('now', h === current);
+      occLabels[h].classList.toggle('now', h === current);
+      // Hide hour labels right next to 'now' so they don't collide on narrow screens
+      occLabels[h].textContent = h === current ? 'now' : (h % 3 === 0 && Math.abs(h - current) > 1 ? pad2(h) : '');
+      if (has) {
+        bar.style.height = Math.max(v, 3) + '%';
+        bar.style.background = `var(--${occColor(v)})`;
+        col.title = `${pad2(h)}:00–${pad2(h + 1)}:00 · ${v}% occupied`;
+        sum += v;
+        if (v > 0 && (peak === null || v > byHour[peak])) peak = h;
+      } else {
+        bar.style.height = '0';
+        col.title = h <= current ? `${pad2(h)}:00 · no radar data` : '';
+      }
+    });
+
+    const summary = $('occ-summary');
+    const strong = document.createElement('strong');
+    strong.textContent = `≈ ${(sum / 100).toFixed(1)} h`;
+    summary.replaceChildren(strong, ' occupied' + (peak !== null ? ` · busiest ${pad2(peak)}:00 (${byHour[peak]}%)` : ''));
+  }
+
   function addHistory(source, values) {
     history.unshift({ time: new Date().toLocaleTimeString(), source, ...values });
     if (history.length > MAX_HISTORY) history.pop();
@@ -415,6 +526,11 @@
       $(dev).classList.toggle('on', !!info && !stale);
       $(dev).classList.toggle('off', !!stale);
     }
+    // Occupancy: stale if the backend stopped publishing or the data is from another day
+    const occ = lastSeen.occ;
+    $('occ-age').textContent = occ ? 'updated ' + fmtAge(occ) : 'waiting…';
+    $('card-occ').classList.toggle('stale',
+      !!occ && ((now - occ.at) / 1000 > STALE_AFTER.occ || occDate !== localDate(new Date())));
   }
   setInterval(tick, 1000);
 
@@ -435,7 +551,7 @@
 
     client.on('connect', () => {
       setStatus('live', 'Live');
-      client.subscribe([TOPIC_ENV, TOPIC_CO2]);
+      client.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC]);
     });
     client.on('reconnect', () => setStatus('', 'Reconnecting…'));
     client.on('offline', () => setStatus('down', 'Offline'));
@@ -447,6 +563,7 @@
       catch (e) { console.error('Invalid JSON on', topic, e); return; }
       if (topic === TOPIC_ENV) onEnv(data, packet.retain);
       else if (topic === TOPIC_CO2) onCo2(data, packet.retain);
+      else if (topic === TOPIC_OCC) onOcc(data);
     });
   }
 </script>
