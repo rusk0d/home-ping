@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/dark_background">
+    android:background="@drawable/bg_screen">
 
     <!-- Header -->
     <LinearLayout
@@ -17,10 +17,18 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Home Environment"
-            android:textSize="28sp"
+            android:text="Home Ping"
+            android:textSize="26sp"
             android:textStyle="bold"
-            android:textColor="@color/text_primary"/>
+            android:letterSpacing="-0.02"
+            android:textColor="@color/text"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sensors at home"
+            android:textSize="13sp"
+            android:textColor="@color/muted"/>
 
         <!-- Tab Layout -->
         <com.google.android.material.tabs.TabLayout
@@ -28,7 +36,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:background="@color/dark_surface"
+            android:background="@android:color/transparent"
             app:tabMode="fixed"
             app:tabGravity="fill"
             app:tabIndicatorColor="@color/status_online"

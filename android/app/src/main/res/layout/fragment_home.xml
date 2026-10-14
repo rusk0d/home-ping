@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.swiperefreshlayout.widget.SwipeRefreshLayout 
+<!-- Home screen, styled after web/index.html (see #30) -->
+<androidx.swiperefreshlayout.widget.SwipeRefreshLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/swipeRefresh"
@@ -9,777 +10,420 @@
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/dark_background">
+        android:clipToPadding="false">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="32dp">
 
-            <!-- Occupancy Toggle Card -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/dark_surface"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="0dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:padding="16dp"
-                    android:gravity="center_vertical">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Occupancy Notifications"
-                            android:textSize="14sp"
-                            android:textColor="@color/text_secondary"
-                            android:layout_marginBottom="4dp"/>
-
-                        <TextView
-                            android:id="@+id/occupancyStatus"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Notifications: DISARMED"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"/>
-                    </LinearLayout>
-
-                    <Switch
-                        android:id="@+id/occupancySwitch"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"/>
-                </LinearLayout>
-            </androidx.cardview.widget.CardView>
-
-            <!-- Device Status Card -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/dark_surface"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="0dp">
+            <!-- Occupancy alerts (arm switch) -->
+            <com.david.homeenv.ui.AccentCard
+                style="@style/HomeCard"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingTop="12dp">
 
                 <LinearLayout
-                    android:layout_width="match_parent"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:layout_weight="1"
+                    android:orientation="vertical">
 
                     <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Devices"
-                        android:textSize="14sp"
-                        android:textColor="@color/text_secondary"
-                        android:layout_marginBottom="12dp"/>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:id="@+id/oled_status"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="OLED: --"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_secondary"
-                            android:paddingStart="12dp"
-                            android:paddingEnd="12dp"
-                            android:paddingTop="6dp"
-                            android:paddingBottom="6dp"
-                            android:background="@drawable/status_pill"
-                            android:layout_marginEnd="8dp"/>
-
-                        <TextView
-                            android:id="@+id/eink_status"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="E-ink: --"
-                            android:textSize="14sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_secondary"
-                            android:paddingStart="12dp"
-                            android:paddingEnd="12dp"
-                            android:paddingTop="6dp"
-                            android:paddingBottom="6dp"
-                            android:background="@drawable/status_pill"/>
-                    </LinearLayout>
+                        style="@style/HomeLabel"
+                        android:text="Occupancy alerts" />
 
                     <TextView
-                        android:id="@+id/co2_status"
+                        android:id="@+id/occupancyStatus"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="CO2: --"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="@color/text_secondary"
-                        android:paddingStart="12dp"
-                        android:paddingEnd="12dp"
-                        android:paddingTop="6dp"
-                        android:paddingBottom="6dp"
-                        android:background="@drawable/status_pill"
-                        android:layout_marginTop="8dp"/>
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:layout_marginTop="12dp">
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:id="@+id/oled_uptime"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Ping: --"
-                                android:textSize="12sp"
-                                android:textColor="@color/text_secondary"
-                                android:layout_marginBottom="4dp"/>
-
-                            <TextView
-                                android:id="@+id/eink_uptime"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Hallway: --"
-                                android:textSize="12sp"
-                                android:textColor="@color/text_secondary"
-                                android:layout_marginBottom="4dp"/>
-
-                            <TextView
-                                android:id="@+id/co2_uptime"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="CO2: --"
-                                android:textSize="12sp"
-                                android:textColor="@color/text_secondary"/>
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:id="@+id/co2_sensor_status"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="CO2 sensor: --"
-                                android:textSize="12sp"
-                                android:textColor="@color/text_secondary"
-                                android:layout_marginBottom="4dp"/>
-
-                            <TextView
-                                android:id="@+id/restarts_value"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                 android:text="Restarts: --"
-                                android:textSize="12sp"
-                                android:textColor="@color/text_secondary"/>
-                        </LinearLayout>
-                    </LinearLayout>
+                        android:layout_marginTop="4dp"
+                        android:text="Loading…"
+                        android:textColor="@color/text"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
                 </LinearLayout>
-            </androidx.cardview.widget.CardView>
 
-            <!-- Current Stats Grid -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/occupancySwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </com.david.homeenv.ui.AccentCard>
+
+            <!-- Row 1: temperature | humidity -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
+                android:layout_marginTop="12dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
 
-                <androidx.cardview.widget.CardView
+                <com.david.homeenv.ui.AccentCard
+                    android:id="@+id/card_temp"
+                    style="@style/HomeCard"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    app:cardBackgroundColor="@color/dark_surface"
-                    app:cardCornerRadius="12dp"
-                    app:cardElevation="0dp">
+                    android:layout_marginEnd="6dp"
+                    app:accentColor="@color/accent_temp">
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
+                    <TextView
+                        style="@style/HomeLabel"
+                        android:drawableStart="@drawable/ic_metric_temp"
+                        android:drawableTint="@color/accent_temp"
+                        android:text="Temperature" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Temp"
-                            android:textSize="13sp"
-                            android:textColor="@color/text_secondary"/>
+                    <TextView
+                        android:id="@+id/temp_value"
+                        style="@style/HomeValue"
+                        android:text="--" />
 
-                        <TextView
-                            android:id="@+id/temp_value"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="-- °C"
-                            android:textSize="22sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="6dp"/>
+                    <TextView
+                        android:id="@+id/temp_chip"
+                        style="@style/HomeChip" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text=" "
-                            android:textSize="12sp"
-                            android:textColor="@color/text_secondary"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
+                    <TextView
+                        android:id="@+id/temp_age"
+                        style="@style/HomeFoot"
+                        android:layout_marginTop="10dp"
+                        android:text="waiting…" />
+                </com.david.homeenv.ui.AccentCard>
 
-                <androidx.cardview.widget.CardView
+                <com.david.homeenv.ui.AccentCard
+                    android:id="@+id/card_hum"
+                    style="@style/HomeCard"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    app:cardBackgroundColor="@color/dark_surface"
-                    app:cardCornerRadius="12dp"
-                    app:cardElevation="0dp">
+                    android:layout_marginStart="6dp"
+                    app:accentColor="@color/accent_hum">
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
+                    <TextView
+                        style="@style/HomeLabel"
+                        android:drawableStart="@drawable/ic_metric_hum"
+                        android:drawableTint="@color/accent_hum"
+                        android:text="Humidity" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Humidity"
-                            android:textSize="13sp"
-                            android:textColor="@color/text_secondary"/>
+                    <TextView
+                        android:id="@+id/humidity_value"
+                        style="@style/HomeValue"
+                        android:text="--" />
 
-                        <TextView
-                            android:id="@+id/humidity_value"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="-- %"
-                            android:textSize="22sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="6dp"/>
+                    <TextView
+                        android:id="@+id/humidity_chip"
+                        style="@style/HomeChip" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text=" "
-                            android:textSize="12sp"
-                            android:textColor="@color/text_secondary"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
-
-                <androidx.cardview.widget.CardView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    app:cardBackgroundColor="@color/dark_surface"
-                    app:cardCornerRadius="12dp"
-                    app:cardElevation="0dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="CO2"
-                            android:textSize="13sp"
-                            android:textColor="@color/text_secondary"/>
-
-                        <TextView
-                            android:id="@+id/co2_value"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="--"
-                            android:textSize="22sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="6dp"/>
-
-                        <TextView
-                            android:id="@+id/co2_band"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="--"
-                            android:textSize="12sp"
-                            android:textColor="@color/text_secondary"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
+                    <TextView
+                        android:id="@+id/humidity_age"
+                        style="@style/HomeFoot"
+                        android:layout_marginTop="10dp"
+                        android:text="waiting…" />
+                </com.david.homeenv.ui.AccentCard>
             </LinearLayout>
 
+            <!-- Row 2: pressure | occupied now -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="16dp">
+                android:layout_marginTop="12dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
 
-                <androidx.cardview.widget.CardView
+                <com.david.homeenv.ui.AccentCard
+                    android:id="@+id/card_pres"
+                    style="@style/HomeCard"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    app:cardBackgroundColor="@color/dark_surface"
-                    app:cardCornerRadius="12dp"
-                    app:cardElevation="0dp">
+                    android:layout_marginEnd="6dp"
+                    app:accentColor="@color/accent_pres">
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
+                    <TextView
+                        style="@style/HomeLabel"
+                        android:drawableStart="@drawable/ic_metric_pres"
+                        android:drawableTint="@color/accent_pres"
+                        android:text="Pressure" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Occupied"
-                            android:textSize="14sp"
-                            android:textColor="@color/text_secondary"/>
+                    <TextView
+                        android:id="@+id/pressure_value"
+                        style="@style/HomeValue"
+                        android:text="--" />
 
-                        <TextView
-                            android:id="@+id/occupied_value"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="--"
-                            android:textSize="28sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="6dp"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
+                    <TextView
+                        android:id="@+id/pressure_chip"
+                        style="@style/HomeChip" />
 
-                <androidx.cardview.widget.CardView
+                    <TextView
+                        android:id="@+id/pressure_trend"
+                        style="@style/HomeFoot"
+                        android:layout_marginTop="10dp"
+                        android:text="3 h trend: --" />
+                </com.david.homeenv.ui.AccentCard>
+
+                <com.david.homeenv.ui.AccentCard
+                    android:id="@+id/card_occ_now"
+                    style="@style/HomeCard"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    app:cardBackgroundColor="@color/dark_surface"
-                    app:cardCornerRadius="12dp"
-                    app:cardElevation="0dp">
+                    android:layout_marginStart="6dp"
+                    app:accentColor="@color/faint">
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
+                    <TextView
+                        style="@style/HomeLabel"
+                        android:drawableStart="@drawable/ic_metric_person"
+                        android:drawableTint="@color/muted"
+                        android:text="Occupied now" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Confidence"
-                            android:textSize="14sp"
-                            android:textColor="@color/text_secondary"/>
+                    <TextView
+                        android:id="@+id/occupied_value"
+                        style="@style/HomeValue"
+                        android:text="--" />
 
-                        <TextView
-                            android:id="@+id/confidence_value"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="-- %"
-                            android:textSize="28sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="6dp"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
+                    <TextView
+                        android:id="@+id/occupied_chip"
+                        style="@style/HomeChip" />
+
+                    <TextView
+                        android:id="@+id/confidence_value"
+                        style="@style/HomeFoot"
+                        android:layout_marginTop="10dp"
+                        android:text="confidence --" />
+                </com.david.homeenv.ui.AccentCard>
             </LinearLayout>
-            <!-- Pressure trend -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/dark_surface"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="0dp">
+
+            <!-- CO2: full width so the gauge scale has room -->
+            <com.david.homeenv.ui.AccentCard
+                android:id="@+id/card_co2"
+                style="@style/HomeCard"
+                android:layout_marginTop="12dp"
+                app:accentColor="@color/accent_co2">
+
+                <TextView
+                    style="@style/HomeLabel"
+                    android:drawableStart="@drawable/ic_metric_co2"
+                    android:drawableTint="@color/accent_co2"
+                    android:text="CO₂" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:padding="16dp"
-                    android:gravity="center_vertical">
+                    android:gravity="bottom"
+                    android:orientation="horizontal">
 
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Pressure"
-                            android:textSize="13sp"
-                            android:textColor="@color/text_secondary"/>
-
-                        <TextView
-                            android:id="@+id/pressure_value"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="-- hPa"
-                            android:textSize="22sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="4dp"/>
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="3h trend"
-                            android:textSize="13sp"
-                            android:textColor="@color/text_secondary"/>
-
-                        <TextView
-                            android:id="@+id/pressure_trend"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="--"
-                            android:textSize="22sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="4dp"/>
-
-                        <TextView
-                            android:id="@+id/pressure_outlook"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="--"
-                            android:textSize="12sp"
-                            android:textColor="@color/text_secondary"/>
-                    </LinearLayout>
-                </LinearLayout>
-            </androidx.cardview.widget.CardView>
-
-            <!-- Occupancy by hour -->
-            <androidx.cardview.widget.CardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/dark_surface"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="0dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    <TextView
+                        android:id="@+id/co2_value"
+                        style="@style/HomeValue"
+                        android:text="--" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Occupancy by hour"
-                        android:textSize="13sp"
-                        android:textColor="@color/text_secondary"
-                        android:layout_marginBottom="12dp"/>
-
-                    <!-- Bars are added in code -->
-                    <LinearLayout
-                        android:id="@+id/occupancy_bars"
-                        android:layout_width="match_parent"
-                        android:layout_height="64dp"
-                        android:orientation="horizontal"
-                        android:gravity="bottom"/>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:layout_marginTop="4dp">
-
-                        <TextView
-                            android:id="@+id/occ_label_start"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="--"
-                            android:textSize="11sp"
-                            android:textColor="@color/text_secondary"/>
-
-                        <TextView
-                            android:id="@+id/occ_label_end"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:gravity="end"
-                            android:text="now"
-                            android:textSize="11sp"
-                            android:textColor="@color/text_secondary"/>
-                    </LinearLayout>
+                        android:layout_marginStart="4dp"
+                        android:text="ppm"
+                        android:textColor="@color/muted"
+                        android:textSize="14sp" />
                 </LinearLayout>
-            </androidx.cardview.widget.CardView>
-            <!-- 24 Hour Stats Header -->
+
+                <TextView
+                    android:id="@+id/co2_chip"
+                    style="@style/HomeChip" />
+
+                <com.david.homeenv.ui.Co2GaugeView
+                    android:id="@+id/co2_gauge"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/co2_sensor_status"
+                        style="@style/HomeFoot"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="sensor --" />
+
+                    <TextView
+                        android:id="@+id/co2_age"
+                        style="@style/HomeFoot"
+                        android:text="waiting…" />
+                </LinearLayout>
+            </com.david.homeenv.ui.AccentCard>
+
+            <!-- Occupancy today: 24 hourly bars -->
+            <com.david.homeenv.ui.AccentCard
+                android:id="@+id/card_occ"
+                style="@style/HomeCard"
+                android:layout_marginTop="12dp"
+                app:accentColor="@color/good">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/HomeLabel"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:drawableStart="@drawable/ic_metric_person"
+                        android:drawableTint="@color/good"
+                        android:text="Occupancy today" />
+
+                    <TextView
+                        android:id="@+id/occ_summary"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/muted"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <com.david.homeenv.ui.OccupancyBarsView
+                    android:id="@+id/occupancy_bars"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" />
+
+                <TextView
+                    android:id="@+id/occ_legend"
+                    style="@style/HomeFoot"
+                    android:layout_marginTop="8dp" />
+            </com.david.homeenv.ui.AccentCard>
+
+            <!-- Devices -->
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Last 24 Hours"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:textColor="@color/text_primary"
-                android:layout_marginTop="8dp"
-                android:layout_marginBottom="12dp"/>
-
-            <!-- 24h Stats Grid -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
-
-                <androidx.cardview.widget.CardView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    app:cardBackgroundColor="@color/dark_surface"
-                    app:cardCornerRadius="12dp"
-                    app:cardElevation="0dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Avg Temp"
-                            android:textSize="12sp"
-                            android:textColor="@color/text_secondary"/>
-
-                        <TextView
-                            android:id="@+id/stats_avg_temp"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="-- °C"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="4dp"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
-
-                <androidx.cardview.widget.CardView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    app:cardBackgroundColor="@color/dark_surface"
-                    app:cardCornerRadius="12dp"
-                    app:cardElevation="0dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Avg Humidity"
-                            android:textSize="12sp"
-                            android:textColor="@color/text_secondary"/>
-
-                        <TextView
-                            android:id="@+id/stats_avg_humidity"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="-- %"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="4dp"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
-            </LinearLayout>
+                style="@style/HomeSection"
+                android:text="Devices" />
 
             <LinearLayout
+                android:id="@+id/devices_list"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="16dp">
+                android:orientation="vertical" />
 
-                <androidx.cardview.widget.CardView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    app:cardBackgroundColor="@color/dark_surface"
-                    app:cardCornerRadius="12dp"
-                    app:cardElevation="0dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Avg Confidence"
-                            android:textSize="12sp"
-                            android:textColor="@color/text_secondary"/>
-
-                        <TextView
-                            android:id="@+id/stats_avg_confidence"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="-- %"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="4dp"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
-
-                <androidx.cardview.widget.CardView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    app:cardBackgroundColor="@color/dark_surface"
-                    app:cardCornerRadius="12dp"
-                    app:cardElevation="0dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Occupied Time"
-                            android:textSize="12sp"
-                            android:textColor="@color/text_secondary"/>
-
-                        <TextView
-                            android:id="@+id/stats_occupied_hours"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="--"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/text_primary"
-                            android:layout_marginTop="4dp"/>
-                    </LinearLayout>
-                </androidx.cardview.widget.CardView>
-            </LinearLayout>
-
-            <!-- Last 30 Readings Header -->
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Last 30 Readings"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:textColor="@color/text_primary"
+                android:id="@+id/restarts_value"
+                style="@style/HomeFoot"
                 android:layout_marginTop="8dp"
-                android:layout_marginBottom="12dp"/>
+                android:layout_marginStart="4dp"
+                android:text="Restarts: --" />
 
-            <!-- Readings Table Card -->
-            <androidx.cardview.widget.CardView
+            <!-- Last 24 hours -->
+            <TextView
+                style="@style/HomeSection"
+                android:text="Last 24 hours" />
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardBackgroundColor="@color/dark_surface"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="0dp">
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <com.david.homeenv.ui.AccentCard
+                    style="@style/HomeCard"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp">
+
+                    <TextView style="@style/HomeLabel" android:text="Avg temp" />
+
+                    <TextView
+                        android:id="@+id/stats_avg_temp"
+                        style="@style/HomeValue"
+                        android:textSize="20sp"
+                        android:text="--" />
+                </com.david.homeenv.ui.AccentCard>
+
+                <com.david.homeenv.ui.AccentCard
+                    style="@style/HomeCard"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp">
+
+                    <TextView style="@style/HomeLabel" android:text="Avg humidity" />
+
+                    <TextView
+                        android:id="@+id/stats_avg_humidity"
+                        style="@style/HomeValue"
+                        android:textSize="20sp"
+                        android:text="--" />
+                </com.david.homeenv.ui.AccentCard>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <com.david.homeenv.ui.AccentCard
+                    style="@style/HomeCard"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp">
+
+                    <TextView style="@style/HomeLabel" android:text="Avg confidence" />
+
+                    <TextView
+                        android:id="@+id/stats_avg_confidence"
+                        style="@style/HomeValue"
+                        android:textSize="20sp"
+                        android:text="--" />
+                </com.david.homeenv.ui.AccentCard>
+
+                <com.david.homeenv.ui.AccentCard
+                    style="@style/HomeCard"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp">
+
+                    <TextView style="@style/HomeLabel" android:text="Occupied time" />
+
+                    <TextView
+                        android:id="@+id/stats_occupied_hours"
+                        style="@style/HomeValue"
+                        android:textSize="20sp"
+                        android:text="--" />
+                </com.david.homeenv.ui.AccentCard>
+            </LinearLayout>
+
+            <!-- Recent readings -->
+            <TextView
+                style="@style/HomeSection"
+                android:text="Recent readings" />
+
+            <com.david.homeenv.ui.AccentCard
+                style="@style/HomeCard"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp">
 
                 <HorizontalScrollView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:scrollbars="horizontal">
+                    android:scrollbars="none">
 
                     <TableLayout
                         android:id="@+id/readings_table"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:padding="12dp"
-                        android:stretchColumns="*">
-
-                        <TableRow
-                            android:layout_marginBottom="8dp"
-                            android:paddingBottom="8dp">
-
-                            <TextView
-                                android:text="Time"
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/text_secondary"
-                                android:paddingEnd="16dp"
-                                android:paddingStart="8dp"/>
-
-                            <TextView
-                                android:text="Device"
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/text_secondary"
-                                android:paddingEnd="16dp"/>
-
-                            <TextView
-                                android:text="Temp"
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/text_secondary"
-                                android:paddingEnd="16dp"/>
-
-                            <TextView
-                                android:text="Hum"
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/text_secondary"
-                                android:paddingEnd="16dp"/>
-
-                            <TextView
-                                android:text="Occ"
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/text_secondary"
-                                android:paddingEnd="16dp"/>
-
-                            <TextView
-                                android:text="Conf"
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/text_secondary"
-                                android:paddingEnd="8dp"/>
-                        </TableRow>
-                    </TableLayout>
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp" />
                 </HorizontalScrollView>
-            </androidx.cardview.widget.CardView>
+            </com.david.homeenv.ui.AccentCard>
 
         </LinearLayout>
     </ScrollView>
