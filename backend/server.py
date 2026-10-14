@@ -93,7 +93,11 @@ def init_db():
         )
     """)
 
-    for col, coltype in (("co2", "INTEGER"), ("pressure", "REAL")):
+    # Add columns missing from older databases (including ones created by the
+    # removed init_db.py, which had only id/ts/temp/humidity)
+    for col, coltype in (("device", "TEXT"), ("uptime", "INTEGER"),
+                         ("occupied", "INTEGER"), ("occupancy_confidence", "INTEGER"),
+                         ("dark", "INTEGER"), ("co2", "INTEGER"), ("pressure", "REAL")):
         try:
             c.execute(f"ALTER TABLE readings ADD COLUMN {col} {coltype}")
         except sqlite3.OperationalError:
