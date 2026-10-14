@@ -1188,6 +1188,11 @@ def occupancy_arm():
     log_event("system", "OCCUPANCY_ARMED", armed)
     return jsonify({"armed": armed == "1"})
 
+@app.route("/api/occupancy_status")
+@require_auth
+def occupancy_status():
+    return jsonify({"armed": get_state("occupancy_armed") == "1"})
+
 
 
 @app.route("/api/stats24h_combined")
