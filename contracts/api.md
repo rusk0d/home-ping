@@ -29,7 +29,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 
 | Client | Endpoints used |
 |---|---|
-| Android `HomeFragment` (`MainActivity.kt`) | `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/history_combined`, `/api/air`, `/api/hourly`, `POST /api/occupancy_arm`, `/api/occupancy_status` (**does not exist**) |
+| Android `HomeFragment` (`MainActivity.kt`) | `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/history_combined`, `/api/air`, `/api/hourly`, `POST /api/occupancy_arm`, `/api/occupancy_status` |
 | Android `PlantsFragment` (`MainActivity.kt`) | `/api/soil/latest` |
 | Android `MainActivity` (FCM) | `POST /api/register_token` |
 | Android `HomeEnvWidget` | `/api/latest` |
@@ -57,11 +57,11 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | GET | `/api/widget` | Basic | none found (the actual widget uses `/api/latest`) |
 | POST | `/api/register_token` | Basic | Android (FCM) |
 | POST | `/api/occupancy_arm` | Basic | Android Home |
+| GET | `/api/occupancy_status` | Basic | Android Home |
 | GET | `/api/soil/latest` | Basic | Android Plants |
 | GET | `/api/soil/history` | Basic | none found |
 | GET | `/api/soil/stats24h` | Basic | none found |
 | GET | `/api/next-events` | **none** | none found (broken, see below) |
-| GET | `/api/occupancy_status` | n/a | Android Home, **not implemented in backend** |
 
 ---
 
@@ -269,8 +269,8 @@ Latest radar row for **`home_ping_esp32` only**, or `404 {"error":"No data"}`.
  "online":true,"occupancy_confidence":73,"occupancy_armed":false}
 ```
 
-`occupancy_armed` (bool) is the only read path for the arm state that returns
-a field with that meaning (see mismatches). Client: none found.
+`occupancy_armed` (bool) is the same value `/api/occupancy_status` returns as `armed`.
+Client: none found.
 
 ### GET `/api/presence/history?limit=<n>`
 
@@ -315,6 +315,13 @@ Sets `system_state.occupancy_armed` to `'1'`/`'0'` and logs event
 `OCCUPANCY_ARMED` (device `"system"`). Response: `{"armed": true|false}`.
 Client: Android Home toggle switch.
 
+### GET `/api/occupancy_status`
+
+Current arm state for occupancy-arrival pushes, read from `system_state.occupancy_armed`.
+Response: `{"armed": true|false}` (same shape as the `POST /api/occupancy_arm` response).
+`false` until the switch is first armed.
+Client: Android Home, on startup, to set the toggle switch.
+
 ### GET `/api/soil/latest?device=<id>`
 
 Default `device=soil_sensor_01`. `404 {"error":"No data"}` if none.
@@ -353,11 +360,8 @@ anyone who can reach the server.
 
 ## Mismatches and issues between components
 
-1. **`/api/occupancy_status` doesn't exist.** Android Home calls it on startup
-   to load the arm switch state and expects `{"armed": bool}`. The backend
-   returns 404, so the switch always starts off and doesn't show the real
-   state. The state is available as `occupancy_armed` from
-   `/api/presence/latest` and `/api/widget`, under a different field name.
+1. ~~**`/api/occupancy_status` doesn't exist.**~~ Fixed in #3: the backend now
+   implements `GET /api/occupancy_status` → `{"armed": bool}`, which Android reads on startup.
 2. **Android crashes if `home_ping_esp32.temp` is null.** In `/api/latest_all`
    the main node's `temp`/`humidity` can be null (BME280 missing or no env rows yet, radar
    stub). Android calls `getDouble("temp")`/`getInt("humidity")` inside
