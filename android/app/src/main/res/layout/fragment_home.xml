@@ -87,11 +87,30 @@
                         android:id="@+id/temp_chip"
                         style="@style/HomeChip" />
 
-                    <TextView
-                        android:id="@+id/temp_age"
-                        style="@style/HomeFoot"
-                        android:layout_marginTop="10dp"
-                        android:text="waiting…" />
+                    <com.david.homeenv.ui.SparklineView
+                        android:id="@+id/temp_spark"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        app:accentColor="@color/accent_temp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/temp_range"
+                            style="@style/HomeFoot"
+                            android:layout_width="0dp"
+                            android:layout_weight="1" />
+
+                        <TextView
+                            android:id="@+id/temp_age"
+                            style="@style/HomeFoot"
+                            android:text="waiting…" />
+                    </LinearLayout>
                 </com.david.homeenv.ui.AccentCard>
 
                 <com.david.homeenv.ui.AccentCard
@@ -118,11 +137,30 @@
                         android:id="@+id/humidity_chip"
                         style="@style/HomeChip" />
 
-                    <TextView
-                        android:id="@+id/humidity_age"
-                        style="@style/HomeFoot"
-                        android:layout_marginTop="10dp"
-                        android:text="waiting…" />
+                    <com.david.homeenv.ui.SparklineView
+                        android:id="@+id/humidity_spark"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        app:accentColor="@color/accent_hum" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/humidity_range"
+                            style="@style/HomeFoot"
+                            android:layout_width="0dp"
+                            android:layout_weight="1" />
+
+                        <TextView
+                            android:id="@+id/humidity_age"
+                            style="@style/HomeFoot"
+                            android:text="waiting…" />
+                    </LinearLayout>
                 </com.david.homeenv.ui.AccentCard>
             </LinearLayout>
 
