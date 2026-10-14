@@ -395,13 +395,11 @@ anyone who can reach the server.
     occupancy column of `/api/hourly` only use `home_ping_esp32`.
 14. **Empty-state values don't match.** `/api/stats24h*` return `0` instead of null
     for no data, `/api/latest` returns `[]`, and `/api/presence/latest` and `/api/soil/latest` return 404.
-15. **Hard-coded hosts and credentials in Android.** All URLs are hard-coded
-    (`https://www.example.com/...`) and Basic-auth credentials are string
-    constants in `MainActivity.kt` and `HomeEnvWidget.kt`, against the CLAUDE.md rule. Most are
-    placeholders, but **`MainActivity.registerTokenServerSide` (`MainActivity.kt:132`) contains a
-    hard-coded credential that doesn't look like a placeholder** and is in git
-    history (commit `835fe28`). The value isn't reproduced here. It should be
-    treated as leaked and rotated.
+15. **Android config.** The server base URL and Basic-auth credentials come from the
+    gitignored `android/local.properties` (`API_BASE_URL`, `API_USER`, `API_PASS`)
+    via `BuildConfig`. `API_BASE_URL` has no trailing slash and falls back to
+    `https://www.example.com` if unset. Note that `BuildConfig` values are compiled
+    into the APK and can be extracted from it.
 16. **Unused endpoints** (no client in this repo): `/api/latest2`, `/api/history`,
     `/api/stats24h`, `/api/occupancy_rolling`, `/api/presence/latest`,
     `/api/presence/history`, `/api/widget`, `/api/soil/history`,
