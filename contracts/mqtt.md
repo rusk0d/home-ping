@@ -197,7 +197,11 @@ Example:
 
 ## Web page (`web/index.html`) as a subscriber
 
-- Subscribes to `home/esp32/bme280` and `home/esp32/co2` only (read-only user).
+- Subscribes to `home/esp32/bme280`, `home/esp32/co2` and `home/backend/occupancy_hourly`
+  only (read-only user).
+- occupancy_hourly: 24-slot bar chart for today. `null` hours are shown as "no data", hours
+  after the last entry as future. Greyed out if `updated` is over 15 min old or `date` isn't
+  the browser's local date. `updated` is parsed as browser local time (same timezone assumed).
 - bme280: shows `temp_c`, `humidity`, `pressure`, `uptime`.
 - co2: shows `co2` only when `co2_ok` is true and `co2` is present; otherwise
   shows "warming up" (`warming`) or "no valid reading" (`err`). Also shows `uptime`, `rssi`.
