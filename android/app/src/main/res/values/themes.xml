@@ -1,43 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.HomeEnv" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <!-- Primary brand color (dark theme) -->
-        <item name="colorPrimary">@color/dark_primary</item>
-        <item name="colorPrimaryVariant">@color/dark_background</item>
-        <item name="colorOnPrimary">@color/text_primary</item>
-        
-        <!-- Secondary brand color -->
-        <item name="colorSecondary">@color/dark_primary</item>
-        <item name="colorSecondaryVariant">@color/dark_secondary</item>
-        <item name="colorOnSecondary">@color/text_primary</item>
-        
-        <!-- Status bar color -->
-        <item name="android:statusBarColor">@color/dark_background</item>
-        <item name="android:navigationBarColor">@color/dark_background</item>
-        
-        <!-- Background colors -->
-        <item name="android:windowBackground">@color/dark_background</item>
-        <item name="android:colorBackground">@color/dark_background</item>
-        <item name="colorSurface">@color/dark_surface</item>
-        
-        <!-- Text colors -->
-        <item name="android:textColorPrimary">@color/text_primary</item>
-        <item name="android:textColorSecondary">@color/text_secondary</item>
-        
-        <!-- Switch colors -->
-        <item name="colorControlActivated">@color/status_online</item>
-        <item name="colorSwitchThumbNormal">@color/text_secondary</item>
-        
-        <!-- Action bar -->
-        <item name="actionBarStyle">@style/ActionBar.HomeEnv</item>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Colours come from colors.xml (dark) / values-notnight/colors.xml (light) -->
+    <style name="Theme.HomeEnv" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/card</item>
+        <item name="colorPrimaryVariant">@color/bg</item>
+        <item name="colorOnPrimary">@color/text</item>
+        <item name="colorSecondary">@color/good</item>
+        <item name="colorSecondaryVariant">@color/good</item>
+        <item name="colorOnSecondary">@color/bg</item>
+
+        <item name="android:statusBarColor">@color/bg_glow</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">@bool/light_system_bars</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">@bool/light_system_bars</item>
+
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="colorSurface">@color/card</item>
+        <item name="colorOnSurface">@color/text</item>
+
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/muted</item>
+
+        <item name="colorControlActivated">@color/good</item>
+        <item name="colorSwitchThumbNormal">@color/muted</item>
     </style>
-    
-    <style name="ActionBar.HomeEnv" parent="Widget.MaterialComponents.ActionBar.Primary">
-        <item name="background">@color/dark_background</item>
-        <item name="titleTextStyle">@style/ActionBarTitle</item>
+
+    <!-- Card: rounded, 1dp border, coloured top strip (see AccentCard) -->
+    <style name="HomeCard">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingTop">16dp</item>
+        <item name="android:paddingBottom">12dp</item>
     </style>
-    
-    <style name="ActionBarTitle" parent="TextAppearance.MaterialComponents.Headline6">
-        <item name="android:textColor">@color/text_primary</item>
+
+    <!-- Small uppercase card label, e.g. "TEMPERATURE" -->
+    <style name="HomeLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/muted</item>
+        <item name="android:drawablePadding">6dp</item>
+        <item name="android:gravity">center_vertical</item>
+    </style>
+
+    <!-- Big number -->
+    <style name="HomeValue">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:textSize">32sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.02</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <!-- Level chip; background and colour are set in code (Levels.applyChip) -->
+    <style name="HomeChip">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:paddingStart">9dp</item>
+        <item name="android:paddingEnd">9dp</item>
+        <item name="android:paddingTop">2dp</item>
+        <item name="android:paddingBottom">2dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/muted</item>
+    </style>
+
+    <!-- Footer row text: range / age -->
+    <style name="HomeFoot">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/muted</item>
+    </style>
+
+    <!-- Section heading, e.g. "DEVICES" -->
+    <style name="HomeSection">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">24dp</item>
+        <item name="android:layout_marginBottom">10dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/muted</item>
     </style>
 </resources>
