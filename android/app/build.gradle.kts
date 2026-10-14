@@ -43,11 +43,9 @@ android {
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.10.0")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
     implementation("com.google.firebase:firebase-messaging-ktx:23.2.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
-    implementation("androidx.compose.material:material-icons-extended:1.5.4")
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.cardview:cardview:1.0.0")
 	implementation("androidx.viewpager2:viewpager2:1.0.0")
