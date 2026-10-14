@@ -1,7 +1,6 @@
 # Database schema contract (DRAFT)
 
-Status: draft, reverse-engineered from `backend/init_db.py` and
-`backend/server.py` on branch `contracts-draft` (2026-10-13). The live
+Status: draft, reverse-engineered from `backend/server.py` on branch `contracts-draft` (2026-10-13). The live
 `data.db` wasn't inspected. Anything marked **UNCERTAIN** is inferred.
 
 ## General
@@ -9,8 +8,10 @@ Status: draft, reverse-engineered from `backend/init_db.py` and
 - Engine: SQLite, file `data.db` in the backend's working directory (`DB = "data.db"`, relative path).
 - Schema owner: **`server.py` `init_db()`**, which runs at import on every start.
   It uses `CREATE TABLE IF NOT EXISTS`, plus `ALTER TABLE readings ADD COLUMN`
-  for `co2` and `pressure` (errors ignored if they already exist).
-- `backend/init_db.py` creates a **different, older** `readings` table (see mismatches).
+  for every `readings` column except `id`/`ts`/`temp`/`humidity` (errors ignored
+  if they already exist), so older databases are upgraded on start.
+- There is no separate schema script. The old `backend/init_db.py` created an
+  incompatible `readings` table and was removed (issue #4).
 - No indexes, foreign keys, migrations table or schema version.
 - Every query opens and closes its own `sqlite3.connect(DB)`. Connections are short-lived.
 - Timestamps: every insert writes `ts` with `datetime('now','localtime')`, a
@@ -156,14 +157,10 @@ Notable derived values:
 
 ## Mismatches and issues
 
-1. **`init_db.py` doesn't match `server.py`.** `init_db.py` creates `readings(id, ts DATETIME
-   DEFAULT CURRENT_TIMESTAMP, temp, humidity)` with no `device`, `uptime`,
-   `occupied`, `occupancy_confidence`, `dark` columns, and no other tables. If it runs
-   before the server on a fresh DB, `server.py`'s `CREATE TABLE IF NOT EXISTS`
-   skips `readings`, the `ALTER`s add only `co2` and `pressure`, and every
-   `log_to_db` insert fails with "no such column: device" (caught and printed in
-   `on_message`, so the data is silently lost). `init_db.py` also uses UTC
-   (`CURRENT_TIMESTAMP`) while `server.py` writes local time.
+1. ~~**`init_db.py` doesn't match `server.py`.**~~ Fixed in #4: `init_db.py` was
+   removed, and `server.py` now adds any missing `readings` columns on start. A
+   database created by the old script is repaired automatically. Rows it stored
+   before the repair have `device = NULL`, so per-device queries don't show them.
 2. **Payload `raw` is stored as `raw_value`** and the API renames it back to `raw`.
 3. **Legacy columns that are always written as 0:** `readings.occupied`,
    `readings.occupancy_confidence`, `readings.dark`. All occupancy now lives in
