@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed icon (Android 13+): same shapes as ic_launcher_foreground in one colour;
+     the launcher tints it -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 10% larger around the centre; still inside the 66dp safe zone -->
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="1.1" android:scaleY="1.1">
+        <path
+            android:pathData="M31,51 L54,31 L77,51 M37,46 V77 H71 V46 M49.05,62.05 A7,7 0 0,1 58.95,62.05 M45.51,58.51 A12,12 0 0,1 62.49,58.51"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="4.5"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M54,67 m-3.5,0 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>
