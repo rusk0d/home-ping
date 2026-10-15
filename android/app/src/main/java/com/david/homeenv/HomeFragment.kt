@@ -1,5 +1,6 @@
 package com.david.homeenv
 
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -53,6 +54,10 @@ class HomeFragment : Fragment() {
     private var envTs: Date? = null
     private var co2Ts: Date? = null
 
+    // Offline banner: set when /api/latest_all can't be fetched; lastOkAt = last successful load
+    private var serverDown = false
+    private var lastOkAt: Long? = null
+
     private val refreshLoop = object : Runnable {
         override fun run() {
             loadDashboardData()
@@ -83,6 +88,12 @@ class HomeFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         b.occLegend.text = buildLegend()
+        val bad = Levels.color(requireContext(), R.color.bad)
+        b.offlineBanner.setTextColor(bad)
+        b.offlineBanner.background = GradientDrawable().apply {
+            cornerRadius = 12 * resources.displayMetrics.density
+            setColor(Levels.withAlpha(bad, 0.14f))
+        }
         b.swipeRefresh.setOnRefreshListener { loadDashboardData() }
         b.occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
     }
@@ -128,6 +139,8 @@ class HomeFragment : Fragment() {
                 hourly = Api.getArray("/api/hourly"),
             )
             ui {
+                serverDown = snap.latest == null
+                if (!serverDown) lastOkAt = System.currentTimeMillis()
                 try {
                     render(snap)
                 } catch (e: Exception) {
@@ -367,6 +380,7 @@ class HomeFragment : Fragment() {
     private fun updateAges() {
         if (view == null) return
         val now = System.currentTimeMillis()
+        renderBanner(now)
         val envAge = envTs?.let { (now - it.time) / 1000 }
         val co2AgeS = co2Ts?.let { (now - it.time) / 1000 }
         b.tempAge.text = formatAge(envAge)
@@ -376,6 +390,13 @@ class HomeFragment : Fragment() {
         b.cardTemp.stale = envStale
         b.cardHum.stale = envStale
         b.cardCo2.stale = co2AgeS != null && co2AgeS > STALE_CO2_S
+    }
+
+    private fun renderBanner(now: Long) {
+        b.offlineBanner.visibility = if (serverDown) View.VISIBLE else View.GONE
+        if (!serverDown) return
+        val since = lastOkAt?.let { " · last data ${formatAge((now - it) / 1000)}" }.orEmpty()
+        b.offlineBanner.text = "Can't reach the server$since"
     }
 
     // ---------- helpers ----------
