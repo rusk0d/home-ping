@@ -111,7 +111,10 @@ Known keys:
 | `cooldown:<key>` | unix time (float, as text) when the cooldown for alert `<key>` started (e.g. `cooldown:HUMIDITY_home_ping_esp32`) | no | `alert()` via `set_cooldown()` | loaded into `LAST_NOTIFICATION` at startup (#5) |
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
 | `ts_utc` | `'1'` once the timestamps were converted to UTC | no | `init_db()` (#65) | `init_db()` |
-| `node_offline:<device>` | `'1'` while that node's current outage has been pushed, else `'0'` | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
+| `node_offline:<device>` | `'1'` while that node's current outage has been pushed, `'m'` while it is offline but the push was muted (#82), else `'0'` | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
+| `notify:<kind>` | `'1'` / `'0'` per alert type (`humidity`, `temperature`, `radar`, `nodes`); missing = `'1'` | no | `POST /api/notification_settings` (#82) | `alert()` via `alert_muted()`, `GET /api/notification_settings` |
+| `quiet_hours` | `'1'` / `'0'`; missing = `'0'` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
+| `quiet_start` / `quiet_end` | `"HH:MM"`, server local time; missing = `22:00` / `07:00` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 
 ### `events` (audit / event log)
 
@@ -138,10 +141,12 @@ Event types written by `server.py`:
 | `TEMP_ALERT` | env ID | `sent, temp=17.6` | temperature push attempted |
 | `STATUS` | node ID | `online` / `offline` | live message on `home/esp32/<device>/status` (#13) |
 | `NODE_OFFLINE` | node ID | `sent, last seen 2026-10-16 06:12:40` (UTC) | node-offline push attempted (#13) |
-| `NODE_ONLINE` | node ID | `sent, data again` | back-online push attempted (#13) |
-
-For the push events above, the value starts with `sent, ` or `failed, ` (since #12).
+| `NODE_ONLINE` | node ID | `sent, data again` | back-online push attempted (#13); `no push (offline alert was muted), data again` when the offline alert was muted (#82) |
 | `OCCUPANCY_ARMED` | `system` | `1` / `0` | `POST /api/occupancy_arm` |
+| `NOTIFICATION_SETTINGS` | `system` | `notify:humidity=0, quiet_start=23:00` | `POST /api/notification_settings` changed something (#82) |
+
+For the push events above, the value starts with `sent, ` or `failed, ` (since #12), or
+`muted (off), ` / `muted (quiet hours), ` when the alert type is switched off or in quiet hours (#82).
 
 Read by: `/api/restarts` (`RESTART` only).
 
