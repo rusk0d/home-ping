@@ -37,13 +37,15 @@ Written by: MQTT env handler (`log_to_db`) for every message that has no
 | `temp` | REAL | yes | payload `temp_c`, °C |
 | `humidity` | REAL | yes | payload `humidity`, %RH |
 | `uptime` | INTEGER | yes | payload `uptime`, s (default 0) |
-| `occupied` | INTEGER | yes | **always 0** (hard-coded, legacy) |
-| `occupancy_confidence` | INTEGER | yes | **always 0** (hard-coded, legacy) |
-| `dark` | INTEGER | yes | payload `dark` truthy → 1, else 0. **Always 0 today**, no firmware sends it |
 | `co2` | INTEGER | yes | payload `co2`, ppm. NULL when the co2 node omits it (invalid reading) |
 | `pressure` | REAL | yes | payload `pressure`, hPa |
+| `co2_ok` | INTEGER | yes | payload `co2_ok` as 1/0; NULL when the message has none (added in #14, via the ALTER loop) |
 
 Retention: rows older than 8 days are deleted on every insert.
+
+`occupied`, `occupancy_confidence` and `dark` (always 0) were dropped in #14: `init_db()`
+rebuilds the table without them if an older database still has them (works on any SQLite
+version; the rows are kept).
 
 Typical rows: main_node writes `temp`/`humidity`/`pressure` every 30 s. co2_node
 writes `co2` (or NULL) every 60 s with NULL temp/humidity/pressure.
@@ -129,8 +131,8 @@ Read by: `/api/restarts` (`RESTART` only).
 
 | Table | Inserts / updates | Reads |
 |---|---|---|
-| `readings` | `log_to_db` (+ 8-day prune) | `/api/latest`, `/api/latest_all`, `/api/history_combined` (UNION with presence), `/api/stats24h_combined`, `/api/hourly`, `/api/air` |
-| `presence_readings` | `log_presence` (+ 8-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `get_last_occupancy`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/hourly`, `/api/history_combined` |
+| `readings` | `log_to_db` (+ 8-day prune) | `/api/latest`, `/api/latest_all`, `/api/stats24h_combined`, `/api/hourly`, `/api/air` |
+| `presence_readings` | `log_presence` (+ 8-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `get_last_occupancy`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/hourly` |
 | `devices` | `touch_device` | `/api/latest`, `/api/latest_all`, `/api/devices` |
 | `system_state` | `init_db` seed, `set_state` | `get_state` |
 | `events` | `log_event` | `/api/restarts` |
@@ -149,9 +151,8 @@ Notable derived values:
    database created by the old script is repaired automatically. Rows it stored
    before the repair have `device = NULL`, so per-device queries don't show them.
 2. **Payload `raw` is stored as `raw_value`** and the API renames it back to `raw`.
-3. **Legacy columns that are always written as 0:** `readings.occupied`,
-   `readings.occupancy_confidence`, `readings.dark`. All occupancy now lives in
-   `presence_readings`.
+3. ~~**Legacy columns that are always written as 0**~~ dropped in #14. All occupancy
+   lives in `presence_readings`.
 4. **Retained MQTT messages create duplicate rows** with a fresh `ts` every time
    the backend reconnects to the broker (see `mqtt.md`).
 5. **In-memory state that affects data meaning** is not in the DB: `LAST_UPTIME`

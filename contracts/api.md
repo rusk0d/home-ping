@@ -17,19 +17,23 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 - Timestamps: strings `"YYYY-MM-DD HH:MM:SS"` in the **server's local time**,
   no timezone (written with SQLite `datetime('now','localtime')`). They are the
   time the backend received the message, not the device's measurement time.
-- "online": `now - devices.last_seen < HEARTBEAT_TIMEOUT`. `HEARTBEAT_TIMEOUT`
-  is defined twice in `server.py` (300, then 120). The later assignment wins,
-  so the effective value is **120 s**.
+- "online": `now - devices.last_seen < HEARTBEAT_TIMEOUT` (**120 s**).
+- Responses are JSON objects or arrays of objects; no positional arrays (since #14).
+- No data: values are `null` (status 200), never `0`, `[]` or 404 (since #14).
+- "confidence" (`confidence`, per radar or combined) always means: % of a radar's rows in the
+  last **15 min** (`CONFIDENCE_MINUTES`) that were occupied, 0–100, or null without radar
+  data. Combined = the highest radar. Other occupancy figures are called "occupancy".
 - Default device: many endpoints take `?device=` and default to `"home_ping_esp32"`.
-- Errors: there's no shared error format. Bad integer query params (`limit`, `minutes`)
-  and missing JSON bodies raise exceptions, so Flask returns its default HTML `500`.
+- Errors: JSON `{"error": "<message>"}` with the HTTP status (400 bad request body,
+  404 unknown path, 405 wrong method, 500 unexpected error without details). The only
+  exception is the 401 from Basic auth (text/plain, see Auth).
 - CORS: none configured. The web page does not use the REST API.
 
 ## Clients
 
 | Client | Endpoints used |
 |---|---|
-| Android `HomeFragment` (`MainActivity.kt`) | `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/history_combined`, `/api/air`, `/api/hourly`, `POST /api/occupancy_arm`, `/api/occupancy_status` |
+| Android `HomeFragment` | `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`, `POST /api/occupancy_arm`, `/api/occupancy_status` |
 | Android `MainActivity` (FCM) | `POST /api/register_token` |
 | Android `HomeEnvWidget` | `/api/latest` |
 | Web (`web/index.html`) | none (MQTT only) |
@@ -41,7 +45,6 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 |---|---|---|---|
 | GET | `/api/latest` | Basic | Android widget |
 | GET | `/api/latest_all` | Basic | Android Home |
-| GET | `/api/history_combined` | Basic | Android Home |
 | GET | `/api/stats24h_combined` | Basic | Android Home |
 | GET | `/api/hourly` | Basic | Android Home |
 | GET | `/api/air` | Basic | Android Home |
@@ -57,26 +60,25 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 
 ### GET `/api/latest`
 
-Latest env reading for `home_ping_esp32` plus combined radar occupancy.
-Response: a **positional JSON array** (not an object), or `[]` if the device
-has no `readings` rows.
-
-| Index | Value | Type | Source |
-|---|---|---|---|
-| 0 | ts | string | `readings.ts` (latest row for `home_ping_esp32`) |
-| 1 | temp | number/null | °C |
-| 2 | humidity | number/null | %RH |
-| 3 | uptime | integer | s |
-| 4 | occupied | 0/1 | `get_combined_occupancy()`: 1 if any radar has ≥2 of its last 3 rows (within 2 min) occupied |
-| 5 | confidence | integer 0–100 | `calculate_combined_confidence(15)`: highest per-radar mean of `occupied` over 15 min, ×100 |
-| 6 | dark | 0/1 | `readings.dark` (always 0 today) |
-| 7 | online | bool | `home_ping_esp32` heartbeat |
+Latest env reading for `home_ping_esp32` plus combined radar occupancy (the widget's data).
+Always 200; fields are null when there is no data.
 
 ```json
-["2026-10-13 19:42:10", 22.4, 48.3, 86400, 1, 73, 0, true]
+{"ts":"2026-10-13 19:42:10","temp":22.4,"humidity":48.3,"uptime":86400,
+ "online":true,"occupied":1,"confidence":73}
 ```
 
-Client: `HomeEnvWidget` reads indexes 1, 2, 4, 5, 7.
+| Field | Type | Source |
+|---|---|---|
+| `ts` | string/null | latest `readings` row for `home_ping_esp32` |
+| `temp` | number/null | °C |
+| `humidity` | number/null | %RH |
+| `uptime` | integer/null | s |
+| `online` | bool | `home_ping_esp32` heartbeat |
+| `occupied` | 0/1/null | `get_combined_occupancy()`: 1 if any radar has ≥2 of its last 3 rows (within 2 min) occupied, null if no radar reported in 2 min |
+| `confidence` | integer 0–100/null | `calculate_combined_confidence()` (see "confidence" above) |
+
+Client: `HomeEnvWidget` reads `temp`, `humidity`, `occupied`, `confidence`, `online`.
 
 ### GET `/api/latest_all`
 
@@ -86,25 +88,24 @@ For each device with `readings` rows:
 
 ```json
 {"ts": "...", "temp": 22.4, "humidity": 48.3, "uptime": 86400,
- "occupied": 0, "occupancy_confidence": 0, "dark": 0,
  "co2": null, "pressure": 1013.6, "online": true, "co2_ok": null}
 ```
 
-`co2_ok` comes from in-memory state (`CO2_SENSOR_OK`): bool for devices that
-have sent `co2_ok` since the backend started, otherwise `null`.
+`co2_ok` comes from the device's latest `readings` row (`readings.co2_ok`): bool if
+that message had `co2_ok`, otherwise `null`. It survives backend restarts.
 
 For each device with `presence_readings` rows, the radar fields are merged in.
-If the device has no env rows, a stub with `temp`/`humidity`/`dark`/`co2`/`pressure` = null is used.
+If the device has no env rows, a stub with `temp`/`humidity`/`co2`/`pressure` = null is used.
 Then **`ts` and `uptime` are overwritten** with the radar row's values:
 
 ```json
-{"ts": "...", "uptime": 86395, "occupied": 1, "occupancy_confidence": 73,
+{"ts": "...", "uptime": 86395, "occupied": 1, "confidence": 73,
  "online": true, "presence": 1, "stationary": 1, "moving": 0,
  "distance": 142, "signal": 37, "rssi": -61, "radar_connected": 1}
 ```
 
 Radar booleans are integers 0/1 here (as stored in SQLite).
-`occupancy_confidence` = `calculate_confidence(device, 15)` (0–100).
+`confidence` = `calculate_confidence(device)` (see "confidence" above).
 
 Plus:
 
@@ -112,13 +113,15 @@ Plus:
 "combined": {"occupied": 1, "confidence": 73}
 ```
 
+`combined` is the same as `occupied`/`confidence` in `/api/latest` (both null without recent radar data).
+
 Full example (abridged):
 
 ```json
 {
-  "home_ping_esp32": {"ts":"2026-10-13 19:42:15","temp":22.4,"humidity":48.3,"uptime":86405,"occupied":1,"occupancy_confidence":73,"dark":0,"co2":null,"pressure":1013.6,"online":true,"co2_ok":null,"presence":1,"stationary":1,"moving":0,"distance":142,"signal":37,"rssi":-61,"radar_connected":1},
-  "hallway_presence_esp32": {"temp":null,"humidity":null,"dark":null,"co2":null,"pressure":null,"ts":"2026-10-13 19:42:13","uptime":3605,"occupied":0,"occupancy_confidence":0,"online":true,"presence":0,"stationary":0,"moving":0,"distance":0,"signal":0,"rssi":-70,"radar_connected":1},
-  "co2_sensor_esp32": {"ts":"2026-10-13 19:41:58","temp":null,"humidity":null,"uptime":7260,"occupied":0,"occupancy_confidence":0,"dark":0,"co2":812,"pressure":null,"online":true,"co2_ok":true},
+  "home_ping_esp32": {"ts":"2026-10-13 19:42:15","temp":22.4,"humidity":48.3,"uptime":86405,"co2":null,"pressure":1013.6,"online":true,"co2_ok":null,"occupied":1,"confidence":73,"presence":1,"stationary":1,"moving":0,"distance":142,"signal":37,"rssi":-61,"radar_connected":1},
+  "hallway_presence_esp32": {"temp":null,"humidity":null,"co2":null,"pressure":null,"ts":"2026-10-13 19:42:13","uptime":3605,"occupied":0,"confidence":0,"online":true,"presence":0,"stationary":0,"moving":0,"distance":0,"signal":0,"rssi":-70,"radar_connected":1},
+  "co2_sensor_esp32": {"ts":"2026-10-13 19:41:58","temp":null,"humidity":null,"uptime":7260,"co2":812,"pressure":null,"online":true,"co2_ok":true},
   "combined": {"occupied":1,"confidence":73}
 }
 ```
@@ -127,47 +130,24 @@ Client: Android Home reads
 `home_ping_esp32.{temp, humidity, uptime}`, `hallway_presence_esp32.uptime`,
 `co2_sensor_esp32.{co2, uptime, co2_ok}`, `combined.{occupied, confidence}`.
 
-### GET `/api/history_combined`
-
-Last 30 rows across **all** devices, merging `readings` and `presence_readings`,
-ordered by `ts` DESC (string sort).
-Response: array of positional arrays:
-
-| Index | Value | Env rows | Radar rows |
-|---|---|---|---|
-| 0 | ts | string | string |
-| 1 | device | string | string |
-| 2 | temp | number/null | null |
-| 3 | humidity | number/null | null |
-| 4 | occupied | 0 (always) | 0/1 |
-| 5 | occupancy_confidence | 0 (always) | `100` if `moving`, else raw `signal` (0–100) |
-
-```json
-[["2026-10-13 19:42:15","home_ping_esp32",null,null,1,37],
- ["2026-10-13 19:42:10","home_ping_esp32",22.4,48.3,0,0]]
-```
-
-Client: Android Home "readings" table. Radar rows arrive every 5 s from two
-nodes, so the 30 rows usually cover only about 75 s and are almost all radar rows.
-
 ### GET `/api/stats24h_combined`
 
 24 h averages over **all** devices' env data plus radar occupancy stats. No params.
 
 ```json
 {"avg_temp": 22.1, "avg_humidity": 47.9, "avg_occupancy": 41.0,
- "avg_confidence": 38, "occupied_hours": 9.84, "coverage_hours": 24.0}
+ "occupied_hours": 9.84, "coverage_hours": 24.0}
 ```
 
 - `avg_temp`/`avg_humidity`: mean over all `readings` rows in the last 24 h with both non-null,
-  rounded to 1 dp. **`0` (not null) when there are no rows.**
+  rounded to 1 dp. null when there are no rows.
 - `avg_occupancy`: % (0–100, rounded to 0 dp) from `occupancy_stats(24)`. The highest-occupancy radar wins.
 - `occupied_hours`: that radar's span × occupied fraction (2 dp).
 - `coverage_hours`: longest per-radar span of data in the window (1 dp).
-- `avg_confidence`: `calculate_combined_confidence(60)`, i.e. **last 60 minutes**, not 24 h.
+- The three occupancy fields are null without radar data in the window.
 
 Client: Android Home reads `avg_temp` (double), `avg_humidity` (int),
-`avg_confidence` (int), `occupied_hours` (double).
+`avg_occupancy` (int), `occupied_hours` (double).
 
 ### GET `/api/hourly?device=<id>`
 
@@ -176,14 +156,14 @@ Env averages come from `readings` for `device` (default `home_ping_esp32`).
 Occupancy comes from `presence_readings` for `home_ping_esp32` only (`PRESENCE_DEVICE`).
 
 ```json
-[{"hour":"2026-10-13 19:00","avg_temp":22.3,"avg_humidity":48.0,"avg_occupancy":62.0,"avg_confidence":62.0}]
+[{"hour":"2026-10-13 19:00","avg_temp":22.3,"avg_humidity":48.0,"avg_occupancy":62.0}]
 ```
 
 - `avg_temp`/`avg_humidity`: number or null (1 dp).
-- `avg_occupancy`: mean(`occupied`)×100, rounded to 0 dp. `0` if no radar rows that hour.
-- `avg_confidence`: **identical to `avg_occupancy`**.
+- `avg_occupancy`: mean(`occupied`)×100, rounded to 0 dp. null if no radar rows that hour.
 
-Client: Android Home occupancy bar strip (reads `hour`, `avg_occupancy`; reverses the order).
+Client: Android Home occupancy bar strip and sparklines (reads `hour`, `avg_occupancy`,
+`avg_temp`, `avg_humidity`; reverses the order). A null `avg_occupancy` is drawn as "no data".
 
 ### GET `/api/air`
 
@@ -195,7 +175,7 @@ Latest CO2 and pressure from whichever device last reported them.
 ```
 
 - `co2`: integer ppm or null. Latest non-null `readings.co2` from any device.
-- `band`: `"good"` (<800), `"fair"` (<1200), `"stuffy"` (<2000), `"bad"` (≥2000), `"unknown"` (null).
+- `band`: `"good"` (<800), `"fair"` (<1200), `"stuffy"` (<2000), `"bad"` (≥2000), null when there is no CO2 reading.
 - `pressure`/`temp`/`humidity`: from the latest row with non-null `pressure`.
 - `pressure_3h_change`: hPa, latest pressure minus the newest reading at least 3 h old (1 dp), or null.
 - `ts`: env row ts if present, else co2 row ts, else null.
@@ -238,13 +218,14 @@ Request (JSON):
   (that table is for sensor nodes).
 - Subscribes the token to the FCM topic `env` (server side).
 - Response: `{"success": true}`.
-- Non-JSON or missing body → 500 (`request.json` is None).
+- Missing, non-JSON or non-object body → `400 {"error": "JSON object body required"}`.
 
 Client: Android `MainActivity.registerTokenServerSide` sends `{"token": ...}` only.
 
 ### POST `/api/occupancy_arm`
 
-Request: `{"armed": true|false}` (truthy/falsy, missing = false).
+Request: `{"armed": true|false}`. `armed` must be a JSON boolean; a missing or
+non-boolean `armed`, or a missing/non-JSON body, is a `400` and leaves the state unchanged.
 Sets `system_state.occupancy_armed` to `'1'`/`'0'` and logs event
 `OCCUPANCY_ARMED` (device `"system"`). Response: `{"armed": true|false}`.
 Client: Android Home toggle switch.
@@ -277,21 +258,15 @@ Client: Android Home, on startup, to set the toggle switch.
    longer calls `touch_device`, and the old `"unknown"` row is deleted on start.
 8. **Duplicate FCM topic subscription.** Android subscribes itself to topic `env`
    client-side *and* the backend subscribes the token server-side. This is harmless but redundant.
-9. **Positional array responses** (`/api/latest`, `/api/history_combined`) make
-   clients depend on column order.
-10. **`occupied`/`occupancy_confidence` in `readings` are always 0** (the backend hard-codes
-    them for env messages). They still appear in `/api/history_combined` env rows,
-    where they look like real data.
-11. **`dark` is always 0** (no firmware sends it) but is returned by `/api/latest`
-    and `/api/latest_all`.
-12. **`avg_confidence` doesn't mean the same thing everywhere.** In `/api/stats24h_combined` it covers the last 60 min,
-    not 24 h. In `/api/hourly` it equals `avg_occupancy`. In
-    `/api/history_combined` "confidence" for radar rows is `100`/`signal`, which is a different
-    quantity from `calculate_confidence`.
+9. ~~**Positional array responses**~~ Fixed in #14: `/api/latest` is an object,
+   `/api/history_combined` was removed.
+10. ~~**Always-0 `readings.occupied`/`occupancy_confidence`**~~ and
+11. ~~**always-0 `dark`**~~: dropped from the responses and the `readings` table in #14.
+12. ~~**`avg_confidence` doesn't mean the same thing everywhere.**~~ Fixed in #14: "confidence"
+    is the 15-min definition everywhere; the 60-min and hourly duplicates were removed.
 13. **Hallway radar is invisible to the occupancy column of `/api/hourly`**, which only
     uses `home_ping_esp32`.
-14. **Empty-state values don't match.** `/api/stats24h_combined` returns `0` instead of null
-    for no data, and `/api/latest` returns `[]`.
+14. ~~**Empty-state values don't match.**~~ Fixed in #14: null with status 200 everywhere.
 15. **Android config.** The server base URL and Basic-auth credentials come from the
     gitignored `android/local.properties` (`API_BASE_URL`, `API_USER`, `API_PASS`)
     via `BuildConfig`. `API_BASE_URL` has no trailing slash and falls back to
@@ -301,5 +276,4 @@ Client: Android Home, on startup, to set the toggle switch.
     `/api/stats24h`, `/api/occupancy_rolling`, `/api/presence/latest`,
     `/api/presence/history`, `/api/widget`, `/api/next-events` (and the broken Google
     OAuth helper `get_access_token`).
-17. **`HEARTBEAT_TIMEOUT` defined twice** (300 with comment "seconds", later 120).
-    The effective value is 120 s. Anyone reading the top of the file gets the wrong number.
+17. ~~**`HEARTBEAT_TIMEOUT` defined twice**~~ Fixed in #14: one definition, 120 s.

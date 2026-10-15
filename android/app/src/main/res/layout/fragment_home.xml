@@ -412,10 +412,10 @@
                     android:layout_weight="1"
                     android:layout_marginEnd="6dp">
 
-                    <TextView style="@style/HomeLabel" android:text="Avg confidence" />
+                    <TextView style="@style/HomeLabel" android:text="Avg occupancy" />
 
                     <TextView
-                        android:id="@+id/stats_avg_confidence"
+                        android:id="@+id/stats_avg_occupancy"
                         style="@style/HomeValue"
                         android:textSize="20sp"
                         android:text="--" />
@@ -436,32 +436,6 @@
                         android:text="--" />
                 </com.david.homeenv.ui.AccentCard>
             </LinearLayout>
-
-            <!-- Recent readings -->
-            <TextView
-                style="@style/HomeSection"
-                android:text="Recent readings" />
-
-            <com.david.homeenv.ui.AccentCard
-                style="@style/HomeCard"
-                android:paddingStart="0dp"
-                android:paddingEnd="0dp"
-                android:paddingTop="4dp"
-                android:paddingBottom="4dp">
-
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:scrollbars="none">
-
-                    <TableLayout
-                        android:id="@+id/readings_table"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp" />
-                </HorizontalScrollView>
-            </com.david.homeenv.ui.AccentCard>
 
         </LinearLayout>
     </ScrollView>

@@ -13,8 +13,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
-import android.widget.TableLayout
-import android.widget.TableRow
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -102,9 +100,8 @@ class HomeFragment : Fragment() {
     private lateinit var restartsValue: TextView
     private lateinit var statsAvgTemp: TextView
     private lateinit var statsAvgHumidity: TextView
-    private lateinit var statsAvgConfidence: TextView
+    private lateinit var statsAvgOccupancy: TextView
     private lateinit var statsOccupiedHours: TextView
-    private lateinit var readingsTable: TableLayout
 
     private val refreshLoop = object : Runnable {
         override fun run() {
@@ -160,9 +157,8 @@ class HomeFragment : Fragment() {
         restartsValue = view.findViewById(R.id.restarts_value)
         statsAvgTemp = view.findViewById(R.id.stats_avg_temp)
         statsAvgHumidity = view.findViewById(R.id.stats_avg_humidity)
-        statsAvgConfidence = view.findViewById(R.id.stats_avg_confidence)
+        statsAvgOccupancy = view.findViewById(R.id.stats_avg_occupancy)
         statsOccupiedHours = view.findViewById(R.id.stats_occupied_hours)
-        readingsTable = view.findViewById(R.id.readings_table)
 
         occLegend.text = buildLegend()
         swipeRefresh.setOnRefreshListener { loadDashboardData() }
@@ -206,7 +202,6 @@ class HomeFragment : Fragment() {
         val devices: JSONArray?,
         val stats: JSONObject?,
         val restarts: JSONObject?,
-        val history: JSONArray?,
         val air: JSONObject?,
         val hourly: JSONArray?,
     )
@@ -218,7 +213,6 @@ class HomeFragment : Fragment() {
                 devices = getArray("/api/devices"),
                 stats = getObject("/api/stats24h_combined"),
                 restarts = getObject("/api/restarts"),
-                history = getArray("/api/history_combined"),
                 air = getObject("/api/air"),
                 hourly = getArray("/api/hourly"),
             )
@@ -285,7 +279,6 @@ class HomeFragment : Fragment() {
         renderDevices(s.devices, s.latest)
         s.restarts?.let { renderRestarts(it) }
         s.stats?.let { renderStats(it) }
-        s.history?.let { renderHistory(it) }
         updateAges()
     }
 
@@ -324,11 +317,16 @@ class HomeFragment : Fragment() {
 
         // Occupied now: combined radar state
         latest.optJSONObject("combined")?.let { combined ->
-            val occupied = combined.optInt("occupied") == 1
-            occupiedValue.text = if (occupied) "Yes" else "No"
-            Levels.applyChip(occupiedChip, if (occupied) Level("Occupied", R.color.good) else Level("Vacant", R.color.muted))
-            cardOccNow.accentColor = Levels.color(requireContext(), if (occupied) R.color.good else R.color.faint)
-            confidenceValue.text = "confidence ${combined.optInt("confidence")}%"
+            // Both null when no radar reported recently
+            val occupied = combined.optNum("occupied")?.let { it == 1.0 }
+            occupiedValue.text = when (occupied) { true -> "Yes"; false -> "No"; null -> "--" }
+            Levels.applyChip(occupiedChip, when (occupied) {
+                true -> Level("Occupied", R.color.good)
+                false -> Level("Vacant", R.color.muted)
+                null -> null
+            })
+            cardOccNow.accentColor = Levels.color(requireContext(), if (occupied == true) R.color.good else R.color.faint)
+            confidenceValue.text = "confidence " + (combined.optNum("confidence")?.let { "%.0f%%".format(Locale.US, it) } ?: "--")
         }
     }
 
@@ -453,42 +451,8 @@ class HomeFragment : Fragment() {
     private fun renderStats(stats: JSONObject) {
         statsAvgTemp.text = valueWithUnit(stats.optNum("avg_temp")?.let { "%.1f".format(Locale.US, it) }, "°C")
         statsAvgHumidity.text = valueWithUnit(stats.optNum("avg_humidity")?.let { "%.0f".format(Locale.US, it) }, "%")
-        statsAvgConfidence.text = valueWithUnit(stats.optNum("avg_confidence")?.let { "%.0f".format(Locale.US, it) }, "%")
+        statsAvgOccupancy.text = valueWithUnit(stats.optNum("avg_occupancy")?.let { "%.0f".format(Locale.US, it) }, "%")
         statsOccupiedHours.text = stats.optNum("occupied_hours")?.let { formatHours(it) } ?: "--"
-    }
-
-    private fun renderHistory(history: JSONArray) {
-        readingsTable.removeAllViews()
-        readingsTable.addView(tableRow(listOf("Time", "Source", "Temp", "Hum", "Occ", "Conf"), header = true))
-        val outFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
-        for (i in 0 until history.length()) {
-            val r = history.optJSONArray(i) ?: continue
-            val time = parseTs(r.optString(0))?.let(outFormat::format) ?: r.optString(0)
-            val device = r.optString(1)
-            val source = DEVICE_NAMES[device] ?: device
-            val temp = if (r.isNull(2)) "—" else "%.1f°".format(Locale.US, r.optDouble(2))
-            val hum = if (r.isNull(3)) "—" else "%.0f%%".format(Locale.US, r.optDouble(3))
-            val occ = if (r.optInt(4) == 1) "Yes" else "No"
-            val conf = "${r.optInt(5)}%"
-            readingsTable.addView(tableRow(listOf(time, source, temp, hum, occ, conf), header = false))
-        }
-    }
-
-    private fun tableRow(cells: List<String>, header: Boolean): TableRow {
-        val ctx = requireContext()
-        val d = resources.displayMetrics.density
-        return TableRow(ctx).apply {
-            cells.forEach { value ->
-                addView(TextView(ctx).apply {
-                    text = if (header) value.uppercase(Locale.US) else value
-                    textSize = if (header) 11f else 13f
-                    if (header) letterSpacing = 0.06f
-                    setTextColor(Levels.color(ctx, if (header) R.color.muted else R.color.text))
-                    fontFeatureSettings = "tnum"
-                    setPadding((8 * d).toInt(), (8 * d).toInt(), (12 * d).toInt(), (8 * d).toInt())
-                })
-            }
-        }
     }
 
     // ---------- ages / staleness ----------
