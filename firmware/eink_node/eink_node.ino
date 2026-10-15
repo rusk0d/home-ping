@@ -129,7 +129,12 @@ void connectMQTT() {
     char clientId[64];
     snprintf(clientId, sizeof(clientId), "%s_%llx", DEVICE_NAME, ESP.getEfuseMac());
 
-    if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS)) {
+    // Last will: if this node drops off, the broker publishes "offline" (retained)
+    // on home/esp32/<device>/status about 1.5 x keepalive later (#13)
+    char statusTopic[64];
+    snprintf(statusTopic, sizeof(statusTopic), "home/esp32/%s/status", DEVICE_NAME);
+    if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS, statusTopic, 1, true, "offline")) {
+      mqttClient.publish(statusTopic, "online", true);
       Serial.println(" connected!");
     } else {
       Serial.print(" failed, rc=");
