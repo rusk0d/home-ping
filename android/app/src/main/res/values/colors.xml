@@ -22,17 +22,6 @@
     <color name="accent_pres">#b18cff</color>
     <color name="accent_co2">#3ecf8e</color>
 
-    <!-- Older names, still used by the Plants tab and activity layout -->
-    <color name="dark_background">@color/bg</color>
-    <color name="dark_surface">@color/card</color>
-    <color name="dark_primary">@color/card</color>
-    <color name="dark_secondary">@color/card_edge</color>
-    <color name="text_primary">@color/text</color>
-    <color name="text_secondary">@color/muted</color>
-    <color name="status_online">@color/good</color>
-    <color name="status_offline">@color/bad</color>
-    <color name="status_warning">@color/ok</color>
-
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>
