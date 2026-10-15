@@ -50,6 +50,9 @@ MQTT_PASS = os.environ["MQTT_PASS"]
 TOPIC = "home/esp32/#"  # Subscribe to all topics under home/esp32/
 EVENTS_RETENTION_DAYS = 30    # events older than this are deleted
 DEVICES_RETENTION_DAYS = 30   # devices not seen for this long are removed from the list
+NODE_OFFLINE_ALERT_SECONDS = 300  # no data this long -> "node offline" push (longer than
+                                  # HEARTBEAT_TIMEOUT so a reboot or WiFi blip doesn't alert)
+NODE_CHECK_INTERVAL = 30          # seconds between offline checks
 HEARTBEAT_TIMEOUT = 120  # seconds without a message before a device counts as offline
 FIREBASE_CRED = "firebase_service_account.json"
 LAST_UPTIME = {}
@@ -226,6 +229,8 @@ def touch_device(device):
               (f"-{DEVICES_RETENTION_DAYS} days",))
     conn.commit()
     conn.close()
+    if device in NODE_OFFLINE:
+        node_back_online(device)
 
 def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None):
     conn = sqlite3.connect(DB)
@@ -570,12 +575,13 @@ def load_alert_state():
     conn = sqlite3.connect(DB)
     rows = conn.execute("""
         SELECT key, value FROM system_state
-        WHERE key LIKE 'cooldown:%' OR key LIKE 'radar_alerted:%'
+        WHERE key LIKE 'cooldown:%' OR key LIKE 'radar_alerted:%' OR key LIKE 'node_offline:%'
     """).fetchall()
     conn.close()
     cooldowns = {k[len("cooldown:"):]: float(v) for k, v in rows if k.startswith("cooldown:")}
     alerted = {k[len("radar_alerted:"):] for k, v in rows if k.startswith("radar_alerted:") and v == "1"}
-    return cooldowns, alerted
+    offline = {k[len("node_offline:"):] for k, v in rows if k.startswith("node_offline:") and v == "1"}
+    return cooldowns, alerted, offline
 
 
 def set_cooldown(key, started):
@@ -591,7 +597,79 @@ def set_radar_alerted(device, alerted):
     set_state(f"radar_alerted:{device}", "1" if alerted else "0")
 
 
-LAST_NOTIFICATION, RADAR_ALERTED = load_alert_state()
+LAST_NOTIFICATION, RADAR_ALERTED, NODE_OFFLINE = load_alert_state()
+NODE_LOCK = threading.Lock()  # offline checks (own thread) vs. messages (MQTT thread)
+STARTED_AT = time.time()
+
+
+# -------------------------
+# NODE OFFLINE / BACK ONLINE (#13)
+# -------------------------
+# Decided on data, not on the MQTT last will: the nodes reconnect with a fixed
+# client ID, so after a short WiFi drop the broker publishes the old session's
+# "offline" just as the node comes back. A node is offline when it hasn't sent
+# anything for NODE_OFFLINE_ALERT_SECONDS. One push per outage, one when it's
+# back; both use event NODE_STATUS so the "back" push replaces the "offline" one
+# in the app (same notification slot).
+def check_nodes():
+    # Right after a backend restart every last_seen is old: give the nodes time to report
+    if time.time() - STARTED_AT < NODE_OFFLINE_ALERT_SECONDS:
+        return
+    conn = sqlite3.connect(DB)
+    rows = conn.execute("SELECT device, last_seen FROM devices").fetchall()
+    conn.close()
+    now = datetime.now()
+    for device, last_seen in rows:
+        age = (now - datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")).total_seconds()
+        if age < NODE_OFFLINE_ALERT_SECONDS:
+            continue
+        with NODE_LOCK:
+            if device in NODE_OFFLINE:
+                continue
+            if time.time() - LAST_NOTIFICATION.get(f"NODE_{device}", 0) <= NOTIFICATION_COOLDOWN:
+                continue
+            if alert(device, "NODE_OFFLINE", f"last seen {last_seen}",
+                     title="Node offline",
+                     body=f"{device}: no data for {int(age // 60)} min",
+                     data={"event": "NODE_STATUS", "status": "offline", "device": device},
+                     cooldown_key=f"NODE_{device}"):
+                set_node_offline(device, True)
+
+
+def node_back_online(device):
+    with NODE_LOCK:
+        if device not in NODE_OFFLINE:
+            return
+        set_node_offline(device, False)
+        alert(device, "NODE_ONLINE", "data again",
+              title="Node back online",
+              body=f"{device} is sending data again",
+              data={"event": "NODE_STATUS", "status": "online", "device": device})
+
+
+def set_node_offline(device, offline):
+    if offline:
+        NODE_OFFLINE.add(device)
+    else:
+        NODE_OFFLINE.discard(device)
+    set_state(f"node_offline:{device}", "1" if offline else "0")
+
+
+def node_check_loop():
+    while True:
+        time.sleep(NODE_CHECK_INTERVAL)
+        try:
+            check_nodes()
+        except Exception as e:
+            print("[NODES] offline check failed:", e)
+
+
+def handle_status(device, status):
+    """home/esp32/<device>/status: "online" on connect, "offline" as the node's last will."""
+    print(f"[STATUS] {device}: {status}")
+    log_event(device, "STATUS", status)
+    if status == "online":
+        touch_device(device)   # a sign of life; "offline" (sent by the broker) is not
 RADAR_FAIL_COUNT = {}  # consecutive radar_connected=false messages (in memory; 12 needed to alert)
 NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
 PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
@@ -612,6 +690,12 @@ def on_message(client, userdata, msg):
         print(f"[MQTT] Skipping retained message on {msg.topic}")
         return
     try:
+        # home/esp32/<device>/status carries plain "online"/"offline" (#13)
+        parts = msg.topic.split("/")
+        if len(parts) == 4 and parts[3] == "status":
+            handle_status(parts[2], msg.payload.decode().strip())
+            return
+
         data = json.loads(msg.payload.decode())
 
         if "presence" in data:
@@ -734,6 +818,7 @@ def on_disconnect(client, userdata, rc):
 mqttc.on_disconnect = on_disconnect
 
 threading.Thread(target=hourly_occupancy_loop, daemon=True).start()
+threading.Thread(target=node_check_loop, daemon=True).start()
 # -------------------------
 # API ROUTES
 # -------------------------
