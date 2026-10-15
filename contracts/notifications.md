@@ -9,11 +9,13 @@ Status: draft, reverse-engineered from `backend/server.py` and
 - Backend: `firebase_admin.messaging.send()`, using the service account at
   `firebase_service_account.json` (relative to the backend's working directory).
 - Target: **FCM topic `env`** for every push. No per-device tokens are targeted.
-- Every message has both a `notification` block (`title`, `body`) and a `data` map.
-  FCM requires all `data` values to be strings.
-- Send failures are caught and printed (`[ERROR] Failed to send push`). There's no retry
-  and the failure isn't recorded in the DB. The matching `events` row and cooldown
-  are still recorded after a failed send.
+- **Data-only messages** (since #12): no `notification` block. `title` and `body` travel
+  in the `data` map next to `event`, `device`, etc., so the Android app always builds the
+  notification itself (also in the background). FCM requires all `data` values to be strings.
+- `android.priority = "high"`, so data messages are delivered while the phone is in Doze.
+- `send_push()` returns whether FCM accepted the message. `alert()` logs the matching
+  `events` row as `sent, ...` or `failed, ...`. The cooldown only starts after a
+  successful send; a failed send is retried after `PUSH_RETRY_SECONDS` (60 s).
 
 ### Subscription to topic `env`
 
@@ -25,19 +27,19 @@ Status: draft, reverse-engineered from `backend/server.py` and
 
 ### Android handling
 
-- `onMessageReceived` reads only `notification.title` (fallback `"HomeEnv Alert"`)
-  and `notification.body`, and posts a local notification on channel
-  `homeenv_channel` ("HomeEnv Notifications", IMPORTANCE_HIGH). Tapping it opens `MainActivity`.
-- The **`data` map is ignored** by the app.
-- Every notification uses ID `0`, so a new alert replaces the previous one in the tray.
-- **UNCERTAIN**: when the app is in the background, FCM shows `notification` messages
-  in the system tray itself and `onMessageReceived` isn't called. Those alerts then
-  use the default channel and icon, not `homeenv_channel`.
+- `onMessageReceived` reads `title`/`body`/`event`/`device` from `data`, falling back to
+  a `notification` block (older backends). Tapping the notification opens `MainActivity`.
+- Channels (created at app start, IMPORTANCE_HIGH): `occupancy` ("Occupancy alerts") for
+  `OCCUPIED`, `homeenv_channel` ("Sensor alerts") for everything else. The manifest makes
+  `homeenv_channel` FCM's default channel for notification messages it shows itself.
+- Notification ID = hash of `event/device`: a repeat of the same alert replaces the
+  previous one, different alerts stack.
 
 ## Cooldowns and state
 
-- `NOTIFICATION_COOLDOWN = 10 * 90` = **900 s (15 min)**, per alert key, stored in memory
-  (`LAST_NOTIFICATION`). All of it resets on backend restart.
+- `NOTIFICATION_COOLDOWN = 15 * 60` = **900 s (15 min)**, per alert key, stored in memory
+  (`LAST_NOTIFICATION`). All of it resets on backend restart. Starts only after a
+  successful send (failed sends retry after 60 s).
 - Cooldown keys: `HUMIDITY_<device>` (shared by high and low), `TEMP_<device>`,
   `SOIL_DRY_<device>`, `RADAR_<device>`. The occupancy alert has **no cooldown key**.
 
@@ -47,16 +49,17 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 ### 1. Humidity high: `HUMIDITY_HIGH`
 
-- Trigger: an env MQTT message (no `presence`, no `moisture`+`raw`) with both
-  `temp_c` and `humidity` present, `humidity > 65`, and no humidity push for this
+- Trigger: an env MQTT message (no `presence`, no `moisture`+`raw`) with `humidity`
+  present (`temp_c` not needed), `humidity > 65`, and no humidity push for this
   device in the last 900 s. Currently only `home_ping_esp32` via `home/esp32/bme280`.
 - Notification: title `Humidity Alert`, body `Humidity is high: {hum:.1f}%`
-- Data: `{"event": "HUMIDITY_HIGH", "device": "<device>"}`
+- Data: `{"event": "HUMIDITY_HIGH", "device": "<device>"}` (plus `title`, `body`)
 - Also logs event `HUMIDITY_HIGH_ALERT`.
 
 ```json
-{"notification":{"title":"Humidity Alert","body":"Humidity is high: 67.2%"},
- "data":{"event":"HUMIDITY_HIGH","device":"home_ping_esp32"},"topic":"env"}
+{"data":{"title":"Humidity Alert","body":"Humidity is high: 67.2%",
+         "event":"HUMIDITY_HIGH","device":"home_ping_esp32"},
+ "android":{"priority":"high"},"topic":"env"}
 ```
 
 ### 2. Humidity low: `HUMIDITY_LOW`
@@ -68,7 +71,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 ### 3. Temperature low: `TEMP`
 
-- Trigger: env message with `temp_c` and `humidity` present, `temp_c < 18`, cooldown 900 s per device.
+- Trigger: env message with `temp_c` present (`humidity` not needed), `temp_c < 18`, cooldown 900 s per device.
 - Notification: title `Temperature Alert`, body `Temperature is low on {device}: {temp:.1f}°C`
 - Data: `{"event": "TEMP", "device": "<device>"}`
 - Logs event `TEMP_ALERT`.
@@ -79,8 +82,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 - Trigger: presence message where `RADAR_FAIL_COUNT[device] >= 12` (12 consecutive
   messages with `radar_connected=false`, ~60 s at 5 s intervals), and no radar push
   for this device in the last 900 s.
-- The counter resets only when `radar_connected=true` arrives, so while the radar
-  stays disconnected **the push repeats every 15 min**.
+- **Once per outage**: after a successful push the device is in `RADAR_ALERTED` until
+  `radar_connected=true` arrives, so a long outage doesn't repeat the push.
 - Notification: title `Radar Disconnected`, body `{device}: LD2410C not responding`
 - Data: `{"event": "RADAR_DISCONNECTED", "device": "<device>"}`
 - Logs event `RADAR_DISCONNECTED`.
@@ -123,29 +126,26 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 | `HUMIDITY_HIGH` | Humidity Alert | humidity > 65 %RH | 15 min/device (shared with LOW) | env msg |
 | `HUMIDITY_LOW` | Humidity Alert | humidity < 25 %RH | 15 min/device (shared with HIGH) | env msg |
 | `TEMP` | Temperature Alert | temp < 18 °C | 15 min/device | env msg |
-| `RADAR_DISCONNECTED` | Radar Disconnected | ≥12 consecutive `radar_connected=false` | 15 min/device, repeats | presence msg |
+| `RADAR_DISCONNECTED` | Radar Disconnected | ≥12 consecutive `radar_connected=false` | once per outage | presence msg |
 | `OCCUPIED` | Occupancy Alert | armed, moving, ≥60 min quiet | none | presence msg |
 | `SOIL_DRY` | Plant Needs Water | moisture < 25 | 15 min/device | soil msg |
 
 ## Mismatches and issues
 
-1. **The `data` payload is unused.** The backend sends `event`/`device`/etc., but the Android
-   app only reads `notification.title`/`body`.
+1. ~~**The `data` payload is unused.**~~ Fixed in #12: data-only messages, the app reads `data`.
 2. **Cooldowns reset on backend restart, and retained MQTT messages are replayed on
    reconnect.** A restart while humidity is above 65 or temp is below 18 sends the alert again
    immediately, even if one was sent minutes earlier.
-3. **Failed sends still start the cooldown and log `*_ALERT` events** with value "sent",
-   so the events table can claim a push went out when it didn't.
+3. ~~**Failed sends still start the cooldown and log "sent".**~~ Fixed in #12: logged as
+   `failed, ...`, retried after 60 s.
 4. **The soil threshold differs from Android's.** The backend alerts below 25. The app's "Needs Water"
    label shows below 30.
 5. **`moisture` missing in a soil message crashes the soil handler.** `moisture < 25` with None raises
    `TypeError`. It's caught in `on_message`, but only after the DB row was written.
-6. **The `NOTIFICATION_COOLDOWN` expression is misleading.** `10 * 90` = 900 s matches the "15 minutes"
-   comment, but reads like a typo for `15 * 60`. Worth confirming the intended value.
-7. **The temperature/humidity alerts gate on both values.** A device that sends only `temp_c` (or only
-   `humidity`) never alerts on either.
+6. ~~**The `NOTIFICATION_COOLDOWN` expression is misleading.**~~ Fixed in #12: `15 * 60`.
+7. ~~**The temperature/humidity alerts gate on both values.**~~ Fixed in #12: each needs only its own value.
 8. **There's no device-offline push**, even though heartbeat data exists. When a node drops off, Android only
    shows it if someone opens the app.
-9. **Notification ID 0 is reused**, so multiple alerts collapse into one in the Android tray.
+9. ~~**Notification ID 0 is reused.**~~ Fixed in #12: one ID per `event/device`.
 10. **Duplicate topic subscription.** The client-side and server-side subscriptions to `env` are redundant. If the backend
     `register_token` call fails, the client-side subscription still works.
