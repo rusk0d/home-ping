@@ -20,7 +20,8 @@ Status: draft, reverse-engineered from `backend/server.py` and
 - Android `MainActivity.onCreate` calls `FirebaseMessaging.subscribeToTopic("env")`.
 - Android also sends its token to `POST /api/register_token`, and the backend calls
   `messaging.subscribe_to_topic([token], "env")`.
-- `MyFirebaseMessagingService.onNewToken` only logs the token. It doesn't re-register.
+- `MyFirebaseMessagingService.onNewToken` re-registers a rotated token with
+  `POST /api/register_token` (`PushRegistration`, shared with `MainActivity`).
 
 ### Android handling
 
