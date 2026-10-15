@@ -679,24 +679,29 @@ HUMIDITY_LOW_THRESHOLD = 25
 CONFIDENCE_THRESHOLD = 65
 
 def on_message(client, userdata, msg):
-    print(f"[MQTT] Received message on topic: {msg.topic}")
-    print(f"[MQTT] Payload: {msg.payload.decode()}")
-    # The broker replays the last retained message of each topic when we
-    # (re)subscribe, with the retain flag set. That's an old reading: storing it
-    # would add a duplicate row with a fresh ts and could re-send alerts (#5).
-    # Live messages arrive without the flag. The firmware keeps retaining for
-    # the web page, which wants the last value immediately.
-    if msg.retain:
-        print(f"[MQTT] Skipping retained message on {msg.topic}")
-        return
+    # Nothing may escape this callback: paho re-raises callback exceptions, which
+    # ends its network thread and silently stops all ingestion (#58). So the whole
+    # body is in the try, and the payload is decoded leniently (bad bytes -> U+FFFD).
     try:
+        payload = msg.payload.decode("utf-8", errors="replace")
+        print(f"[MQTT] Received message on topic: {msg.topic}")
+        print(f"[MQTT] Payload: {payload}")
+        # The broker replays the last retained message of each topic when we
+        # (re)subscribe, with the retain flag set. That's an old reading: storing it
+        # would add a duplicate row with a fresh ts and could re-send alerts (#5).
+        # Live messages arrive without the flag. The firmware keeps retaining for
+        # the web page, which wants the last value immediately.
+        if msg.retain:
+            print(f"[MQTT] Skipping retained message on {msg.topic}")
+            return
+
         # home/esp32/<device>/status carries plain "online"/"offline" (#13)
         parts = msg.topic.split("/")
         if len(parts) == 4 and parts[3] == "status":
-            handle_status(parts[2], msg.payload.decode().strip())
+            handle_status(parts[2], payload.strip())
             return
 
-        data = json.loads(msg.payload.decode())
+        data = json.loads(payload)
 
         if "presence" in data:
             handle_presence_data(data, msg.topic)
@@ -752,7 +757,7 @@ def on_message(client, userdata, msg):
                   cooldown_key=f"TEMP_{device}")
 
     except Exception as e:
-        print("MQTT error:", e)
+        print("MQTT error:", repr(e), "on", getattr(msg, "topic", "?"))
 
 # -------------------------
 # MQTT SETUP
