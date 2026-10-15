@@ -2,7 +2,8 @@ import json
 import sqlite3
 import os
 import re
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, abort
+from werkzeug.exceptions import HTTPException
 from datetime import datetime, timedelta
 import paho.mqtt.client as mqtt
 from functools import wraps
@@ -47,7 +48,7 @@ MQTT_PORT = 1883
 MQTT_USER = os.environ["MQTT_USER"]
 MQTT_PASS = os.environ["MQTT_PASS"]
 TOPIC = "home/esp32/#"  # Subscribe to all topics under home/esp32/
-HEARTBEAT_TIMEOUT = 300  # seconds
+HEARTBEAT_TIMEOUT = 120  # seconds without a message before a device counts as offline
 FIREBASE_CRED = "firebase_service_account.json"
 LAST_UPTIME = {}
 UPTIME_DROP_TOLERANCE = 120   # seconds; see note below
@@ -60,6 +61,26 @@ OCCUPANCY_HOURLY_TOPIC = "home/backend/occupancy_hourly"
 OCCUPANCY_HOURLY_INTERVAL = 300  # seconds
 
 app = Flask(__name__)
+
+
+@app.errorhandler(HTTPException)
+def http_error(e):
+    """API errors as JSON ({"error": ...}) instead of Flask's HTML pages."""
+    return jsonify({"error": e.description}), e.code
+
+
+@app.errorhandler(Exception)
+def server_error(e):
+    print(f"[ERROR] {request.path}: {e!r}")
+    return jsonify({"error": "internal error"}), 500
+
+
+def json_body():
+    """The request's JSON object, or a 400 if the body is missing or not a JSON object."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        abort(400, description="JSON object body required")
+    return data
 
 # -------------------------
 # FIREBASE INIT
@@ -88,7 +109,8 @@ def init_db():
             occupancy_confidence INTEGER,
             dark INTEGER,
             co2 INTEGER,
-            pressure REAL
+            pressure REAL,
+            co2_ok INTEGER
         )
     """)
 
@@ -96,7 +118,8 @@ def init_db():
     # removed init_db.py, which had only id/ts/temp/humidity)
     for col, coltype in (("device", "TEXT"), ("uptime", "INTEGER"),
                          ("occupied", "INTEGER"), ("occupancy_confidence", "INTEGER"),
-                         ("dark", "INTEGER"), ("co2", "INTEGER"), ("pressure", "REAL")):
+                         ("dark", "INTEGER"), ("co2", "INTEGER"), ("pressure", "REAL"),
+                         ("co2_ok", "INTEGER")):
         try:
             c.execute(f"ALTER TABLE readings ADD COLUMN {col} {coltype}")
         except sqlite3.OperationalError:
@@ -173,16 +196,16 @@ def touch_device(device):
     conn.commit()
     conn.close()
 
-def log_to_db(device, temp, hum, uptime, occupied, conf, dark, co2=None, pressure=None):
+def log_to_db(device, temp, hum, uptime, occupied, conf, dark, co2=None, pressure=None, co2_ok=None):
     conn = sqlite3.connect(DB)
     c = conn.cursor()
 
     c.execute("""
         INSERT INTO readings
         (device, ts, temp, humidity, uptime, occupied, occupancy_confidence,
-         dark, co2, pressure)
-        VALUES (?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (device, temp, hum, uptime, occupied, conf, dark, co2, pressure))
+         dark, co2, pressure, co2_ok)
+        VALUES (?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (device, temp, hum, uptime, occupied, conf, dark, co2, pressure, co2_ok))
 
     c.execute("""
         DELETE FROM readings
@@ -502,13 +525,11 @@ def handle_presence_data(data, topic):
 LAST_NOTIFICATION = {}
 RADAR_FAIL_COUNT = {}
 RADAR_ALERTED = set()  # radars whose current outage was already pushed
-CO2_SENSOR_OK = {}
 NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
 PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
 TEMP_THRESHOLD = 18
 HUMIDITY_HIGH_THRESHOLD = 65
 HUMIDITY_LOW_THRESHOLD = 25
-HEARTBEAT_TIMEOUT = 120  # seconds before device is considered offline
 CONFIDENCE_THRESHOLD = 65
 
 def on_message(client, userdata, msg):
@@ -530,12 +551,13 @@ def on_message(client, userdata, msg):
         co2 = data.get("co2")
         pressure = data.get("pressure")
 
+        # co2_ok is stored with the reading so it survives a backend restart
+        co2_ok = (1 if data["co2_ok"] else 0) if "co2_ok" in data else None
+
         # occupied / confidence intentionally 0 for non-radar devices
-        log_to_db(device, temp, hum, uptime, 0, 0, dark, co2, pressure)
+        log_to_db(device, temp, hum, uptime, 0, 0, dark, co2, pressure, co2_ok)
         touch_device(device)
-        note_uptime(device, uptime)        
-        if "co2_ok" in data:
-            CO2_SENSOR_OK[device] = bool(data["co2_ok"])
+        note_uptime(device, uptime)
 
         now = time.time()
 
@@ -704,7 +726,7 @@ def latest_all():
     c.execute("SELECT DISTINCT device FROM readings")
     for device in [row[0] for row in c.fetchall()]:
         c.execute("""
-            SELECT ts, temp, humidity, uptime, dark, co2, pressure
+            SELECT ts, temp, humidity, uptime, dark, co2, pressure, co2_ok
             FROM readings
             WHERE device = ?
             ORDER BY id DESC LIMIT 1
@@ -724,7 +746,7 @@ def latest_all():
             "co2": row[5],
             "pressure": row[6],
             "online": is_online(device),
-            "co2_ok": CO2_SENSOR_OK.get(device),            
+            "co2_ok": None if row[7] is None else bool(row[7]),
         }
 
     # ---- Radar nodes: merge in, or add if they have no env readings ----
@@ -930,7 +952,7 @@ def devices():
 @app.route("/api/register_token", methods=["POST"])
 @require_auth
 def register_token():
-    data = request.json
+    data = json_body()
     token = data.get("token")
 
     if not token:
@@ -944,8 +966,10 @@ def register_token():
 @app.route("/api/occupancy_arm", methods=["POST"])
 @require_auth
 def occupancy_arm():
-    data = request.json or {}
-    armed = "1" if data.get("armed") else "0"
+    data = json_body()
+    if not isinstance(data.get("armed"), bool):
+        return jsonify({"error": '"armed" (true/false) required'}), 400
+    armed = "1" if data["armed"] else "0"
     set_state("occupancy_armed", armed)
     log_event("system", "OCCUPANCY_ARMED", armed)
     return jsonify({"armed": armed == "1"})
