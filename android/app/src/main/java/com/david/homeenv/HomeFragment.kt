@@ -7,7 +7,6 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
-import android.util.Base64
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -15,19 +14,12 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.david.homeenv.databinding.FragmentHomeBinding
 import com.david.homeenv.ui.AccentCard
-import com.david.homeenv.ui.Co2GaugeView
 import com.david.homeenv.ui.Level
 import com.david.homeenv.ui.Levels
-import com.david.homeenv.ui.OccupancyBarsView
 import com.david.homeenv.ui.SparklineView
 import com.google.android.material.snackbar.Snackbar
-import com.google.android.material.switchmaterial.SwitchMaterial
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -40,10 +32,6 @@ import kotlin.concurrent.thread
 class HomeFragment : Fragment() {
 
     companion object {
-        private val client = OkHttpClient()
-        private val authHeader = "Basic " + Base64.encodeToString(
-            "${BuildConfig.API_USER}:${BuildConfig.API_PASS}".toByteArray(), Base64.NO_WRAP
-        )
         private const val REFRESH_MS = 60_000L
         private const val AGE_TICK_MS = 10_000L
         // Seconds without a new reading before a card is dimmed (~3 missed publishes, as on the web)
@@ -56,53 +44,12 @@ class HomeFragment : Fragment() {
         private val DEVICE_NAMES = linkedMapOf(MAIN to "Main node", HALLWAY to "Hallway radar", CO2 to "CO₂ node")
     }
 
-    private fun url(path: String) = "${BuildConfig.API_BASE_URL}$path"
-
     private val handler = Handler(Looper.getMainLooper())
     private val serverTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
     // Timestamps of the latest readings, for the "x ago" labels and stale dimming
     private var envTs: Date? = null
     private var co2Ts: Date? = null
-
-    private lateinit var swipeRefresh: SwipeRefreshLayout
-    private lateinit var occupancySwitch: SwitchMaterial
-    private lateinit var occupancyStatus: TextView
-    private lateinit var cardTemp: AccentCard
-    private lateinit var cardHum: AccentCard
-    private lateinit var cardPres: AccentCard
-    private lateinit var cardOccNow: AccentCard
-    private lateinit var cardCo2: AccentCard
-    private lateinit var tempValue: TextView
-    private lateinit var tempChip: TextView
-    private lateinit var tempAge: TextView
-    private lateinit var tempSpark: SparklineView
-    private lateinit var tempRange: TextView
-    private lateinit var humidityValue: TextView
-    private lateinit var humidityChip: TextView
-    private lateinit var humidityAge: TextView
-    private lateinit var humiditySpark: SparklineView
-    private lateinit var humidityRange: TextView
-    private lateinit var pressureValue: TextView
-    private lateinit var pressureChip: TextView
-    private lateinit var pressureTrend: TextView
-    private lateinit var occupiedValue: TextView
-    private lateinit var occupiedChip: TextView
-    private lateinit var confidenceValue: TextView
-    private lateinit var co2Value: TextView
-    private lateinit var co2Chip: TextView
-    private lateinit var co2Gauge: Co2GaugeView
-    private lateinit var co2SensorStatus: TextView
-    private lateinit var co2Age: TextView
-    private lateinit var occSummary: TextView
-    private lateinit var occBars: OccupancyBarsView
-    private lateinit var occLegend: TextView
-    private lateinit var devicesList: LinearLayout
-    private lateinit var restartsValue: TextView
-    private lateinit var statsAvgTemp: TextView
-    private lateinit var statsAvgHumidity: TextView
-    private lateinit var statsAvgOccupancy: TextView
-    private lateinit var statsOccupiedHours: TextView
 
     private val refreshLoop = object : Runnable {
         override fun run() {
@@ -117,53 +64,25 @@ class HomeFragment : Fragment() {
         }
     }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? =
-        inflater.inflate(R.layout.fragment_home, container, false)
+    // View binding; only valid between onCreateView and onDestroyView
+    private var _b: FragmentHomeBinding? = null
+    private val b get() = _b!!
+
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
+        _b = FragmentHomeBinding.inflate(inflater, container, false)
+        return b.root
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _b = null
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        swipeRefresh = view.findViewById(R.id.swipeRefresh)
-        occupancySwitch = view.findViewById(R.id.occupancySwitch)
-        occupancyStatus = view.findViewById(R.id.occupancyStatus)
-        cardTemp = view.findViewById(R.id.card_temp)
-        cardHum = view.findViewById(R.id.card_hum)
-        cardPres = view.findViewById(R.id.card_pres)
-        cardOccNow = view.findViewById(R.id.card_occ_now)
-        cardCo2 = view.findViewById(R.id.card_co2)
-        tempValue = view.findViewById(R.id.temp_value)
-        tempChip = view.findViewById(R.id.temp_chip)
-        tempAge = view.findViewById(R.id.temp_age)
-        tempSpark = view.findViewById(R.id.temp_spark)
-        tempRange = view.findViewById(R.id.temp_range)
-        humidityValue = view.findViewById(R.id.humidity_value)
-        humidityChip = view.findViewById(R.id.humidity_chip)
-        humidityAge = view.findViewById(R.id.humidity_age)
-        humiditySpark = view.findViewById(R.id.humidity_spark)
-        humidityRange = view.findViewById(R.id.humidity_range)
-        pressureValue = view.findViewById(R.id.pressure_value)
-        pressureChip = view.findViewById(R.id.pressure_chip)
-        pressureTrend = view.findViewById(R.id.pressure_trend)
-        occupiedValue = view.findViewById(R.id.occupied_value)
-        occupiedChip = view.findViewById(R.id.occupied_chip)
-        confidenceValue = view.findViewById(R.id.confidence_value)
-        co2Value = view.findViewById(R.id.co2_value)
-        co2Chip = view.findViewById(R.id.co2_chip)
-        co2Gauge = view.findViewById(R.id.co2_gauge)
-        co2SensorStatus = view.findViewById(R.id.co2_sensor_status)
-        co2Age = view.findViewById(R.id.co2_age)
-        occSummary = view.findViewById(R.id.occ_summary)
-        occBars = view.findViewById(R.id.occupancy_bars)
-        occLegend = view.findViewById(R.id.occ_legend)
-        devicesList = view.findViewById(R.id.devices_list)
-        restartsValue = view.findViewById(R.id.restarts_value)
-        statsAvgTemp = view.findViewById(R.id.stats_avg_temp)
-        statsAvgHumidity = view.findViewById(R.id.stats_avg_humidity)
-        statsAvgOccupancy = view.findViewById(R.id.stats_avg_occupancy)
-        statsOccupiedHours = view.findViewById(R.id.stats_occupied_hours)
-
-        occLegend.text = buildLegend()
-        swipeRefresh.setOnRefreshListener { loadDashboardData() }
-        occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
+        b.occLegend.text = buildLegend()
+        b.swipeRefresh.setOnRefreshListener { loadDashboardData() }
+        b.occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
     }
 
     override fun onResume() {
@@ -180,19 +99,7 @@ class HomeFragment : Fragment() {
         handler.removeCallbacks(ageLoop)
     }
 
-    // ---------- networking ----------
-
-    private fun get(path: String): String? = try {
-        val request = Request.Builder().url(url(path)).addHeader("Authorization", authHeader).build()
-        client.newCall(request).execute().use { if (it.isSuccessful) it.body?.string() else null }
-    } catch (e: Exception) {
-        e.printStackTrace()
-        null
-    }
-
-    // Unexpected bodies (e.g. an HTML error page) become null instead of crashing the thread
-    private fun getObject(path: String): JSONObject? = get(path)?.let { runCatching { JSONObject(it) }.getOrNull() }
-    private fun getArray(path: String): JSONArray? = get(path)?.let { runCatching { JSONArray(it) }.getOrNull() }
+    // ---------- networking (Api: blocking, null on failure) ----------
 
     /** Runs [block] on the UI thread only while the view still exists. */
     private fun ui(block: () -> Unit) {
@@ -211,12 +118,12 @@ class HomeFragment : Fragment() {
     private fun loadDashboardData() {
         thread {
             val snap = Snapshot(
-                latest = getObject("/api/latest_all"),
-                devices = getArray("/api/devices"),
-                stats = getObject("/api/stats24h_combined"),
-                restarts = getObject("/api/restarts"),
-                air = getObject("/api/air"),
-                hourly = getArray("/api/hourly"),
+                latest = Api.getObject("/api/latest_all"),
+                devices = Api.getArray("/api/devices"),
+                stats = Api.getObject("/api/stats24h_combined"),
+                restarts = Api.getObject("/api/restarts"),
+                air = Api.getObject("/api/air"),
+                hourly = Api.getArray("/api/hourly"),
             )
             ui {
                 try {
@@ -225,23 +132,14 @@ class HomeFragment : Fragment() {
                     // Never crash the screen on an unexpected payload
                     e.printStackTrace()
                 }
-                swipeRefresh.isRefreshing = false
+                b.swipeRefresh.isRefreshing = false
             }
         }
     }
 
     private fun setOccupancyArmed(armed: Boolean) {
         thread {
-            val ok = try {
-                val body = JSONObject().put("armed", armed).toString()
-                    .toRequestBody("application/json; charset=utf-8".toMediaType())
-                val request = Request.Builder().url(url("/api/occupancy_arm")).post(body)
-                    .addHeader("Authorization", authHeader).build()
-                client.newCall(request).execute().use { it.isSuccessful }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                false
-            }
+            val ok = Api.post("/api/occupancy_arm", JSONObject().put("armed", armed)) in 200..299
             ui {
                 if (ok) {
                     showArmed(armed)
@@ -255,10 +153,10 @@ class HomeFragment : Fragment() {
 
     private fun loadOccupancyArmedState() {
         thread {
-            val armed = getObject("/api/occupancy_status")?.takeIf { it.has("armed") }?.optBoolean("armed")
+            val armed = Api.getObject("/api/occupancy_status")?.takeIf { it.has("armed") }?.optBoolean("armed")
             ui {
                 if (armed == null) {
-                    occupancyStatus.text = "Unknown (offline?)"
+                    b.occupancyStatus.text = "Unknown (offline?)"
                 } else {
                     setSwitchSilently(armed)
                     showArmed(armed)
@@ -268,13 +166,13 @@ class HomeFragment : Fragment() {
     }
 
     private fun setSwitchSilently(checked: Boolean) {
-        occupancySwitch.setOnCheckedChangeListener(null)
-        occupancySwitch.isChecked = checked
-        occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
+        b.occupancySwitch.setOnCheckedChangeListener(null)
+        b.occupancySwitch.isChecked = checked
+        b.occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
     }
 
     private fun showArmed(armed: Boolean) {
-        occupancyStatus.text = if (armed) "Armed – push on arrival" else "Off"
+        b.occupancyStatus.text = if (armed) "Armed – push on arrival" else "Off"
     }
 
     // ---------- rendering ----------
@@ -294,10 +192,10 @@ class HomeFragment : Fragment() {
         val main = latest.optJSONObject(MAIN)
         val temp = main?.optNum("temp")
         val hum = main?.optNum("humidity")
-        tempValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
-        humidityValue.text = valueWithUnit(hum?.let { "%.0f".format(Locale.US, it) }, "%")
-        Levels.applyChip(tempChip, temp?.let(Levels::temperature))
-        Levels.applyChip(humidityChip, hum?.let(Levels::humidity))
+        b.tempValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
+        b.humidityValue.text = valueWithUnit(hum?.let { "%.0f".format(Locale.US, it) }, "%")
+        Levels.applyChip(b.tempChip, temp?.let(Levels::temperature))
+        Levels.applyChip(b.humidityChip, hum?.let(Levels::humidity))
         // Note: for the main node, `ts` is the radar's timestamp (see contracts/api.md)
         envTs = main?.optTs("ts")
 
@@ -305,17 +203,17 @@ class HomeFragment : Fragment() {
         val co2Node = latest.optJSONObject(CO2)
         val ppm = co2Node?.optNum("co2")?.toInt()
         val sensorOk = co2Node?.takeIf { it.has("co2_ok") && !it.isNull("co2_ok") }?.optBoolean("co2_ok")
-        co2Value.text = ppm?.toString() ?: "--"
-        co2Gauge.ppm = ppm
+        b.co2Value.text = ppm?.toString() ?: "--"
+        b.co2Gauge.ppm = ppm
         if (ppm != null) {
             val level = Levels.co2(ppm)
-            Levels.applyChip(co2Chip, level)
-            cardCo2.accentColor = Levels.color(requireContext(), level.color)
+            Levels.applyChip(b.co2Chip, level)
+            b.cardCo2.accentColor = Levels.color(requireContext(), level.color)
         } else {
-            Levels.applyChip(co2Chip, if (co2Node != null) Level("No valid reading", R.color.ok) else null)
-            cardCo2.accentColor = Levels.color(requireContext(), R.color.faint)
+            Levels.applyChip(b.co2Chip, if (co2Node != null) Level("No valid reading", R.color.ok) else null)
+            b.cardCo2.accentColor = Levels.color(requireContext(), R.color.faint)
         }
-        co2SensorStatus.text = when (sensorOk) {
+        b.co2SensorStatus.text = when (sensorOk) {
             true -> "sensor OK"
             false -> "sensor fault / warming up"
             null -> "sensor --"
@@ -326,23 +224,23 @@ class HomeFragment : Fragment() {
         latest.optJSONObject("combined")?.let { combined ->
             // Both null when no radar reported recently
             val occupied = combined.optNum("occupied")?.let { it == 1.0 }
-            occupiedValue.text = when (occupied) { true -> "Yes"; false -> "No"; null -> "--" }
-            Levels.applyChip(occupiedChip, when (occupied) {
+            b.occupiedValue.text = when (occupied) { true -> "Yes"; false -> "No"; null -> "--" }
+            Levels.applyChip(b.occupiedChip, when (occupied) {
                 true -> Level("Occupied", R.color.good)
                 false -> Level("Vacant", R.color.muted)
                 null -> null
             })
-            cardOccNow.accentColor = Levels.color(requireContext(), if (occupied == true) R.color.good else R.color.faint)
-            confidenceValue.text = "confidence " + (combined.optNum("confidence")?.let { "%.0f%%".format(Locale.US, it) } ?: "--")
+            b.cardOccNow.accentColor = Levels.color(requireContext(), if (occupied == true) R.color.good else R.color.faint)
+            b.confidenceValue.text = "confidence " + (combined.optNum("confidence")?.let { "%.0f%%".format(Locale.US, it) } ?: "--")
         }
     }
 
     private fun renderPressure(air: JSONObject) {
         val pressure = air.optNum("pressure")
-        pressureValue.text = valueWithUnit(pressure?.let { "%.0f".format(Locale.US, it) }, "hPa")
+        b.pressureValue.text = valueWithUnit(pressure?.let { "%.0f".format(Locale.US, it) }, "hPa")
         val delta = air.optNum("pressure_3h_change")
-        Levels.applyChip(pressureChip, delta?.let(Levels::pressureTrend))
-        pressureTrend.text = delta?.let { "3 h: %+.1f hPa".format(Locale.US, it) } ?: "3 h: not enough data"
+        Levels.applyChip(b.pressureChip, delta?.let(Levels::pressureTrend))
+        b.pressureTrend.text = delta?.let { "3 h: %+.1f hPa".format(Locale.US, it) } ?: "3 h: not enough data"
     }
 
     private fun renderHourly(hourly: JSONArray) {
@@ -367,13 +265,13 @@ class HomeFragment : Fragment() {
             byHour[h] = item.optNum("avg_occupancy") ?: continue
         }
         // Sparklines: hourly averages since midnight (/api/hourly; no finer data in the API yet)
-        renderSpark(tempSpark, tempRange, temps.values.toList(), "%.1f", "°")
-        renderSpark(humiditySpark, humidityRange, hums.values.toList(), "%.0f", "%")
-        occBars.setData(byHour, current)
+        renderSpark(b.tempSpark, b.tempRange, temps.values.toList(), "%.1f", "°")
+        renderSpark(b.humiditySpark, b.humidityRange, hums.values.toList(), "%.0f", "%")
+        b.occupancyBars.setData(byHour, current)
 
         val total = byHour.values.sum() / 100.0
         val peak = byHour.filterValues { it > 0 }.maxByOrNull { it.value }
-        occSummary.text = buildString {
+        b.occSummary.text = buildString {
             append("≈ %.1f h occupied".format(Locale.US, total))
             if (peak != null) append(" · busiest %02d:00".format(peak.key))
         }
@@ -393,7 +291,7 @@ class HomeFragment : Fragment() {
                 online[d.optString("device")] = d.optBoolean("online")
             }
         }
-        devicesList.removeAllViews()
+        b.devicesList.removeAllViews()
         DEVICE_NAMES.forEach { (id, name) ->
             val uptime = latest?.optJSONObject(id)?.optNum("uptime")?.toInt()
             val meta = when {
@@ -403,7 +301,7 @@ class HomeFragment : Fragment() {
                     uptime?.let { "up ${formatUptime(it)}" },
                 ).joinToString(" · ")
             }
-            devicesList.addView(deviceRow(name, meta, online[id]))
+            b.devicesList.addView(deviceRow(name, meta, online[id]))
         }
     }
 
@@ -443,12 +341,12 @@ class HomeFragment : Fragment() {
 
     private fun renderRestarts(json: JSONObject) {
         val total24h = json.keys().asSequence().sumOf { json.optJSONObject(it)?.optInt("last_24h") ?: 0 }
-        restartsValue.text = when (total24h) {
+        b.restartsValue.text = when (total24h) {
             0 -> "Restarts: none in the last 24 h"
             1 -> "Restarts: 1 in the last 24 h"
             else -> "Restarts: $total24h in the last 24 h"
         }
-        restartsValue.setTextColor(Levels.color(requireContext(), when {
+        b.restartsValue.setTextColor(Levels.color(requireContext(), when {
             total24h == 0 -> R.color.muted
             total24h <= 2 -> R.color.ok
             else -> R.color.bad
@@ -456,10 +354,10 @@ class HomeFragment : Fragment() {
     }
 
     private fun renderStats(stats: JSONObject) {
-        statsAvgTemp.text = valueWithUnit(stats.optNum("avg_temp")?.let { "%.1f".format(Locale.US, it) }, "°C")
-        statsAvgHumidity.text = valueWithUnit(stats.optNum("avg_humidity")?.let { "%.0f".format(Locale.US, it) }, "%")
-        statsAvgOccupancy.text = valueWithUnit(stats.optNum("avg_occupancy")?.let { "%.0f".format(Locale.US, it) }, "%")
-        statsOccupiedHours.text = stats.optNum("occupied_hours")?.let { formatHours(it) } ?: "--"
+        b.statsAvgTemp.text = valueWithUnit(stats.optNum("avg_temp")?.let { "%.1f".format(Locale.US, it) }, "°C")
+        b.statsAvgHumidity.text = valueWithUnit(stats.optNum("avg_humidity")?.let { "%.0f".format(Locale.US, it) }, "%")
+        b.statsAvgOccupancy.text = valueWithUnit(stats.optNum("avg_occupancy")?.let { "%.0f".format(Locale.US, it) }, "%")
+        b.statsOccupiedHours.text = stats.optNum("occupied_hours")?.let { formatHours(it) } ?: "--"
     }
 
     // ---------- ages / staleness ----------
@@ -469,13 +367,13 @@ class HomeFragment : Fragment() {
         val now = System.currentTimeMillis()
         val envAge = envTs?.let { (now - it.time) / 1000 }
         val co2AgeS = co2Ts?.let { (now - it.time) / 1000 }
-        tempAge.text = formatAge(envAge)
-        humidityAge.text = formatAge(envAge)
-        co2Age.text = formatAge(co2AgeS)
+        b.tempAge.text = formatAge(envAge)
+        b.humidityAge.text = formatAge(envAge)
+        b.co2Age.text = formatAge(co2AgeS)
         val envStale = envAge != null && envAge > STALE_ENV_S
-        cardTemp.stale = envStale
-        cardHum.stale = envStale
-        cardCo2.stale = co2AgeS != null && co2AgeS > STALE_CO2_S
+        b.cardTemp.stale = envStale
+        b.cardHum.stale = envStale
+        b.cardCo2.stale = co2AgeS != null && co2AgeS > STALE_CO2_S
     }
 
     // ---------- helpers ----------

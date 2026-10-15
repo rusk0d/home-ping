@@ -11,26 +11,20 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
-import android.util.Base64
 import android.widget.RemoteViews
 import com.david.homeenv.ui.Level
 import com.david.homeenv.ui.Levels
 import com.david.homeenv.ui.WidgetGauge
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import com.david.homeenv.BuildConfig
 
 class HomeEnvWidget : AppWidgetProvider() {
 
     companion object {
-        private val DATA_URL = "${BuildConfig.API_BASE_URL}/api/latest"
-        private val AUTH = "${BuildConfig.API_USER}:${BuildConfig.API_PASS}"
         private const val ACTION_AUTO_UPDATE = "com.david.homeenv.AUTO_UPDATE"
         private const val UPDATE_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes
         private const val FETCH_TIMEOUT_S = 8L  // stay well inside goAsync's ~10 s budget
@@ -192,24 +186,7 @@ class HomeEnvWidget : AppWidgetProvider() {
         // Fetch data async (run by onReceive under goAsync)
         fetches += {
             val fresh = try {
-                val client = OkHttpClient.Builder()
-                    .callTimeout(FETCH_TIMEOUT_S, TimeUnit.SECONDS)
-                    .build()
-
-                val authHeader = "Basic " + Base64.encodeToString(
-                    AUTH.toByteArray(),
-                    Base64.NO_WRAP
-                )
-
-                val request = Request.Builder()
-                    .url(DATA_URL)
-                    .addHeader("Authorization", authHeader)
-                    .build()
-
-                val body = client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) response.body?.string() else null
-                }
-                body?.let { render(context, manager, widgetId, JSONObject(it)) }
+                Api.getObject("/api/latest", FETCH_TIMEOUT_S)?.let { render(context, manager, widgetId, it) }
             } catch (_: Exception) {
                 null // widgets must NEVER crash
             }
@@ -241,11 +218,11 @@ class HomeEnvWidget : AppWidgetProvider() {
 
         views.setTextViewText(R.id.w_temp_value, temp?.let { String.format(Locale.US, "%.1f", it) } ?: "--")
         setLevel(context, views, R.id.w_temp_level, temp?.let { Levels.temperature(it) })
-        views.setImageViewBitmap(R.id.w_temp_gauge, WidgetGauge.render(context, WidgetGauge.TEMPERATURE, temp, gaugeWidth))
+        views.setImageViewBitmap(R.id.w_temp_gauge, WidgetGauge.render(context, Levels.TEMPERATURE, temp, gaugeWidth))
 
         views.setTextViewText(R.id.w_hum_value, humidity?.let { String.format(Locale.US, "%.0f", it) } ?: "--")
         setLevel(context, views, R.id.w_hum_level, humidity?.let { Levels.humidity(it) })
-        views.setImageViewBitmap(R.id.w_hum_gauge, WidgetGauge.render(context, WidgetGauge.HUMIDITY, humidity, gaugeWidth))
+        views.setImageViewBitmap(R.id.w_hum_gauge, WidgetGauge.render(context, Levels.HUMIDITY, humidity, gaugeWidth))
 
         if (occupied == null) {
             views.setTextViewText(R.id.w_occ_value, "--")
@@ -255,10 +232,10 @@ class HomeEnvWidget : AppWidgetProvider() {
             val pct = confidence ?: 0.0
             views.setTextViewText(R.id.w_occ_level, String.format(Locale.US, "conf. %.0f%%", pct))
             // Grey text below 20 % (the faint bar colour is too pale for text)
-            val color = if (pct < 20) R.color.muted else Levels.occupancy(pct)
+            val color = if (pct < Levels.OCCUPANCY.stops[0]) R.color.muted else Levels.occupancy(pct)
             views.setTextColor(R.id.w_occ_level, Levels.color(context, color))
         }
-        views.setImageViewBitmap(R.id.w_occ_gauge, WidgetGauge.render(context, WidgetGauge.OCCUPANCY, confidence, gaugeWidth))
+        views.setImageViewBitmap(R.id.w_occ_gauge, WidgetGauge.render(context, Levels.OCCUPANCY, confidence, gaugeWidth))
 
         // Online = the sensor node reported within the backend's heartbeat timeout
         views.setInt(R.id.w_online_dot, "setColorFilter", Levels.color(context, if (online) R.color.good else R.color.bad))
