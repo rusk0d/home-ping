@@ -106,6 +106,7 @@ Known keys:
 | `occupancy_armed` | `'0'` / `'1'` | `'0'` via `INSERT OR IGNORE` at startup | `POST /api/occupancy_arm` | presence handler (arrival alert), `/api/occupancy_status` |
 | `cooldown:<key>` | unix time (float, as text) when the cooldown for alert `<key>` started (e.g. `cooldown:HUMIDITY_home_ping_esp32`) | no | `alert()` via `set_cooldown()` | loaded into `LAST_NOTIFICATION` at startup (#5) |
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
+| `node_offline:<device>` | `'1'` while that node's current outage has been pushed, else `'0'` | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
 
 ### `events` (audit / event log)
 
@@ -130,6 +131,9 @@ Event types written by `server.py`:
 | `HUMIDITY_HIGH_ALERT` | env ID | `sent, humidity=67.2` | humidity push attempted |
 | `HUMIDITY_LOW_ALERT` | env ID | `sent, humidity=23.9` | humidity push attempted |
 | `TEMP_ALERT` | env ID | `sent, temp=17.6` | temperature push attempted |
+| `STATUS` | node ID | `online` / `offline` | live message on `home/esp32/<device>/status` (#13) |
+| `NODE_OFFLINE` | node ID | `sent, last seen 2026-10-16 08:12:40` | node-offline push attempted (#13) |
+| `NODE_ONLINE` | node ID | `sent, data again` | back-online push attempted (#13) |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12).
 | `OCCUPANCY_ARMED` | `system` | `1` / `0` | `POST /api/occupancy_arm` |
