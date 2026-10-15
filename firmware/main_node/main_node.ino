@@ -11,11 +11,7 @@
    CONFIG
    ======================= */
 
-const char* WIFI_SSID = WIFI_SSID;
-const char* WIFI_PASS = WIFI_PASS;
-
-const char* MQTT_BROKER = MQTT_BROKER;
-const int   MQTT_PORT   = MQTT_PORT;
+// WIFI_SSID, WIFI_PASS, MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASS come from secrets.h
 
 const char* MQTT_TOPIC_PRESENCE = "home/esp32/presence";
 const char* MQTT_TOPIC_ENV      = "home/esp32/bme280";

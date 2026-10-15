@@ -20,21 +20,14 @@ const char* password = WIFI_PASS;
 const unsigned long REBOOT_INTERVAL = 43200000UL; // 12 hours
 
 // ========================
-// API CONFIG
-// ========================
-const char* apiUrl  = API_URL ;
-const char* apiUser = API_USER;
-const char* apiPass = API_PASS;
-
-// ========================
 // BKK API CONFIG
 // ========================
-const char* bkkUrl = BKK_URL
+const char* bkkUrl = BKK_URL;
+
 // ========================
 // MQTT CONFIG
 // ========================
-const char* MQTT_BROKER = MQTT_BROKER;
-const int   MQTT_PORT   = MQTT_PORT;
+// MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASS come from secrets.h
 const char* MQTT_TOPIC  = "home/esp32/presence";
 const char* DEVICE_NAME = "hallway_presence_esp32";
 
