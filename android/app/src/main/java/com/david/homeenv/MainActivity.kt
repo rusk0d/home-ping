@@ -26,10 +26,8 @@ import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -118,41 +116,11 @@ class MainActivity : AppCompatActivity() {
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 println("FCM token: $token")
-                Thread { registerTokenServerSide(token) }.start()
+                Thread { PushRegistration.register(token) }.start()
             }
             .addOnFailureListener {
                 it.printStackTrace()
             }
-    }
-
-    private fun registerTokenServerSide(token: String) {
-        try {
-            val client = OkHttpClient()
-            val mediaType = "application/json; charset=utf-8".toMediaType()
-            val json = JSONObject().apply { put("token", token) }
-            val body = json.toString().toRequestBody(mediaType)
-
-            val authHeader = "Basic " + Base64.encodeToString(
-                "${BuildConfig.API_USER}:${BuildConfig.API_PASS}".toByteArray(),
-                Base64.NO_WRAP
-            )
-
-            val request = Request.Builder()
-                .url("${BuildConfig.API_BASE_URL}/api/register_token")
-                .post(body)
-                .addHeader("Authorization", authHeader)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    println("Failed to register token: ${response.code}")
-                } else {
-                    println("Token registered successfully")
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
     }
 
     // ViewPager Adapter
