@@ -411,20 +411,40 @@ def note_uptime(device, uptime):
 # PUSH NOTIFICATIONS (FCM)
 # -------------------------
 def send_push(title, body, data=None):
+    """Send a data-only push to topic "env". Returns True if FCM accepted it.
+
+    Data-only so the Android app always builds the notification itself (its own
+    channels and IDs), also in the background; title/body travel in the data map.
+    High priority so it is delivered while the phone is in Doze.
+    """
     print(f"[DEBUG] Preparing to send push: title={title}, body={body}, data={data}")
     try:
         message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body
-            ),
-            data=data or {},
+            data={"title": title, "body": body, **(data or {})},
+            android=messaging.AndroidConfig(priority="high"),
             topic="env"
         )
         response = messaging.send(message)
         print(f"[DEBUG] Push sent! Response: {response}")
+        return True
     except Exception as e:
         print(f"[ERROR] Failed to send push: {e}")
+        return False
+
+
+def alert(device, event_type, detail, title, body, data, cooldown_key=None):
+    """Send a push and record it in events as "sent, ..." or "failed, ...".
+
+    The cooldown only starts after a successful send; a failed one is retried
+    after PUSH_RETRY_SECONDS instead of being silenced for the whole cooldown.
+    """
+    ok = send_push(title, body, data)
+    status = "sent" if ok else "failed"
+    log_event(device, event_type, f"{status}, {detail}")
+    if cooldown_key:
+        now = time.time()
+        LAST_NOTIFICATION[cooldown_key] = now if ok else now - NOTIFICATION_COOLDOWN + PUSH_RETRY_SECONDS
+    return ok
 def get_access_token():
     """Refresh and return the Google OAuth access token."""
     creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
@@ -478,13 +498,11 @@ def handle_soil_data(data, topic):
     last_dry_alert = LAST_NOTIFICATION.get(f"SOIL_DRY_{device}", 0)
     
     if moisture < SOIL_DRY_THRESHOLD and (now - last_dry_alert > NOTIFICATION_COOLDOWN):
-        send_push(
-            title="Plant Needs Water",
-            body=f"{device}: Soil moisture is low ({moisture}%)",
-            data={"event": "SOIL_DRY", "device": device, "moisture": str(moisture)}
-        )
-        log_event(device, "SOIL_DRY_ALERT", f"moisture={moisture}%")
-        LAST_NOTIFICATION[f"SOIL_DRY_{device}"] = now
+        alert(device, "SOIL_DRY_ALERT", f"moisture={moisture}%",
+              title="Plant Needs Water",
+              body=f"{device}: Soil moisture is low ({moisture}%)",
+              data={"event": "SOIL_DRY", "device": device, "moisture": str(moisture)},
+              cooldown_key=f"SOIL_DRY_{device}")
     
     print(f"[SOIL] {device}: {moisture}% (raw: {raw})")
 
@@ -547,17 +565,19 @@ def handle_presence_data(data, topic):
         RADAR_FAIL_COUNT[device] = RADAR_FAIL_COUNT.get(device, 0) + 1
     else:
         RADAR_FAIL_COUNT[device] = 0
+        RADAR_ALERTED.discard(device)  # back: the next outage alerts again
 
+    # Once per outage (not every cooldown while it stays down)
     last_radar_alert = LAST_NOTIFICATION.get(f"RADAR_{device}", 0)
     if (RADAR_FAIL_COUNT.get(device, 0) >= 12
+            and device not in RADAR_ALERTED
             and now - last_radar_alert > NOTIFICATION_COOLDOWN):
-        send_push(
-            title="Radar Disconnected",
-            body=f"{device}: LD2410C not responding",
-            data={"event": "RADAR_DISCONNECTED", "device": device}
-        )
-        log_event(device, "RADAR_DISCONNECTED", "no frames from LD2410C")
-        LAST_NOTIFICATION[f"RADAR_{device}"] = now
+        if alert(device, "RADAR_DISCONNECTED", "no frames from LD2410C",
+                 title="Radar Disconnected",
+                 body=f"{device}: LD2410C not responding",
+                 data={"event": "RADAR_DISCONNECTED", "device": device},
+                 cooldown_key=f"RADAR_{device}"):
+            RADAR_ALERTED.add(device)
 
     # -------------------------
     # OCCUPANCY ALERT — fires once per arrival, after a long quiet spell
@@ -567,12 +587,10 @@ def handle_presence_data(data, topic):
             and moving
             and quiet_minutes >= QUIET_MINUTES_BEFORE_ALERT):
         where = "hallway" if "hallway" in device else "main room"
-        send_push(
-            title="Occupancy Alert",
-            body=f"Movement in the {where} after {int(quiet_minutes)} min of quiet ({distance}cm)",
-            data={"event": "OCCUPIED", "device": device, "distance": str(distance)}
-        )
-        log_event(device, "OCCUPANCY_ALERT", f"after {int(quiet_minutes)} min quiet")
+        alert(device, "OCCUPANCY_ALERT", f"after {int(quiet_minutes)} min quiet",
+              title="Occupancy Alert",
+              body=f"Movement in the {where} after {int(quiet_minutes)} min of quiet ({distance}cm)",
+              data={"event": "OCCUPIED", "device": device, "distance": str(distance)})
 
     print(f"[PRESENCE] {device}: occupied={occupied} moving={moving} "
           f"stationary={stationary} dist={distance}cm signal={signal} "
@@ -583,8 +601,10 @@ def handle_presence_data(data, topic):
 # -------------------------
 LAST_NOTIFICATION = {}
 RADAR_FAIL_COUNT = {}
+RADAR_ALERTED = set()  # radars whose current outage was already pushed
 CO2_SENSOR_OK = {}
-NOTIFICATION_COOLDOWN = 10 * 90  # 15 minutes
+NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
+PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
 TEMP_THRESHOLD = 18
 HUMIDITY_HIGH_THRESHOLD = 65
 HUMIDITY_LOW_THRESHOLD = 25
@@ -623,45 +643,37 @@ def on_message(client, userdata, msg):
 
         now = time.time()
 
-        # Only send temp/humidity alerts for devices with those sensors
-        if temp is None or hum is None:
-            return
-        
+        # Each alert only needs its own value (a node may send just one of them)
+
         # -------------------------
         # HUMIDITY ALERT
         # -------------------------
         last_hum_sent = LAST_NOTIFICATION.get(f"HUMIDITY_{device}", 0)
-        if now - last_hum_sent > NOTIFICATION_COOLDOWN:
+        if hum is not None and now - last_hum_sent > NOTIFICATION_COOLDOWN:
             if hum > HUMIDITY_HIGH_THRESHOLD:
-                send_push(
-                    title="Humidity Alert",
-                    body=f"Humidity is high: {hum:.1f}%",
-                    data={"event": "HUMIDITY_HIGH", "device": device}
-                )
-                log_event(device, "HUMIDITY_HIGH_ALERT", f"sent, humidity={hum}")
-                LAST_NOTIFICATION[f"HUMIDITY_{device}"] = now
+                alert(device, "HUMIDITY_HIGH_ALERT", f"humidity={hum}",
+                      title="Humidity Alert",
+                      body=f"Humidity is high: {hum:.1f}%",
+                      data={"event": "HUMIDITY_HIGH", "device": device},
+                      cooldown_key=f"HUMIDITY_{device}")
 
             elif hum < HUMIDITY_LOW_THRESHOLD:
-                send_push(
-                    title="Humidity Alert",
-                    body=f"Humidity is low: {hum:.1f}%",
-                    data={"event": "HUMIDITY_LOW", "device": device}
-                )
-                log_event(device, "HUMIDITY_LOW_ALERT", f"sent, humidity={hum}")
-                LAST_NOTIFICATION[f"HUMIDITY_{device}"] = now   
+                alert(device, "HUMIDITY_LOW_ALERT", f"humidity={hum}",
+                      title="Humidity Alert",
+                      body=f"Humidity is low: {hum:.1f}%",
+                      data={"event": "HUMIDITY_LOW", "device": device},
+                      cooldown_key=f"HUMIDITY_{device}")
 
         # -------------------------
         # TEMPERATURE ALERT
         # -------------------------
         last_temp_sent = LAST_NOTIFICATION.get(f"TEMP_{device}", 0)
-        if temp < TEMP_THRESHOLD and (now - last_temp_sent > NOTIFICATION_COOLDOWN):
-            send_push(
-                title="Temperature Alert",
-                body=f"Temperature is low on {device}: {temp:.1f}°C",
-                data={"event": "TEMP", "device": device}
-            )
-            log_event(device, "TEMP_ALERT", f"sent, temp={temp}")
-            LAST_NOTIFICATION[f"TEMP_{device}"] = now
+        if temp is not None and temp < TEMP_THRESHOLD and (now - last_temp_sent > NOTIFICATION_COOLDOWN):
+            alert(device, "TEMP_ALERT", f"temp={temp}",
+                  title="Temperature Alert",
+                  body=f"Temperature is low on {device}: {temp:.1f}°C",
+                  data={"event": "TEMP", "device": device},
+                  cooldown_key=f"TEMP_{device}")
 
     except Exception as e:
         print("MQTT error:", e)
