@@ -1,5 +1,6 @@
 package com.david.homeenv
 
+import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
@@ -95,6 +96,7 @@ class HomeFragment : Fragment() {
             setColor(Levels.withAlpha(bad, 0.14f))
         }
         b.swipeRefresh.setOnRefreshListener { loadDashboardData() }
+        b.historyButton.setOnClickListener { startActivity(Intent(requireContext(), HistoryActivity::class.java)) }
         b.occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
     }
 
@@ -400,9 +402,6 @@ class HomeFragment : Fragment() {
     }
 
     // ---------- helpers ----------
-
-    private fun JSONObject.optNum(key: String): Double? =
-        if (has(key) && !isNull(key)) optDouble(key).takeIf { !it.isNaN() } else null
 
     private fun JSONObject.optTs(key: String): Date? = if (isNull(key)) null else parseTs(optString(key))
 
