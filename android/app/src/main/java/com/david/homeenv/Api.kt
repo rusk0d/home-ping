@@ -47,6 +47,16 @@ object Api {
         null
     }
 
+    /** POST [body] as JSON to [path]: the JSON object of a 2xx response, else null. */
+    fun postForObject(path: String, body: JSONObject): JSONObject? = try {
+        execute(Request.Builder().url(url(path)).post(body.toString().toRequestBody(JSON)), null).use {
+            if (it.isSuccessful) it.body?.string()?.let { s -> runCatching { JSONObject(s) }.getOrNull() } else null
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+
     private fun execute(request: Request.Builder, timeoutS: Long?): Response {
         val c = if (timeoutS == null) client else client.newBuilder().callTimeout(timeoutS, TimeUnit.SECONDS).build()
         return c.newCall(request.addHeader("Authorization", authHeader).build()).execute()

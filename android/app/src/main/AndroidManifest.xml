@@ -36,6 +36,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Notification settings (#82), opened from the bell in the header -->
+        <activity
+            android:name=".NotificationSettingsActivity"
+            android:exported="false" />
         
         <!-- Channel FCM uses when it shows a notification message itself (app in background) -->
         <meta-data

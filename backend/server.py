@@ -481,19 +481,73 @@ def send_push(title, body, data=None):
         return False
 
 
-def alert(device, event_type, detail, title, body, data, cooldown_key=None):
-    """Send a push and record it in events as "sent, ..." or "failed, ...".
+def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind=None):
+    """Send a push and record it in events as "sent, ...", "failed, ..." or "muted (...), ...".
 
     The cooldown only starts after a successful send; a failed one is retried
     after PUSH_RETRY_SECONDS instead of being silenced for the whole cooldown.
+    [kind] (one of NOTIFY_KINDS) can be switched off or muted by quiet hours (#82);
+    a muted alert is handled like a sent one (cooldown, once per outage) without a push.
+    Returns "sent", "muted", or False when the send failed.
     """
+    muted = alert_muted(kind)
+    if muted:
+        log_event(device, event_type, f"muted ({muted}), {detail}")
+        if cooldown_key:
+            set_cooldown(cooldown_key, time.time())
+        return "muted"
     ok = send_push(title, body, data)
     status = "sent" if ok else "failed"
     log_event(device, event_type, f"{status}, {detail}")
     if cooldown_key:
         now = time.time()
         set_cooldown(cooldown_key, now if ok else now - NOTIFICATION_COOLDOWN + PUSH_RETRY_SECONDS)
-    return ok
+    return "sent" if ok else False
+
+
+# -------------------------
+# NOTIFICATION SETTINGS (#82)
+# -------------------------
+# system_state: notify:<kind> = '1'/'0' (missing = on), quiet_hours = '1'/'0',
+# quiet_start / quiet_end = "HH:MM" in the server's local time (Budapest).
+# Occupancy alerts have their own switch (occupancy_armed) and ignore quiet hours.
+NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes")
+QUIET_DEFAULTS = {"start": "22:00", "end": "07:00"}
+HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def notification_settings():
+    return {
+        **{k: get_state(f"notify:{k}", "1") == "1" for k in NOTIFY_KINDS},
+        "quiet_hours": {
+            "enabled": get_state("quiet_hours", "0") == "1",
+            "start": get_state("quiet_start", QUIET_DEFAULTS["start"]),
+            "end": get_state("quiet_end", QUIET_DEFAULTS["end"]),
+        },
+    }
+
+
+def in_quiet_hours(now=None):
+    """True inside the quiet-hours window; it may cross midnight (22:00-07:00)."""
+    if get_state("quiet_hours", "0") != "1":
+        return False
+    start = get_state("quiet_start", QUIET_DEFAULTS["start"])
+    end = get_state("quiet_end", QUIET_DEFAULTS["end"])
+    t = (now or datetime.now()).strftime("%H:%M")   # local time, like the stored window
+    if start <= end:
+        return start <= t < end
+    return t >= start or t < end
+
+
+def alert_muted(kind):
+    """Why an alert of [kind] gets no push ("off", "quiet hours"), or None."""
+    if kind is None:
+        return None
+    if get_state(f"notify:{kind}", "1") != "1":
+        return "off"
+    if in_quiet_hours():
+        return "quiet hours"
+    return None
 # ---- add near the other config constants, top of the file ----
 QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
 
@@ -565,7 +619,7 @@ def handle_presence_data(data, topic):
                  title="Radar Disconnected",
                  body=f"{device}: LD2410C not responding",
                  data={"event": "RADAR_DISCONNECTED", "device": device},
-                 cooldown_key=f"RADAR_{device}"):
+                 cooldown_key=f"RADAR_{device}", kind="radar"):
             set_radar_alerted(device, True)
 
     # -------------------------
@@ -600,7 +654,9 @@ def load_alert_state():
     conn.close()
     cooldowns = {k[len("cooldown:"):]: float(v) for k, v in rows if k.startswith("cooldown:")}
     alerted = {k[len("radar_alerted:"):] for k, v in rows if k.startswith("radar_alerted:") and v == "1"}
-    offline = {k[len("node_offline:"):] for k, v in rows if k.startswith("node_offline:") and v == "1"}
+    # node_offline: '1' = offline push sent, 'm' = offline but muted (#82), '0' = online
+    offline = {k[len("node_offline:"):]: v == "1" for k, v in rows
+               if k.startswith("node_offline:") and v in ("1", "m")}
     return cooldowns, alerted, offline
 
 
@@ -648,31 +704,38 @@ def check_nodes():
                 continue
             if time.time() - LAST_NOTIFICATION.get(f"NODE_{device}", 0) <= NOTIFICATION_COOLDOWN:
                 continue
-            if alert(device, "NODE_OFFLINE", f"last seen {last_seen}",
-                     title="Node offline",
-                     body=f"{device}: no data for {int(age // 60)} min",
-                     data={"event": "NODE_STATUS", "status": "offline", "device": device},
-                     cooldown_key=f"NODE_{device}"):
-                set_node_offline(device, True)
+            result = alert(device, "NODE_OFFLINE", f"last seen {last_seen}",
+                           title="Node offline",
+                           body=f"{device}: no data for {int(age // 60)} min",
+                           data={"event": "NODE_STATUS", "status": "offline", "device": device},
+                           cooldown_key=f"NODE_{device}", kind="nodes")
+            if result:
+                set_node_offline(device, True, pushed=result == "sent")
 
 
 def node_back_online(device):
     with NODE_LOCK:
         if device not in NODE_OFFLINE:
             return
+        pushed = NODE_OFFLINE[device]
         set_node_offline(device, False)
+        if not pushed:   # the offline alert was muted: nothing to clear on the phone
+            log_event(device, "NODE_ONLINE", "no push (offline alert was muted), data again")
+            return
         alert(device, "NODE_ONLINE", "data again",
               title="Node back online",
               body=f"{device} is sending data again",
-              data={"event": "NODE_STATUS", "status": "online", "device": device})
+              data={"event": "NODE_STATUS", "status": "online", "device": device},
+              kind="nodes")
 
 
-def set_node_offline(device, offline):
+def set_node_offline(device, offline, pushed=True):
+    """[pushed]: whether the offline push was sent (False: muted, #82)."""
     if offline:
-        NODE_OFFLINE.add(device)
+        NODE_OFFLINE[device] = pushed
     else:
-        NODE_OFFLINE.discard(device)
-    set_state(f"node_offline:{device}", "1" if offline else "0")
+        NODE_OFFLINE.pop(device, None)
+    set_state(f"node_offline:{device}", ("1" if pushed else "m") if offline else "0")
 
 
 def node_check_loop():
@@ -756,14 +819,14 @@ def on_message(client, userdata, msg):
                       title="Humidity Alert",
                       body=f"Humidity is high: {hum:.1f}%",
                       data={"event": "HUMIDITY_HIGH", "device": device},
-                      cooldown_key=f"HUMIDITY_{device}")
+                      cooldown_key=f"HUMIDITY_{device}", kind="humidity")
 
             elif hum < HUMIDITY_LOW_THRESHOLD:
                 alert(device, "HUMIDITY_LOW_ALERT", f"humidity={hum}",
                       title="Humidity Alert",
                       body=f"Humidity is low: {hum:.1f}%",
                       data={"event": "HUMIDITY_LOW", "device": device},
-                      cooldown_key=f"HUMIDITY_{device}")
+                      cooldown_key=f"HUMIDITY_{device}", kind="humidity")
 
         # -------------------------
         # TEMPERATURE ALERT
@@ -774,7 +837,7 @@ def on_message(client, userdata, msg):
                   title="Temperature Alert",
                   body=f"Temperature is low on {device}: {temp:.1f}°C",
                   data={"event": "TEMP", "device": device},
-                  cooldown_key=f"TEMP_{device}")
+                  cooldown_key=f"TEMP_{device}", kind="temperature")
 
     except Exception as e:
         print("MQTT error:", repr(e), "on", getattr(msg, "topic", "?"))
@@ -1152,6 +1215,40 @@ def occupancy_arm():
 @require_auth
 def occupancy_status():
     return jsonify({"armed": get_state("occupancy_armed") == "1"})
+
+@app.route("/api/notification_settings", methods=["GET", "POST"])
+@require_auth
+def notification_settings_api():
+    """Which alerts push, and quiet hours (#82). POST takes any subset of the GET fields."""
+    if request.method == "GET":
+        return jsonify(notification_settings())
+    data = json_body()
+    updates = {}
+    for k in NOTIFY_KINDS:
+        if k in data:
+            if not isinstance(data[k], bool):
+                return jsonify({"error": f'"{k}" must be true/false'}), 400
+            updates[f"notify:{k}"] = "1" if data[k] else "0"
+    if "quiet_hours" in data:
+        q = data["quiet_hours"]
+        if not isinstance(q, dict):
+            return jsonify({"error": '"quiet_hours" must be an object'}), 400
+        if "enabled" in q:
+            if not isinstance(q["enabled"], bool):
+                return jsonify({"error": '"quiet_hours.enabled" must be true/false'}), 400
+            updates["quiet_hours"] = "1" if q["enabled"] else "0"
+        for f in ("start", "end"):
+            if f in q:
+                if not isinstance(q[f], str) or not HHMM.match(q[f]):
+                    return jsonify({"error": f'"quiet_hours.{f}" must be "HH:MM"'}), 400
+                updates[f"quiet_{f}"] = q[f]
+    # Everything is validated before anything is written
+    for key, value in updates.items():
+        set_state(key, value)
+    if updates:
+        log_event("system", "NOTIFICATION_SETTINGS",
+                  ", ".join(f"{k}={v}" for k, v in updates.items()))
+    return jsonify(notification_settings())
 
 @app.route("/api/stats24h_combined")
 @require_auth
