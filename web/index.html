@@ -259,16 +259,7 @@
   </article>
 
   <h2>Devices</h2>
-  <section class="devices">
-    <div class="device" id="dev-main">
-      <span class="dot"></span>
-      <div><div class="name">Main node</div><div class="meta" id="dev-main-meta">no data yet</div></div>
-    </div>
-    <div class="device" id="dev-co2">
-      <span class="dot"></span>
-      <div><div class="name">CO₂ node</div><div class="meta" id="dev-co2-meta">no data yet</div></div>
-    </div>
-  </section>
+  <section class="devices" id="devices"></section>
 
   <h2>Recent readings</h2>
   <div class="log">
@@ -284,6 +275,16 @@
   const TOPIC_ENV = 'home/esp32/bme280';  // main_node, every 30 s, retained
   const TOPIC_CO2 = 'home/esp32/co2';     // co2_node, every 60 s, retained
   const TOPIC_OCC = 'home/backend/occupancy_hourly'; // backend, every 5 min, retained
+  const TOPIC_PRESENCE = 'home/esp32/presence';  // both radar nodes, every 5 s, retained
+  const TOPIC_STATUS = 'home/esp32/+/status';    // "online" / last will "offline", retained (#81)
+  const STATUS_RE = /^home\/esp32\/([^/]+)\/status$/;
+  // Known nodes. A node counts as online while live messages keep coming;
+  // the limit is ~3 missed publishes of its most frequent topic.
+  const NODES = {
+    home_ping_esp32:        { name: 'Main node',     staleAfter: 30 },   // radar every 5 s
+    hallway_presence_esp32: { name: 'Hallway radar', staleAfter: 30 },   // radar every 5 s
+    co2_sensor_esp32:       { name: 'CO₂ node',      staleAfter: 180 },  // every 60 s
+  };
   const STALE_AFTER = { env: 90, co2: 180, occ: 900 }; // seconds, ~3 missed publishes
   const MAX_POINTS = 120;   // sparkline points kept per metric (browser memory only)
   const MAX_HISTORY = 20;   // rows in the recent readings table
@@ -392,7 +393,7 @@
     push('temp', d.temp_c); push('hum', d.humidity); push('pres', d.pressure);
     drawSpark('temp', 1); drawSpark('hum', 0); drawSpark('pres', 0);
 
-    $('dev-main-meta').textContent = `${d.device || 'home_ping_esp32'} · up ${fmtUptime(d.uptime)}`;
+    noteNode(d.device || 'home_ping_esp32', d, retained);
     addHistory('env', { temp: fmt(d.temp_c, 1) + ' °C', hum: fmt(d.humidity, 0) + ' %', pres: fmt(d.pressure, 0) + ' hPa' });
   }
 
@@ -418,10 +419,82 @@
       setSub('co2-sub', d.warming ? 'Sensor warming up (~3 min)' : `No valid reading (err ${d.err ?? '?'})`, 'ok');
     }
 
-    const rssi = typeof d.rssi === 'number' ? ` · ${d.rssi} dBm` : '';
-    $('dev-co2-meta').textContent = `${d.device || 'co2_sensor_esp32'} · up ${fmtUptime(d.uptime)}${rssi}`;
+    noteNode(d.device || 'co2_sensor_esp32', d, retained);
     addHistory('co2', { co2: valid ? d.co2 + ' ppm' : (d.warming ? 'warming' : 'invalid') });
   }
+
+  // ---------- nodes ----------
+  // Per node: at = time of the last *live* message (retained replays can be hours old,
+  // so they don't prove the node is up), uptime/rssi from any message, and the
+  // retained status topic: "online" on connect, "offline" as the broker's last will.
+  const nodes = {};
+
+  function node(device) {
+    if (!nodes[device]) {
+      const known = NODES[device] || { name: device, staleAfter: 180 };
+      const el = document.createElement('div');
+      el.className = 'device';
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = known.name;
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const text = document.createElement('div');
+      text.append(name, meta);
+      el.append(dot, text);
+      $('devices').append(el);
+      nodes[device] = { ...known, el, meta, at: null, uptime: null, rssi: null, status: null, statusAt: null };
+    }
+    return nodes[device];
+  }
+
+  function noteNode(device, d, retained) {
+    const n = node(device);
+    if (!retained) n.at = Date.now();
+    if (typeof d.uptime === 'number') n.uptime = d.uptime;
+    if (typeof d.rssi === 'number') n.rssi = d.rssi;
+    renderNode(device);
+  }
+
+  function onStatus(device, text) {
+    const n = node(device);
+    n.status = text.trim();
+    n.statusAt = Date.now();
+    renderNode(device);
+  }
+
+  // 'on' | 'off' | null (nothing live yet)
+  function nodeState(n) {
+    const now = Date.now();
+    const fresh = n.at && (now - n.at) / 1000 <= n.staleAfter;
+    if (n.status === 'offline' && !(n.at && n.at > n.statusAt)) return 'off';  // last will, nothing newer
+    if (fresh) return 'on';
+    if (n.at) return 'off';                    // was live, gone quiet
+    if (n.status === 'online') return 'on';    // the broker says it's connected
+    return null;
+  }
+
+  function renderNode(device) {
+    const n = nodes[device];
+    const state = nodeState(n);
+    n.el.classList.toggle('on', state === 'on');
+    n.el.classList.toggle('off', state === 'off');
+    let stateText;
+    if (state === 'on') stateText = 'online';
+    else if (state === 'off') stateText = (n.status === 'offline' && !(n.at && n.at > n.statusAt))
+      ? 'offline' : `no data for ${fmtAge({ at: n.at }).replace(' ago', '')}`;
+    else stateText = 'waiting for live data';
+    const parts = [device];
+    if (n.uptime !== null) parts.push(`up ${fmtUptime(n.uptime)}`);
+    if (n.rssi !== null) parts.push(`${n.rssi} dBm`);
+    parts.push(stateText);
+    n.meta.textContent = parts.join(' · ');
+  }
+
+  Object.keys(NODES).forEach(node);   // show the known nodes before any message
+  Object.keys(nodes).forEach(renderNode);
 
   // ---------- hourly occupancy ----------
   const pad2 = n => String(n).padStart(2, '0');
@@ -516,16 +589,15 @@
   // ---------- ages / staleness (every second) ----------
   function tick() {
     const now = Date.now();
-    for (const [kind, cards, dev] of [['env', ['temp', 'hum', 'pres'], 'dev-main'], ['co2', ['co2'], 'dev-co2']]) {
+    for (const [kind, cards] of [['env', ['temp', 'hum', 'pres']], ['co2', ['co2']]]) {
       const info = lastSeen[kind];
       const stale = info && (now - info.at) / 1000 > STALE_AFTER[kind];
       cards.forEach(c => {
         $(`${c}-age`).textContent = fmtAge(info);
         $(`card-${c}`).classList.toggle('stale', !!stale);
       });
-      $(dev).classList.toggle('on', !!info && !stale);
-      $(dev).classList.toggle('off', !!stale);
     }
+    Object.keys(nodes).forEach(renderNode);
     // Occupancy: stale if the backend stopped publishing or the data is from another day
     const occ = lastSeen.occ;
     $('occ-age').textContent = occ ? 'updated ' + fmtAge(occ) : 'waiting…';
@@ -557,7 +629,11 @@
     client.on('connect', () => {
       client.options.reconnectPeriod = RECONNECT_MIN;
       setStatus('live', 'Live');
-      client.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC]);
+      client.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC, TOPIC_PRESENCE, TOPIC_STATUS], (err, granted) => {
+        if (err) console.error('MQTT subscribe failed', err);
+        // QoS 128 = refused, e.g. the read-only user's ACL doesn't cover the topic
+        (granted || []).filter(g => g.qos === 128).forEach(g => console.warn('Subscription refused by the broker:', g.topic));
+      });
     });
     client.on('reconnect', () => {
       client.options.reconnectPeriod = Math.min(client.options.reconnectPeriod * 2, RECONNECT_MAX);
@@ -567,12 +643,15 @@
     client.on('error', err => { console.error('MQTT error', err); setStatus('down', 'Connection error'); });
 
     client.on('message', (topic, message, packet) => {
+      const status = topic.match(STATUS_RE);
+      if (status) { onStatus(status[1], message.toString()); return; }
       let data;
       try { data = JSON.parse(message.toString()); }
       catch (e) { console.error('Invalid JSON on', topic, e); return; }
       if (topic === TOPIC_ENV) onEnv(data, packet.retain);
       else if (topic === TOPIC_CO2) onCo2(data, packet.retain);
       else if (topic === TOPIC_OCC) onOcc(data);
+      else if (topic === TOPIC_PRESENCE && data.device) noteNode(data.device, data, packet.retain);
     });
   }
 </script>
