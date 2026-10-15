@@ -42,6 +42,7 @@ Written by: MQTT env handler (`log_to_db`) for every message that has no
 | `dark` | INTEGER | yes | payload `dark` truthy → 1, else 0. **Always 0 today**, no firmware sends it |
 | `co2` | INTEGER | yes | payload `co2`, ppm. NULL when the co2 node omits it (invalid reading) |
 | `pressure` | REAL | yes | payload `pressure`, hPa |
+| `co2_ok` | INTEGER | yes | payload `co2_ok` as 1/0; NULL when the message has none (added in #14, via the ALTER loop) |
 
 Retention: rows older than 8 days are deleted on every insert.
 

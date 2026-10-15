@@ -17,12 +17,11 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 - Timestamps: strings `"YYYY-MM-DD HH:MM:SS"` in the **server's local time**,
   no timezone (written with SQLite `datetime('now','localtime')`). They are the
   time the backend received the message, not the device's measurement time.
-- "online": `now - devices.last_seen < HEARTBEAT_TIMEOUT`. `HEARTBEAT_TIMEOUT`
-  is defined twice in `server.py` (300, then 120). The later assignment wins,
-  so the effective value is **120 s**.
+- "online": `now - devices.last_seen < HEARTBEAT_TIMEOUT` (**120 s**).
 - Default device: many endpoints take `?device=` and default to `"home_ping_esp32"`.
-- Errors: there's no shared error format. Bad integer query params (`limit`, `minutes`)
-  and missing JSON bodies raise exceptions, so Flask returns its default HTML `500`.
+- Errors: JSON `{"error": "<message>"}` with the HTTP status (400 bad request body,
+  404 unknown path, 405 wrong method, 500 unexpected error without details). The only
+  exception is the 401 from Basic auth (text/plain, see Auth).
 - CORS: none configured. The web page does not use the REST API.
 
 ## Clients
@@ -90,8 +89,8 @@ For each device with `readings` rows:
  "co2": null, "pressure": 1013.6, "online": true, "co2_ok": null}
 ```
 
-`co2_ok` comes from in-memory state (`CO2_SENSOR_OK`): bool for devices that
-have sent `co2_ok` since the backend started, otherwise `null`.
+`co2_ok` comes from the device's latest `readings` row (`readings.co2_ok`): bool if
+that message had `co2_ok`, otherwise `null`. It survives backend restarts.
 
 For each device with `presence_readings` rows, the radar fields are merged in.
 If the device has no env rows, a stub with `temp`/`humidity`/`dark`/`co2`/`pressure` = null is used.
@@ -238,13 +237,14 @@ Request (JSON):
   (that table is for sensor nodes).
 - Subscribes the token to the FCM topic `env` (server side).
 - Response: `{"success": true}`.
-- Non-JSON or missing body → 500 (`request.json` is None).
+- Missing, non-JSON or non-object body → `400 {"error": "JSON object body required"}`.
 
 Client: Android `MainActivity.registerTokenServerSide` sends `{"token": ...}` only.
 
 ### POST `/api/occupancy_arm`
 
-Request: `{"armed": true|false}` (truthy/falsy, missing = false).
+Request: `{"armed": true|false}`. `armed` must be a JSON boolean; a missing or
+non-boolean `armed`, or a missing/non-JSON body, is a `400` and leaves the state unchanged.
 Sets `system_state.occupancy_armed` to `'1'`/`'0'` and logs event
 `OCCUPANCY_ARMED` (device `"system"`). Response: `{"armed": true|false}`.
 Client: Android Home toggle switch.
@@ -301,5 +301,4 @@ Client: Android Home, on startup, to set the toggle switch.
     `/api/stats24h`, `/api/occupancy_rolling`, `/api/presence/latest`,
     `/api/presence/history`, `/api/widget`, `/api/next-events` (and the broken Google
     OAuth helper `get_access_token`).
-17. **`HEARTBEAT_TIMEOUT` defined twice** (300 with comment "seconds", later 120).
-    The effective value is 120 s. Anyone reading the top of the file gets the wrong number.
+17. ~~**`HEARTBEAT_TIMEOUT` defined twice**~~ Fixed in #14: one definition, 120 s.
