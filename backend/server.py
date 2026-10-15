@@ -113,6 +113,8 @@ def init_db():
             last_seen TIMESTAMP
         )
     """)
+    # register_token used to add phones as "unknown"; devices is for sensor nodes only
+    c.execute("DELETE FROM devices WHERE device = 'unknown'")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS system_state (
@@ -1210,12 +1212,11 @@ def widget():
 def register_token():
     data = request.json
     token = data.get("token")
-    device = data.get("device", "unknown")
 
     if not token:
         return jsonify({"error": "No token provided"}), 400
 
-    touch_device(device)
+    # Phones aren't sensor nodes, so no touch_device() here (#15)
     messaging.subscribe_to_topic([token], "env")
 
     return jsonify({"success": True})
