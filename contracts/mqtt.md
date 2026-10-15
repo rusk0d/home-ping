@@ -160,8 +160,8 @@ Example (warming up):
 
 Backend handling: env handler (no `presence`). Stores a
 `readings` row with `co2` (NULL when absent), `uptime`; `temp`, `humidity` and
-`pressure` are NULL. Keeps `co2_ok` **in memory only** (`CO2_SENSOR_OK` dict,
-lost on restart) and serves it via `/api/latest_all`. Temp/humidity alerts are
+`pressure` are NULL. Stores `co2_ok` in `readings.co2_ok` (1/0, NULL when the message
+has none) and serves it via `/api/latest_all`. Temp/humidity alerts are
 skipped because `temp_c` and `humidity` are absent.
 
 ---
@@ -243,12 +243,10 @@ Example:
    streams. The 120 s tolerance hides this, since both come from the same
    `millis()`.
 8. **Fields sent but not stored or used by the backend:**
-   - co2: `warming`, `err`, `rssi`, `sensor_tmp` are dropped. `co2_ok` is kept in memory only.
+   - co2: `warming`, `err`, `rssi`, `sensor_tmp` are dropped. `co2_ok` is stored in `readings`.
    - bme280: all fields are used.
    - presence: all fields are stored.
 9. **Fields the backend reads that no firmware sends:**
-   - env handler reads `dark` (stored in `readings.dark`, always 0 now).
-     **UNCERTAIN**: probably from a removed light-sensor/OLED node.
    - `server.py` comments mention "PIR occupied fields from other devices are
      ignored". No current firmware sends PIR fields.
 10. **Backend defaults hide malformed messages.** A presence payload without
