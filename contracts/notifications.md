@@ -37,9 +37,11 @@ Status: draft, reverse-engineered from `backend/server.py` and
 
 ## Cooldowns and state
 
-- `NOTIFICATION_COOLDOWN = 15 * 60` = **900 s (15 min)**, per alert key, stored in memory
-  (`LAST_NOTIFICATION`). All of it resets on backend restart. Starts only after a
-  successful send (failed sends retry after 60 s).
+- `NOTIFICATION_COOLDOWN = 15 * 60` = **900 s (15 min)**, per alert key, in `LAST_NOTIFICATION`
+  and persisted as `system_state` `cooldown:<key>` (#5), so a backend restart doesn't reset it.
+  Starts only after a successful send (failed sends retry after 60 s).
+- The radar "outage already pushed" flags (`RADAR_ALERTED`) are persisted the same way
+  (`radar_alerted:<device>`).
 - Cooldown keys: `HUMIDITY_<device>` (shared by high and low), `TEMP_<device>`,
   `RADAR_<device>`. The occupancy alert has **no cooldown key**.
 
@@ -120,9 +122,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 ## Mismatches and issues
 
 1. ~~**The `data` payload is unused.**~~ Fixed in #12: data-only messages, the app reads `data`.
-2. **Cooldowns reset on backend restart, and retained MQTT messages are replayed on
-   reconnect.** A restart while humidity is above 65 or temp is below 18 sends the alert again
-   immediately, even if one was sent minutes earlier.
+2. ~~**Cooldowns reset on backend restart, and retained MQTT messages are replayed.**~~
+   Fixed in #5: cooldowns are persisted and retained messages are skipped.
 3. ~~**Failed sends still start the cooldown and log "sent".**~~ Fixed in #12: logged as
    `failed, ...`, retried after 60 s.
 4. ~~Soil threshold differs~~, 5. ~~missing `moisture` crashes the soil handler~~: soil feature removed in #9.

@@ -467,7 +467,7 @@ def alert(device, event_type, detail, title, body, data, cooldown_key=None):
     log_event(device, event_type, f"{status}, {detail}")
     if cooldown_key:
         now = time.time()
-        LAST_NOTIFICATION[cooldown_key] = now if ok else now - NOTIFICATION_COOLDOWN + PUSH_RETRY_SECONDS
+        set_cooldown(cooldown_key, now if ok else now - NOTIFICATION_COOLDOWN + PUSH_RETRY_SECONDS)
     return ok
 # ---- add near the other config constants, top of the file ----
 QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
@@ -528,7 +528,8 @@ def handle_presence_data(data, topic):
         RADAR_FAIL_COUNT[device] = RADAR_FAIL_COUNT.get(device, 0) + 1
     else:
         RADAR_FAIL_COUNT[device] = 0
-        RADAR_ALERTED.discard(device)  # back: the next outage alerts again
+        if device in RADAR_ALERTED:  # back: the next outage alerts again
+            set_radar_alerted(device, False)
 
     # Once per outage (not every cooldown while it stays down)
     last_radar_alert = LAST_NOTIFICATION.get(f"RADAR_{device}", 0)
@@ -540,7 +541,7 @@ def handle_presence_data(data, topic):
                  body=f"{device}: LD2410C not responding",
                  data={"event": "RADAR_DISCONNECTED", "device": device},
                  cooldown_key=f"RADAR_{device}"):
-            RADAR_ALERTED.add(device)
+            set_radar_alerted(device, True)
 
     # -------------------------
     # OCCUPANCY ALERT — fires once per arrival, after a long quiet spell
@@ -562,9 +563,36 @@ def handle_presence_data(data, topic):
 # -------------------------
 # MQTT CALLBACK
 # -------------------------
-LAST_NOTIFICATION = {}
-RADAR_FAIL_COUNT = {}
-RADAR_ALERTED = set()  # radars whose current outage was already pushed
+# Alert state that must survive a backend restart (#5) lives in system_state:
+#   cooldown:<key>       = unix time the cooldown for <key> started
+#   radar_alerted:<dev>  = '1' while that radar's current outage has been pushed
+def load_alert_state():
+    conn = sqlite3.connect(DB)
+    rows = conn.execute("""
+        SELECT key, value FROM system_state
+        WHERE key LIKE 'cooldown:%' OR key LIKE 'radar_alerted:%'
+    """).fetchall()
+    conn.close()
+    cooldowns = {k[len("cooldown:"):]: float(v) for k, v in rows if k.startswith("cooldown:")}
+    alerted = {k[len("radar_alerted:"):] for k, v in rows if k.startswith("radar_alerted:") and v == "1"}
+    return cooldowns, alerted
+
+
+def set_cooldown(key, started):
+    LAST_NOTIFICATION[key] = started
+    set_state(f"cooldown:{key}", repr(started))
+
+
+def set_radar_alerted(device, alerted):
+    if alerted:
+        RADAR_ALERTED.add(device)
+    else:
+        RADAR_ALERTED.discard(device)
+    set_state(f"radar_alerted:{device}", "1" if alerted else "0")
+
+
+LAST_NOTIFICATION, RADAR_ALERTED = load_alert_state()
+RADAR_FAIL_COUNT = {}  # consecutive radar_connected=false messages (in memory; 12 needed to alert)
 NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
 PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
 TEMP_THRESHOLD = 18
@@ -575,6 +603,14 @@ CONFIDENCE_THRESHOLD = 65
 def on_message(client, userdata, msg):
     print(f"[MQTT] Received message on topic: {msg.topic}")
     print(f"[MQTT] Payload: {msg.payload.decode()}")
+    # The broker replays the last retained message of each topic when we
+    # (re)subscribe, with the retain flag set. That's an old reading: storing it
+    # would add a duplicate row with a fresh ts and could re-send alerts (#5).
+    # Live messages arrive without the flag. The firmware keeps retaining for
+    # the web page, which wants the last value immediately.
+    if msg.retain:
+        print(f"[MQTT] Skipping retained message on {msg.topic}")
+        return
     try:
         data = json.loads(msg.payload.decode())
 
