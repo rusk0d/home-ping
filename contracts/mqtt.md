@@ -265,7 +265,7 @@ Example:
    Fixed in #5: the backend skips messages with the retain flag, and the alert
    cooldowns are stored in the DB (see `notifications.md`).
 4. **No timestamps in payloads.** Every stored `ts` is the backend's receive
-   time (server local time). Delayed or replayed messages get the wrong time.
+   time (UTC since #65). Delayed messages get the receive time.
 5. ~~**No LWT / status topic.**~~ Fixed in #13: `home/esp32/<device>/status` with a last
    will, and the backend pushes when a node has sent nothing for 5 min.
 6. **`uptime` wraps at ~49.7 days.** `millis()/1000` wraps on main_node and co2_node,
