@@ -11,29 +11,64 @@ import com.david.homeenv.R
 /** A level label and its colour, e.g. "Comfortable" / good. */
 data class Level(val text: String, @ColorRes val color: Int)
 
+/**
+ * A banded scale: the value range a gauge shows, the band stops, and the colour of each
+ * band (one more colour than stops). The single source for the chip thresholds below,
+ * the CO₂ card's gauge and the widget gauges. web/index.html has its own copy.
+ */
+class Scale(val min: Double, val max: Double, val stops: List<Double>, @ColorRes val colors: List<Int>) {
+    init { require(colors.size == stops.size + 1) }
+
+    /** Position of [value] on the gauge, 0..1. */
+    fun fraction(value: Double) = ((value - min) / (max - min)).coerceIn(0.0, 1.0)
+
+    /** Where each band starts on the gauge, 0..1 (the first one at 0). */
+    val bandStarts: List<Float> get() = listOf(0f) + stops.map { fraction(it).toFloat() }
+}
+
 /** Level thresholds, same as web/index.html (co2Level, humLevel, tempLevel). */
 object Levels {
-    fun co2(ppm: Int) = when {
-        ppm < 800 -> Level("Fresh", R.color.good)
-        ppm < 1200 -> Level("OK", R.color.ok)
-        ppm < 2000 -> Level("Stuffy – open a window", R.color.poor)
-        else -> Level("Poor – ventilate now", R.color.bad)
+    // Gauge ranges, band stops and band colours. The chips use the same stops.
+    val TEMPERATURE = Scale(14.0, 30.0, listOf(18.0, 20.0, 24.0, 27.0),
+        listOf(R.color.accent_hum, R.color.ok, R.color.good, R.color.ok, R.color.bad))
+    val HUMIDITY = Scale(0.0, 100.0, listOf(30.0, 40.0, 60.0, 70.0),
+        listOf(R.color.poor, R.color.ok, R.color.good, R.color.ok, R.color.poor))
+    val CO2 = Scale(400.0, 3000.0, listOf(800.0, 1200.0, 2000.0),
+        listOf(R.color.good, R.color.ok, R.color.poor, R.color.bad))
+    /** Occupancy confidence / hourly occupancy, % (see [occupancy]). */
+    val OCCUPANCY = Scale(0.0, 100.0, listOf(20.0, 60.0),
+        listOf(R.color.muted, R.color.ok, R.color.good))
+
+    fun co2(ppm: Int): Level {
+        val (fresh, ok, stuffy) = CO2.stops
+        return when {
+            ppm < fresh -> Level("Fresh", R.color.good)
+            ppm < ok -> Level("OK", R.color.ok)
+            ppm < stuffy -> Level("Stuffy – open a window", R.color.poor)
+            else -> Level("Poor – ventilate now", R.color.bad)
+        }
     }
 
-    fun humidity(h: Double) = when {
-        h < 30 -> Level("Very dry", R.color.poor)
-        h < 40 -> Level("Dry", R.color.ok)
-        h <= 60 -> Level("Comfortable", R.color.good)
-        h <= 70 -> Level("Humid", R.color.ok)
-        else -> Level("Very humid", R.color.poor)
+    fun humidity(h: Double): Level {
+        val (veryDry, dry, comfortable, humid) = HUMIDITY.stops
+        return when {
+            h < veryDry -> Level("Very dry", R.color.poor)
+            h < dry -> Level("Dry", R.color.ok)
+            h <= comfortable -> Level("Comfortable", R.color.good)
+            h <= humid -> Level("Humid", R.color.ok)
+            else -> Level("Very humid", R.color.poor)
+        }
     }
 
-    fun temperature(t: Double) = when {
-        t < 18 -> Level("Cold", R.color.accent_hum)
-        t < 20 -> Level("Cool", R.color.ok)
-        t <= 24 -> Level("Comfortable", R.color.good)
-        t <= 27 -> Level("Warm", R.color.ok)
-        else -> Level("Hot", R.color.bad)
+    fun temperature(t: Double): Level {
+        val (cold, cool, comfortable, warm) = TEMPERATURE.stops
+        return when {
+            t < cold -> Level("Cold", R.color.accent_hum)
+            t < cool -> Level("Cool", R.color.ok)
+            t <= comfortable -> Level("Comfortable", R.color.good)
+            t <= warm -> Level("Warm", R.color.ok)
+            else -> Level("Hot", R.color.bad)
+        }
     }
 
     /** 3 h pressure change in hPa → outlook (kept from the old Android screen). */
@@ -48,8 +83,8 @@ object Levels {
     /** Hourly occupancy % → bar colour (web: occColor). */
     @ColorRes
     fun occupancy(pct: Double) = when {
-        pct >= 60 -> R.color.good
-        pct >= 20 -> R.color.ok
+        pct >= OCCUPANCY.stops[1] -> R.color.good
+        pct >= OCCUPANCY.stops[0] -> R.color.ok
         pct > 0 -> R.color.muted
         else -> R.color.faint
     }
