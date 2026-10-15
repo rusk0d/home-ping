@@ -48,6 +48,8 @@ MQTT_PORT = 1883
 MQTT_USER = os.environ["MQTT_USER"]
 MQTT_PASS = os.environ["MQTT_PASS"]
 TOPIC = "home/esp32/#"  # Subscribe to all topics under home/esp32/
+EVENTS_RETENTION_DAYS = 90    # events older than this are deleted
+DEVICES_RETENTION_DAYS = 30   # devices not seen for this long are removed from the list
 HEARTBEAT_TIMEOUT = 120  # seconds without a message before a device counts as offline
 FIREBASE_CRED = "firebase_service_account.json"
 LAST_UPTIME = {}
@@ -186,6 +188,21 @@ def init_db():
             radar_connected INTEGER
         )
     """)
+
+    # Indexes for the per-device lookups (#18). (device, id) serves "latest row of a
+    # device"; (device, ts) serves time windows. No plain ts index: it made SQLite pick
+    # worse plans for several endpoints (measured on an 8-day, 276k-row database).
+    for sql in (
+        "CREATE INDEX IF NOT EXISTS ix_presence_device_id ON presence_readings(device, id)",
+        "CREATE INDEX IF NOT EXISTS ix_presence_device_ts ON presence_readings(device, ts)",
+        "CREATE INDEX IF NOT EXISTS ix_readings_device_id ON readings(device, id)",
+        "CREATE INDEX IF NOT EXISTS ix_readings_device_ts ON readings(device, ts)",
+        "CREATE INDEX IF NOT EXISTS ix_events_type_ts ON events(type, ts)",
+    ):
+        c.execute(sql)
+    conn.commit()
+    # Without statistics SQLite picks the wrong index for several queries
+    c.execute("ANALYZE")
     conn.commit()
     conn.close()
 
@@ -204,6 +221,9 @@ def touch_device(device):
         ON CONFLICT(device)
         DO UPDATE SET last_seen=datetime('now','localtime')
     """, (device,))
+    # Forget nodes that have been gone for a long time (e.g. a retired node)
+    c.execute("DELETE FROM devices WHERE last_seen < datetime('now','localtime',?)",
+              (f"-{DEVICES_RETENTION_DAYS} days",))
     conn.commit()
     conn.close()
 
@@ -371,6 +391,8 @@ def log_event(device, event_type, value):
         INSERT INTO events (device, ts, type, value)
         VALUES (?, datetime('now','localtime'), ?, ?)
     """, (device, event_type, value))
+    c.execute("DELETE FROM events WHERE ts < datetime('now','localtime',?)",
+              (f"-{EVENTS_RETENTION_DAYS} days",))
     conn.commit()
     conn.close()
 
