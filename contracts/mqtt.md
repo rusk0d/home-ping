@@ -52,8 +52,10 @@ Other messages are routed on payload keys (`server.py` `on_message`), in this or
 soil feature because no soil node exists.)
 
 So the topic names are informational only for the backend. A payload's key set
-decides how it is stored. Non-JSON payloads raise an exception that is caught
-and printed (message dropped).
+decides how it is stored. Malformed payloads (not valid UTF-8, not JSON, not a JSON
+object) are logged as `MQTT error: …` and dropped. Nothing may escape `on_message`:
+paho re-raises callback exceptions, which would end its network thread and stop all
+ingestion (#58).
 
 ### Common fields
 
