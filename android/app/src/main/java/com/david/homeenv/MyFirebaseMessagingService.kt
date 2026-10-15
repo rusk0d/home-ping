@@ -5,58 +5,67 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
+    companion object {
+        /** Sensor alerts (humidity, temperature, radar, soil). Also the FCM default channel (manifest). */
+        const val CHANNEL_SENSORS = "homeenv_channel"
+        /** Arrival alerts, separate so they can stay on when sensor alerts are muted. */
+        const val CHANNEL_OCCUPANCY = "occupancy"
+
+        /** Creates the channels; called at app start so FCM can use them before the first message. */
+        fun createChannels(context: Context) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_SENSORS, "Sensor alerts", NotificationManager.IMPORTANCE_HIGH)
+            )
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_OCCUPANCY, "Occupancy alerts", NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
+    }
+
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 
-        val title = message.notification?.title ?: "HomeEnv Alert"
-        val body = message.notification?.body ?: ""
+        // Data-only messages carry title/body in data; older backends send a notification block
+        val data = message.data
+        val title = data["title"] ?: message.notification?.title ?: "Home Ping"
+        val body = data["body"] ?: message.notification?.body ?: ""
 
-        sendNotification(title, body)
+        sendNotification(title, body, data["event"], data["device"])
     }
 
-    private fun sendNotification(title: String, body: String) {
-        val channelId = "homeenv_channel"
-
+    private fun sendNotification(title: String, body: String, event: String?, device: String?) {
         val intent = Intent(this, MainActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
 
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-            else
-                PendingIntent.FLAG_UPDATE_CURRENT
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        // Create channel for Android 8+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "HomeEnv Notifications",
-                NotificationManager.IMPORTANCE_HIGH
-            )
-            notificationManager.createNotificationChannel(channel)
-        }
+        createChannels(this)
+        val channelId = if (event == "OCCUPIED") CHANNEL_OCCUPANCY else CHANNEL_SENSORS
 
         val notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
 
-        notificationManager.notify(0, notification)
+        // One slot per alert type and device: a new humidity alert replaces the last one,
+        // but doesn't wipe an occupancy alert. Unknown events each get their own slot.
+        val id = if (event != null) "$event/$device".hashCode() else System.currentTimeMillis().toInt()
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(id, notification)
     }
 
     override fun onNewToken(token: String) {
