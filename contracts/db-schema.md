@@ -127,12 +127,14 @@ Event types written by `server.py`:
 |---|---|---|---|
 | `RESTART` | sensor ID | `uptime 86400s -> 12s` | `uptime` dropped by > 120 s vs. last message (in-memory baseline) |
 | `OCCUPANCY_CHANGE` | radar ID | `occupied` / `vacant` | derived `occupied` differs from the previous row of that radar |
-| `RADAR_DISCONNECTED` | radar ID | `no frames from LD2410C` | radar-offline push sent |
-| `OCCUPANCY_ALERT` | radar ID | `after 75 min quiet` | arrival push sent |
-| `HUMIDITY_HIGH_ALERT` | env ID | `sent, humidity=67.2` | humidity push sent |
-| `HUMIDITY_LOW_ALERT` | env ID | `sent, humidity=23.9` | humidity push sent |
-| `TEMP_ALERT` | env ID | `sent, temp=17.6` | temperature push sent |
-| `SOIL_DRY_ALERT` | soil ID | `moisture=22%` | soil push sent |
+| `RADAR_DISCONNECTED` | radar ID | `sent, no frames from LD2410C` | radar-offline push attempted |
+| `OCCUPANCY_ALERT` | radar ID | `sent, after 75 min quiet` | arrival push attempted |
+| `HUMIDITY_HIGH_ALERT` | env ID | `sent, humidity=67.2` | humidity push attempted |
+| `HUMIDITY_LOW_ALERT` | env ID | `sent, humidity=23.9` | humidity push attempted |
+| `TEMP_ALERT` | env ID | `sent, temp=17.6` | temperature push attempted |
+| `SOIL_DRY_ALERT` | soil ID | `sent, moisture=22%` | soil push attempted |
+
+For the push events above, the value starts with `sent, ` or `failed, ` (since #12).
 | `OCCUPANCY_ARMED` | `system` | `1` / `0` | `POST /api/occupancy_arm` |
 
 Read by: `/api/restarts` (`RESTART` only), `/api/widget` (last 5 for a device + `home_ping_esp32`).
