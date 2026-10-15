@@ -4,7 +4,7 @@ import os
 import re
 from flask import Flask, jsonify, request, Response, abort
 from werkzeug.exceptions import HTTPException
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import paho.mqtt.client as mqtt
 from functools import wraps
 from dotenv import load_dotenv
@@ -78,6 +78,16 @@ def http_error(e):
 def server_error(e):
     print(f"[ERROR] {request.path}: {e!r}")
     return jsonify({"error": "internal error"}), 500
+
+
+def utcnow():
+    """Naive UTC now: comparable with the stored timestamps, which are UTC (#65)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def iso(ts):
+    """Stored "YYYY-MM-DD HH:MM:SS" (UTC) -> ISO 8601 for the API: "YYYY-MM-DDTHH:MM:SSZ"."""
+    return None if ts is None else ts.replace(" ", "T") + "Z"
 
 
 def json_body():
@@ -192,6 +202,16 @@ def init_db():
         )
     """)
 
+    # Timestamps were stored in server local time until #65; convert existing rows to
+    # UTC once. SQLite's 'utc' modifier applies the DST offset of each row's own date.
+    if c.execute("SELECT 1 FROM system_state WHERE key = 'ts_utc'").fetchone() is None:
+        for table, col in (("readings", "ts"), ("presence_readings", "ts"),
+                           ("events", "ts"), ("devices", "last_seen")):
+            c.execute(f"UPDATE {table} SET {col} = datetime({col}, 'utc') WHERE {col} IS NOT NULL")
+        c.execute("INSERT INTO system_state (key, value) VALUES ('ts_utc', '1')")
+        conn.commit()
+        print("[DB] timestamps converted to UTC")
+
     # Indexes for the per-device lookups (#18). (device, id) serves "latest row of a
     # device"; (device, ts) serves time windows. No plain ts index: it made SQLite pick
     # worse plans for several endpoints (measured on an 8-day, 276k-row database).
@@ -220,12 +240,12 @@ def touch_device(device):
     c = conn.cursor()
     c.execute("""
         INSERT INTO devices (device, last_seen)
-        VALUES (?, datetime('now','localtime'))
+        VALUES (?, datetime('now'))
         ON CONFLICT(device)
-        DO UPDATE SET last_seen=datetime('now','localtime')
+        DO UPDATE SET last_seen=datetime('now')
     """, (device,))
     # Forget nodes that have been gone for a long time (e.g. a retired node)
-    c.execute("DELETE FROM devices WHERE last_seen < datetime('now','localtime',?)",
+    c.execute("DELETE FROM devices WHERE last_seen < datetime('now',?)",
               (f"-{DEVICES_RETENTION_DAYS} days",))
     conn.commit()
     conn.close()
@@ -239,12 +259,12 @@ def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None):
     c.execute("""
         INSERT INTO readings
         (device, ts, temp, humidity, uptime, co2, pressure, co2_ok)
-        VALUES (?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?)
+        VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?)
     """, (device, temp, hum, uptime, co2, pressure, co2_ok))
 
     c.execute("""
         DELETE FROM readings
-        WHERE ts < datetime('now','localtime','-8 days')
+        WHERE ts < datetime('now','-8 days')
     """)
 
     conn.commit()
@@ -258,14 +278,14 @@ def log_presence(device, occupied, presence, stationary, moving,
         INSERT INTO presence_readings
         (device, ts, occupied, presence, stationary, moving,
          distance, signal, rssi, uptime, radar_connected)
-        VALUES (?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (device, occupied, presence, stationary, moving,
           distance, signal, rssi, uptime, radar_connected))
 
     # Keep 8 days so the 24h queries always have full coverage
     c.execute("""
         DELETE FROM presence_readings
-        WHERE ts < datetime('now','localtime','-8 days')
+        WHERE ts < datetime('now','-8 days')
     """)
     conn.commit()
     conn.close()
@@ -280,7 +300,7 @@ def occupancy_stats(hours=24):
                MIN(ts),
                MAX(ts)
         FROM presence_readings
-        WHERE ts >= datetime('now','localtime', ?)
+        WHERE ts >= datetime('now', ?)
         GROUP BY device
     """, (f"-{hours} hours",))
     rows = c.fetchall()
@@ -325,7 +345,7 @@ def calculate_confidence(device, minutes=CONFIDENCE_MINUTES):
     c = conn.cursor()
     c.execute("""
         SELECT occupied FROM presence_readings
-        WHERE device = ? AND ts >= datetime('now','localtime', ?)
+        WHERE device = ? AND ts >= datetime('now', ?)
     """, (device, f"-{minutes} minutes"))
     rows = c.fetchall()
     conn.close()
@@ -347,7 +367,7 @@ def get_combined_occupancy():
     for d in devices:
         c.execute("""
             SELECT occupied FROM presence_readings
-            WHERE device = ? AND ts >= datetime('now','localtime','-2 minutes')
+            WHERE device = ? AND ts >= datetime('now','-2 minutes')
             ORDER BY id DESC LIMIT 3
         """, (d,))
         rows = [r[0] for r in c.fetchall()]
@@ -366,7 +386,7 @@ def calculate_combined_confidence(minutes=CONFIDENCE_MINUTES):
     c.execute("""
         SELECT device, AVG(occupied)
         FROM presence_readings
-        WHERE ts >= datetime('now','localtime', ?)
+        WHERE ts >= datetime('now', ?)
         GROUP BY device
     """, (f"-{minutes} minutes",))
     rows = c.fetchall()
@@ -394,9 +414,9 @@ def log_event(device, event_type, value):
     c = conn.cursor()
     c.execute("""
         INSERT INTO events (device, ts, type, value)
-        VALUES (?, datetime('now','localtime'), ?, ?)
+        VALUES (?, datetime('now'), ?, ?)
     """, (device, event_type, value))
-    c.execute("DELETE FROM events WHERE ts < datetime('now','localtime',?)",
+    c.execute("DELETE FROM events WHERE ts < datetime('now',?)",
               (f"-{EVENTS_RETENTION_DAYS} days",))
     conn.commit()
     conn.close()
@@ -493,7 +513,7 @@ def any_radar_quiet_minutes():
     if not row:
         return 9999
     last_occ = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
-    return (datetime.now() - last_occ).total_seconds() / 60
+    return (utcnow() - last_occ).total_seconds() / 60
 
 
 def handle_presence_data(data, topic):
@@ -618,7 +638,7 @@ def check_nodes():
     conn = sqlite3.connect(DB)
     rows = conn.execute("SELECT device, last_seen FROM devices").fetchall()
     conn.close()
-    now = datetime.now()
+    now = utcnow()
     for device, last_seen in rows:
         age = (now - datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")).total_seconds()
         if age < NODE_OFFLINE_ALERT_SECONDS:
@@ -768,10 +788,10 @@ def hourly_occupancy_today():
     c = conn.cursor()
     c.execute("""
         SELECT
-            strftime('%Y-%m-%d %H:00', ts),
+            strftime('%Y-%m-%d %H:00', ts, 'localtime'),
             AVG(occupied)*100
         FROM presence_readings
-        WHERE device = ? AND ts >= datetime('now','localtime','start of day')
+        WHERE device = ? AND ts >= datetime('now','localtime','start of day','utc')
         GROUP BY 1
     """, (PRESENCE_DEVICE,))
     rows = {r[0]: r[1] for r in c.fetchall()}
@@ -850,10 +870,10 @@ def latest():
     online = False
     if dev:
         last_seen = datetime.strptime(dev[0], "%Y-%m-%d %H:%M:%S")
-        online = (datetime.now() - last_seen).total_seconds() < HEARTBEAT_TIMEOUT
+        online = (utcnow() - last_seen).total_seconds() < HEARTBEAT_TIMEOUT
 
     return jsonify({
-        "ts": row[0],
+        "ts": iso(row[0]),
         "temp": row[1],
         "humidity": row[2],
         "uptime": row[3],
@@ -869,7 +889,7 @@ def latest_all():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
 
-    now = datetime.now()
+    now = utcnow()
 
     def is_online(device):
         c.execute("SELECT last_seen FROM devices WHERE device = ?", (device,))
@@ -895,7 +915,7 @@ def latest_all():
             continue
 
         result[device] = {
-            "ts": row[0],
+            "ts": iso(row[0]),
             "temp": row[1],
             "humidity": row[2],
             "uptime": row[3],
@@ -927,7 +947,7 @@ def latest_all():
         })
 
         entry.update({
-            "ts": p[0],
+            "ts": iso(p[0]),
             "uptime": p[8],
             "occupied": p[1],
             "confidence": calculate_confidence(device),
@@ -961,7 +981,7 @@ def restarts():
         SELECT device, COUNT(*)
         FROM events
         WHERE type = 'RESTART'
-          AND ts >= datetime('now','localtime','-24 hours')
+          AND ts >= datetime('now','-24 hours')
         GROUP BY device
     """)
     day = dict(c.fetchall())
@@ -970,7 +990,7 @@ def restarts():
         SELECT device, COUNT(*)
         FROM events
         WHERE type = 'RESTART'
-          AND ts >= datetime('now','localtime','-7 days')
+          AND ts >= datetime('now','-7 days')
         GROUP BY device
     """)
     week = dict(c.fetchall())
@@ -989,7 +1009,7 @@ def restarts():
         d: {
             "last_24h": day.get(d, 0),
             "last_7d": week.get(d, 0),
-            "last_restart": last.get(d),
+            "last_restart": iso(last.get(d)),
         } for d in devices
     })
 
@@ -1001,11 +1021,11 @@ def hourly():
     c = conn.cursor()
     c.execute("""
         SELECT
-            strftime('%Y-%m-%d %H:00', ts),
+            strftime('%Y-%m-%d %H:00', ts, 'localtime'),
             AVG(temp),
             AVG(humidity)
         FROM readings
-        WHERE device = ? AND ts >= datetime('now','localtime','start of day')
+        WHERE device = ? AND ts >= datetime('now','localtime','start of day','utc')
         GROUP BY 1
     """, (device,))
     env_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
@@ -1052,7 +1072,7 @@ def air():
     c.execute("""
         SELECT pressure FROM readings
         WHERE pressure IS NOT NULL
-          AND ts <= datetime('now','localtime','-3 hours')
+          AND ts <= datetime('now','-3 hours')
         ORDER BY id DESC LIMIT 1
     """)
     old = c.fetchone()
@@ -1071,7 +1091,7 @@ def air():
         trend = round(pressure - old[0], 1)
 
     return jsonify({
-        "ts": env_row[0] if env_row else (co2_row[0] if co2_row else None),
+        "ts": iso(env_row[0] if env_row else (co2_row[0] if co2_row else None)),
         "co2": co2,
         "band": band,
         "pressure": pressure,
@@ -1090,14 +1110,14 @@ def devices():
     rows = c.fetchall()
     conn.close()
 
-    now = datetime.now()
+    now = utcnow()
     out = []
 
     for dev, ts in rows:
         last = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
         out.append({
             "device": dev,
-            "last_seen": ts,
+            "last_seen": iso(ts),
             "online": (now - last).total_seconds() < HEARTBEAT_TIMEOUT
         })
 
@@ -1142,7 +1162,7 @@ def stats24h_combined():
     c.execute("""
         SELECT temp, humidity
         FROM readings
-        WHERE ts >= datetime('now','localtime','-24 hours')
+        WHERE ts >= datetime('now','-24 hours')
           AND temp IS NOT NULL
           AND humidity IS NOT NULL
     """)
