@@ -33,16 +33,17 @@ whether a device is online from the `devices.last_seen` timestamp in the DB
 | `home/esp32/presence` | main_node (`home_ping_esp32`) **and** eink_node (`hallway_presence_esp32`) | backend (via `home/esp32/#`) | 5 s per node | yes | 0 |
 | `home/esp32/co2` | co2_node (`co2_sensor_esp32`) | backend (via `home/esp32/#`), web page | 60 s | yes | 0 |
 | `home/backend/occupancy_hourly` | backend | web page | 300 s + on every (re)connect | yes | 0 |
-| (soil topic, name unknown) | **nobody in this repo** | backend (via `home/esp32/#`, matched by payload) | unknown | unknown | unknown |
 
 ### How the backend routes messages
 
 The backend subscribes to `home/esp32/#` and **ignores the topic name**. It
 routes on payload keys (`server.py` `on_message`), in this order:
 
-1. Payload has both `moisture` and `raw` → soil handler → `soil_readings` table.
-2. Payload has `presence` → presence handler → `presence_readings` table.
-3. Anything else → environmental handler → `readings` table.
+1. Payload has `presence` → presence handler → `presence_readings` table.
+2. Anything else → environmental handler → `readings` table.
+
+(A soil handler for `moisture`+`raw` payloads existed until #9; it was removed with the
+soil feature because no soil node exists.)
 
 So the topic names are informational only for the backend. A payload's key set
 decides how it is stored. Non-JSON payloads raise an exception that is caught
@@ -157,7 +158,7 @@ Example (warming up):
 {"device":"co2_sensor_esp32","co2_ok":false,"warming":true,"err":1,"rssi":-58,"uptime":60}
 ```
 
-Backend handling: env handler (no `presence`, no `moisture`/`raw`). Stores a
+Backend handling: env handler (no `presence`). Stores a
 `readings` row with `co2` (NULL when absent), `uptime`; `temp`, `humidity` and
 `pressure` are NULL. Keeps `co2_ok` **in memory only** (`CO2_SENSOR_OK` dict,
 lost on restart) and serves it via `/api/latest_all`. Temp/humidity alerts are
@@ -211,22 +212,6 @@ Example:
 - A card is greyed out as stale after 90 s (bme280) or 180 s (co2) without a message.
 - `home/esp32/dht11` (an old, unpublished topic) is no longer used.
 
-## Soil moisture (topic unknown)
-
-- The backend has a full soil pipeline (`handle_soil_data`, `soil_readings`
-  table, `/api/soil/*`, `SOIL_DRY` push), triggered by any payload under
-  `home/esp32/#` containing both `moisture` and `raw`.
-- Expected fields (from the backend): `device` (string, default `"soil_sensor_01"`),
-  `moisture` (number, % (**UNCERTAIN**), compared to 25), `raw` (integer, raw ADC value, **UNCERTAIN**).
-- **No soil firmware exists in this repo.** Topic name, interval and retain
-  flag are unknown (**UNCERTAIN**: possibly an external or removed node).
-
-Example (inferred):
-
-```json
-{"device":"soil_sensor_01","moisture":41,"raw":2210}
-```
-
 ---
 
 ## Mismatches and issues between components
@@ -264,7 +249,6 @@ Example (inferred):
 9. **Fields the backend reads that no firmware sends:**
    - env handler reads `dark` (stored in `readings.dark`, always 0 now).
      **UNCERTAIN**: probably from a removed light-sensor/OLED node.
-   - soil handler: `moisture`, `raw`. No firmware in the repo.
    - `server.py` comments mention "PIR occupied fields from other devices are
      ignored". No current firmware sends PIR fields.
 10. **Backend defaults hide malformed messages.** A presence payload without
