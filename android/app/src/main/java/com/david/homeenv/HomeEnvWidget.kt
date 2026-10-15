@@ -28,6 +28,8 @@ class HomeEnvWidget : AppWidgetProvider() {
         private const val ACTION_AUTO_UPDATE = "com.david.homeenv.AUTO_UPDATE"
         private const val UPDATE_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes
         private const val FETCH_TIMEOUT_S = 8L  // stay well inside goAsync's ~10 s budget
+        private const val GAUGE_GAP_DP = 12     // layout: marginStart between the metric columns
+        private const val CO2_GAUGE_HEIGHT_DP = 10f   // layout: w_co2_gauge height (thinner than the 16dp ones)
     }
 
     // Fetches queued by updateWidget during this broadcast; run in onReceive under goAsync().
@@ -186,7 +188,12 @@ class HomeEnvWidget : AppWidgetProvider() {
         // Fetch data async (run by onReceive under goAsync)
         fetches += {
             val fresh = try {
-                Api.getObject("/api/latest", FETCH_TIMEOUT_S)?.let { render(context, manager, widgetId, it) }
+                // CO2 comes from /api/air; fetched alongside so both fit in the time budget
+                var air: JSONObject? = null
+                val airFetch = thread { air = Api.getObject("/api/air", FETCH_TIMEOUT_S) }
+                val latest = Api.getObject("/api/latest", FETCH_TIMEOUT_S)
+                airFetch.join(FETCH_TIMEOUT_S * 1000)
+                latest?.let { render(context, manager, widgetId, it, air) }
             } catch (_: Exception) {
                 null // widgets must NEVER crash
             }
@@ -205,8 +212,11 @@ class HomeEnvWidget : AppWidgetProvider() {
         }
     }
 
-    /** Full widget from the /api/latest object (see contracts/api.md). Fields can be null. */
-    private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, json: JSONObject): RemoteViews {
+    /**
+     * Full widget from the /api/latest object, plus CO2 from /api/air ([air] null = not
+     * available; see contracts/api.md). Fields can be null.
+     */
+    private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, json: JSONObject, air: JSONObject?): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_homeenv)
         val gaugeWidth = gaugeWidthPx(context, manager, widgetId)
 
@@ -236,6 +246,14 @@ class HomeEnvWidget : AppWidgetProvider() {
             views.setTextColor(R.id.w_occ_level, Levels.color(context, color))
         }
         views.setImageViewBitmap(R.id.w_occ_gauge, WidgetGauge.render(context, Levels.OCCUPANCY, confidence, gaugeWidth))
+
+        // CO2: one thin gauge as wide as the three above (their widths plus the two gaps)
+        val co2 = air?.optNum("co2")
+        views.setTextViewText(R.id.w_co2_value, co2?.let { String.format(Locale.US, "%.0f", it) } ?: "--")
+        // Short level text ("Stuffy", not "Stuffy – open a window"): the row is narrow
+        setLevel(context, views, R.id.w_co2_level, co2?.let { Levels.co2(it.toInt()).let { l -> l.copy(text = l.text.substringBefore(" –")) } })
+        val co2Width = gaugeWidth * 3 + (2 * GAUGE_GAP_DP * context.resources.displayMetrics.density).toInt()
+        views.setImageViewBitmap(R.id.w_co2_gauge, WidgetGauge.render(context, Levels.CO2, co2, co2Width, CO2_GAUGE_HEIGHT_DP))
 
         // Online = the sensor node reported within the backend's heartbeat timeout
         views.setInt(R.id.w_online_dot, "setColorFilter", Levels.color(context, if (online) R.color.good else R.color.bad))
@@ -268,6 +286,6 @@ class HomeEnvWidget : AppWidgetProvider() {
             if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH
         ).takeIf { it > 0 } ?: 250
         val d = context.resources.displayMetrics.density
-        return (((widthDp - 2 * 14 - 2 * 12) / 3f) * d).toInt()
+        return (((widthDp - 2 * 14 - 2 * GAUGE_GAP_DP) / 3f) * d).toInt()
     }
 }
