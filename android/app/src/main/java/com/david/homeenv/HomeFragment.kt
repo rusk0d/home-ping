@@ -23,6 +23,7 @@ import com.google.android.material.snackbar.Snackbar
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
+import java.time.Instant
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
@@ -45,7 +46,8 @@ class HomeFragment : Fragment() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
-    private val serverTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+    // Older backends (before #65) sent server-local time without a zone
+    private val legacyServerTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
     // Timestamps of the latest readings, for the "x ago" labels and stale dimming
     private var envTs: Date? = null
@@ -383,10 +385,11 @@ class HomeFragment : Fragment() {
 
     private fun JSONObject.optTs(key: String): Date? = if (isNull(key)) null else parseTs(optString(key))
 
-    private fun parseTs(s: String?): Date? = try {
-        s?.let { serverTime.parse(it) }
-    } catch (e: Exception) {
-        null
+    /** API timestamps are ISO 8601 UTC ("2026-10-15T18:42:15Z", #65); the old local format still parses. */
+    private fun parseTs(s: String?): Date? {
+        if (s.isNullOrEmpty()) return null
+        return runCatching { Date.from(Instant.parse(s)) }.getOrNull()
+            ?: runCatching { legacyServerTime.parse(s) }.getOrNull()
     }
 
     /** "22.4" + "°C" → big number with a small muted unit. */
