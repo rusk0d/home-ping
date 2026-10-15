@@ -13,3 +13,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+# Gradle user-home files (daemon registry, native libs, profiles) that ended up
+# under gradle/wrapper/ on an old machine; only the wrapper jar/properties belong there
+/gradle/wrapper/*
+!/gradle/wrapper/gradle-wrapper.jar
+!/gradle/wrapper/gradle-wrapper.properties
