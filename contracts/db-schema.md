@@ -90,11 +90,11 @@ Retention: last 1000 rows **per device** are kept (no time limit).
 | Column | Type | Null | Meaning |
 |---|---|---|---|
 | `device` | TEXT PK | no | device ID |
-| `last_seen` | TIMESTAMP (TEXT) | yes | last time any message (or token registration) touched it, local |
+| `last_seen` | TIMESTAMP (TEXT) | yes | last time any message touched it, local |
 
-Upserted by `touch_device()` on every env and presence message, inline in the soil
-handler, and by `POST /api/register_token` (with `device` from the body,
-default `"unknown"`). Never deleted.
+Upserted by `touch_device()` on every env and presence message and inline in the soil
+handler. Sensor nodes only: `init_db()` deletes the `"unknown"` row that
+`POST /api/register_token` used to create (#15). Otherwise never deleted.
 
 ### `system_state` (key/value settings)
 
@@ -144,7 +144,7 @@ Read by: `/api/restarts` (`RESTART` only), `/api/widget` (last 5 for a device + 
 | `readings` | `log_to_db` (+ 8-day prune) | `/api/latest`, `/api/latest_all`, `/api/latest2`, `/api/history`, `/api/history_combined` (UNION with presence), `/api/stats24h`, `/api/stats24h_combined`, `/api/hourly`, `/api/air`, `/api/widget` |
 | `presence_readings` | `log_presence` (+ 8-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `get_last_occupancy`, `get_latest_presence`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/presence/history`, `/api/hourly`, `/api/history_combined` |
 | `soil_readings` | `handle_soil_data` (+ keep 1000/device) | `/api/soil/latest`, `/api/soil/history`, `/api/soil/stats24h` |
-| `devices` | `touch_device`, `handle_soil_data`, `/api/register_token` | `/api/latest`, `/api/latest_all`, `/api/presence/latest`, `/api/devices`, `/api/soil/latest` |
+| `devices` | `touch_device`, `handle_soil_data` | `/api/latest`, `/api/latest_all`, `/api/presence/latest`, `/api/devices`, `/api/soil/latest` |
 | `system_state` | `init_db` seed, `set_state` | `get_state` |
 | `events` | `log_event` | `/api/restarts`, `/api/widget` |
 
