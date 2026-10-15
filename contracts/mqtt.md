@@ -256,13 +256,8 @@ Example:
     `home/esp32/bme280` but is stored under device `home_ping_esp32` (which the
     Android app labels "OLED"/"Ping"). The naming is inconsistent but harmless,
     since the backend ignores topic names.
-12. **eink_node also declares API config it never uses.** `API_URL`/`API_USER`/`API_PASS`
-    are read from `secrets.h` but nothing references them (**UNCERTAIN**: a
-    leftover from fetching `/api/latest` for the display). Not an MQTT issue,
-    but it means `secrets.h` must define them for the sketch to compile.
-13. **Firmware build issues seen while reading (not contract issues, noted for completeness):**
-    `eink_node.ino:32` is missing a `;` after `BKK_URL`. All three sketches
-    do `const char* WIFI_SSID = WIFI_SSID;` etc., which redeclares the
-    `const char* const` names that `secrets.example.h` defines. That only
-    compiles if the real `secrets.h` uses `#define` macros instead
-    (**UNCERTAIN**: the real `secrets.h` wasn't read).
+12. ~~**eink_node declares API config it never uses.**~~ Removed in #16 (`apiUrl`/`apiUser`/
+    `apiPass` and `API_*` in `secrets.example.h`).
+13. ~~**Firmware build issues.**~~ Fixed in #16: the missing `;` after `BKK_URL`, and the
+    sketches no longer redeclare the `secrets.h` names. All three compile against
+    `secrets.example.h` (esp32 core 3.3.7).

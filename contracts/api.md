@@ -37,7 +37,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | Android `MainActivity` (FCM) | `POST /api/register_token` |
 | Android `HomeEnvWidget` | `/api/latest` |
 | Web (`web/index.html`) | none (MQTT only) |
-| Firmware | none. **UNCERTAIN**: eink_node declares `API_URL` (template `.../api/latest`) + credentials but never calls it |
+| Firmware | none (eink_node's unused `API_URL` config was removed in #16) |
 
 ## Endpoint index
 
