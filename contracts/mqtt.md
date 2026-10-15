@@ -30,10 +30,10 @@ whether a device is online from the `devices.last_seen` timestamp in the DB
 | Topic | Publisher(s) | Subscriber(s) | Interval | Retained | QoS |
 |---|---|---|---|---|---|
 | `home/esp32/bme280` | main_node (`home_ping_esp32`) | backend (via `home/esp32/#`), web page | 30 s | yes | 0 |
-| `home/esp32/presence` | main_node (`home_ping_esp32`) **and** eink_node (`hallway_presence_esp32`) | backend (via `home/esp32/#`) | 5 s per node | yes | 0 |
+| `home/esp32/presence` | main_node (`home_ping_esp32`) **and** eink_node (`hallway_presence_esp32`) | backend (via `home/esp32/#`), web page (node list only) | 5 s per node | yes | 0 |
 | `home/esp32/co2` | co2_node (`co2_sensor_esp32`) | backend (via `home/esp32/#`), web page | 60 s | yes | 0 |
 | `home/backend/occupancy_hourly` | backend | web page | 300 s + on every (re)connect | yes | 0 |
-| `home/esp32/<device>/status` | every node (`online`); the broker (`offline`, last will) | backend (via `home/esp32/#`) | on connect / on drop-off | yes | 1 (will) / 0 |
+| `home/esp32/<device>/status` | every node (`online`); the broker (`offline`, last will) | backend (via `home/esp32/#`), web page (`home/esp32/+/status`) | on connect / on drop-off | yes | 1 (will) / 0 |
 
 ### How the backend routes messages
 
@@ -224,8 +224,17 @@ Example:
 
 ## Web page (`web/index.html`) as a subscriber
 
-- Subscribes to `home/esp32/bme280`, `home/esp32/co2` and `home/backend/occupancy_hourly`
-  only (read-only user).
+- Subscribes to `home/esp32/bme280`, `home/esp32/co2`, `home/backend/occupancy_hourly`,
+  `home/esp32/presence` and `home/esp32/+/status` (read-only user). Topics the broker's ACL
+  refuses (SUBACK 128) are logged as a warning in the browser console.
+- **Devices list** (#81): one entry per node (main node, hallway radar, CO₂ node, plus any
+  unknown `device` that shows up), with uptime, RSSI and state, from all of the topics above:
+  - *online* while **live** messages keep coming: limit 30 s for the radar nodes (5 s interval),
+    180 s for the CO₂ node. Retained replays update uptime/RSSI but don't prove the node is up.
+  - *offline* when the status topic says `offline` (the last will) and nothing newer has
+    arrived, or when live data stopped ("no data for …").
+  - A retained `online` status counts as online until the first live message.
+  - Before the nodes run the #55 firmware there is no status topic, so the state is from data age only.
 - occupancy_hourly: 24-slot bar chart for today. `null` hours are shown as "no data", hours
   after the last entry as future. Greyed out if `updated` is over 15 min old or `date` isn't
   the browser's local date. `updated` is parsed as browser local time (same timezone assumed).
