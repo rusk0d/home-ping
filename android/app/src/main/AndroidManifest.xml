@@ -36,6 +36,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 7-day history (#82), opened from the home screen -->
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false" />
         
         <!-- Channel FCM uses when it shows a notification message itself (app in background) -->
         <meta-data
