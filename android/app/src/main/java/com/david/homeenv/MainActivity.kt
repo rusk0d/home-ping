@@ -18,6 +18,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        findViewById<android.view.View>(R.id.notification_settings).setOnClickListener {
+            startActivity(android.content.Intent(this, NotificationSettingsActivity::class.java))
+        }
 
         askForExactAlarmsOnce()
 
