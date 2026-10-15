@@ -73,6 +73,6 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         super.onNewToken(token)
         println("FCM new token: $token")
         // Token rotated: register the new one (this callback already runs off the main thread)
-        PushRegistration.register(token)
+        PushRegistration.register(this, token)
     }
 }

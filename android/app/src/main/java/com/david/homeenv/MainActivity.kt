@@ -1,6 +1,8 @@
 package com.david.homeenv
 
 import android.Manifest
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -17,23 +19,32 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Check and request exact alarm permission for Android 12+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-            if (!alarmManager.canScheduleExactAlarms()) {
-                val intent = android.content.Intent(
-                    android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
-                )
-                try {
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
+        askForExactAlarmsOnce()
 
         // Push notifications (off in the preview build, which has no Firebase config)
         if (BuildConfig.PUSH_ENABLED) setupPush()
+    }
+
+    /**
+     * The widget's 2-minute alarm is exact only with this permission (Android 12+;
+     * sideloaded builds usually get USE_EXACT_ALARM anyway). Open the settings screen
+     * at most once, and only when a widget is placed: it used to open on every launch.
+     */
+    private fun askForExactAlarmsOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        if (alarmManager.canScheduleExactAlarms()) return
+        val widgets = AppWidgetManager.getInstance(this)
+            .getAppWidgetIds(ComponentName(this, HomeEnvWidget::class.java))
+        if (widgets.isEmpty()) return
+        val prefs = getSharedPreferences("ui", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("asked_exact_alarms", false)) return
+        prefs.edit().putBoolean("asked_exact_alarms", true).apply()
+        try {
+            startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun setupPush() {
@@ -75,7 +86,7 @@ class MainActivity : AppCompatActivity() {
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 println("FCM token: $token")
-                Thread { PushRegistration.register(token) }.start()
+                Thread { PushRegistration.register(applicationContext, token) }.start()
             }
             .addOnFailureListener {
                 it.printStackTrace()
