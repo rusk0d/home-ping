@@ -104,6 +104,8 @@ Known keys:
 | Key | Values | Seeded | Written by | Read by |
 |---|---|---|---|---|
 | `occupancy_armed` | `'0'` / `'1'` | `'0'` via `INSERT OR IGNORE` at startup | `POST /api/occupancy_arm` | presence handler (arrival alert), `/api/occupancy_status` |
+| `cooldown:<key>` | unix time (float, as text) when the cooldown for alert `<key>` started (e.g. `cooldown:HUMIDITY_home_ping_esp32`) | no | `alert()` via `set_cooldown()` | loaded into `LAST_NOTIFICATION` at startup (#5) |
+| `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
 
 ### `events` (audit / event log)
 
@@ -160,11 +162,11 @@ Notable derived values:
 2. **Payload `raw` is stored as `raw_value`** and the API renames it back to `raw`.
 3. ~~**Legacy columns that are always written as 0**~~ dropped in #14. All occupancy
    lives in `presence_readings`.
-4. **Retained MQTT messages create duplicate rows** with a fresh `ts` every time
-   the backend reconnects to the broker (see `mqtt.md`).
-5. **In-memory state that affects data meaning** is not in the DB: `LAST_UPTIME`
-   (restart detection baseline), `CO2_SENSOR_OK`, `LAST_NOTIFICATION`,
-   `RADAR_FAIL_COUNT`. All of it resets when the backend restarts.
+4. ~~**Retained MQTT messages create duplicate rows.**~~ Fixed in #5: retained messages are skipped.
+5. **In-memory state:** `LAST_UPTIME` (restart detection baseline) and `RADAR_FAIL_COUNT`
+   still reset when the backend restarts. That is harmless: the first message after a
+   restart only sets the baseline, and an outage needs 12 fresh disconnected messages
+   anyway. Cooldowns and outage flags are in `system_state` (#5); `co2_ok` in `readings` (#14).
 6. **`any_radar_quiet_minutes` excludes the newest row of any device**, not the
    current device's. With two radars interleaving every 5 s, it skips the
    *other* radar's latest row (**UNCERTAIN**: the intent was "exclude the row
