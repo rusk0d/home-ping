@@ -34,8 +34,8 @@ When a build or test needs these, use the example files with fake values.
 
 # Commands
 - Backend (production): runs as a systemd service on the server
-  (`sudo systemctl status|restart <service-name>`, logs via
-  `journalctl -u <service-name> -f`). Replace <service-name> with the real unit name.
+  unit `iot-backend` (`sudo systemctl status|restart iot-backend`, logs via
+  `journalctl -u iot-backend -f`).
 - Backend (local dev/tests): `python server.py` with a local .env and a temp SQLite file
 - Android: `./gradlew assembleDebug` in /android
 - Firmware: compiled in the Arduino IDE (arduino-cli in CI later)
