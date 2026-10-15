@@ -1,5 +1,6 @@
 package com.david.homeenv
 
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -84,6 +85,7 @@ class HomeFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         b.occLegend.text = buildLegend()
         b.swipeRefresh.setOnRefreshListener { loadDashboardData() }
+        b.historyButton.setOnClickListener { startActivity(Intent(requireContext(), HistoryActivity::class.java)) }
         b.occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
     }
 
@@ -379,9 +381,6 @@ class HomeFragment : Fragment() {
     }
 
     // ---------- helpers ----------
-
-    private fun JSONObject.optNum(key: String): Double? =
-        if (has(key) && !isNull(key)) optDouble(key).takeIf { !it.isNaN() } else null
 
     private fun JSONObject.optTs(key: String): Date? = if (isNull(key)) null else parseTs(optString(key))
 
