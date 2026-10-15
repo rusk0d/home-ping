@@ -30,7 +30,6 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | Client | Endpoints used |
 |---|---|
 | Android `HomeFragment` (`MainActivity.kt`) | `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/history_combined`, `/api/air`, `/api/hourly`, `POST /api/occupancy_arm`, `/api/occupancy_status` |
-| Android `PlantsFragment` (`MainActivity.kt`) | `/api/soil/latest` |
 | Android `MainActivity` (FCM) | `POST /api/register_token` |
 | Android `HomeEnvWidget` | `/api/latest` |
 | Web (`web/index.html`) | none (MQTT only) |
@@ -58,9 +57,6 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | POST | `/api/register_token` | Basic | Android (FCM) |
 | POST | `/api/occupancy_arm` | Basic | Android Home |
 | GET | `/api/occupancy_status` | Basic | Android Home |
-| GET | `/api/soil/latest` | Basic | Android Plants |
-| GET | `/api/soil/history` | Basic | none found |
-| GET | `/api/soil/stats24h` | Basic | none found |
 | GET | `/api/next-events` | **none** | none found (broken, see below) |
 
 ---
@@ -323,25 +319,6 @@ Response: `{"armed": true|false}` (same shape as the `POST /api/occupancy_arm` r
 `false` until the switch is first armed.
 Client: Android Home, on startup, to set the toggle switch.
 
-### GET `/api/soil/latest?device=<id>`
-
-Default `device=soil_sensor_01`. `404 {"error":"No data"}` if none.
-
-```json
-{"ts":"2026-10-13 19:40:00","moisture":41,"raw":2210,"online":true}
-```
-
-Client: Android Plants reads `moisture`, then `timestamp` (never present) and falls back to `ts`.
-
-### GET `/api/soil/history?device=<id>&limit=<n>`
-
-Default `limit=50`. `[{"ts","moisture","raw"}, ...]`, newest first. Client: none found.
-
-### GET `/api/soil/stats24h?device=<id>`
-
-`{"avg_moisture": 40.2, "min_moisture": 35, "max_moisture": 47}`. All `0` when there are no rows.
-Client: none found.
-
 ### GET `/api/next-events` (no auth, broken)
 
 Intended to return the next `MAX_EVENTS` (3) calendar events, sorted by `start`.
@@ -372,13 +349,8 @@ anyone who can reach the server.
 3. **`ts`/`uptime` in `/api/latest_all` are silently overwritten** for devices that send both env
    and radar data (`home_ping_esp32`). The `ts` shown is the radar's, not the
    temperature reading's.
-4. **Soil timestamp field name.** Android checks `timestamp` first. The backend sends `ts`.
-   It works through the fallback, but the contract should use one name.
-5. **Soil "needs water" threshold differs.** The backend pushes at moisture < 25. The Android
-   Plants tab shows "Needs Water" at < 30. Also, Android treats `moisture == 0` as
-   "No data".
-6. **Soil endpoints have no data source in this repo** (no soil firmware), so
-   the Plants tab always shows "No data".
+4. ~~Soil timestamp field name~~, 5. ~~soil threshold~~, 6. ~~soil endpoints without a
+   data source~~: the soil feature (`/api/soil/*`, Android Plants tab) was removed in #9.
 7. ~~**`register_token` pollutes `devices`.**~~ Fixed in #15: `register_token` no
    longer calls `touch_device`, and the old `"unknown"` row is deleted on start.
 8. **Duplicate FCM topic subscription.** Android subscribes itself to topic `env`
@@ -399,7 +371,7 @@ anyone who can reach the server.
 13. **Hallway radar is invisible to several endpoints.** `/api/presence/*` and the
     occupancy column of `/api/hourly` only use `home_ping_esp32`.
 14. **Empty-state values don't match.** `/api/stats24h*` return `0` instead of null
-    for no data, `/api/latest` returns `[]`, and `/api/presence/latest` and `/api/soil/latest` return 404.
+    for no data, `/api/latest` returns `[]`, and `/api/presence/latest` returns 404.
 15. **Android config.** The server base URL and Basic-auth credentials come from the
     gitignored `android/local.properties` (`API_BASE_URL`, `API_USER`, `API_PASS`)
     via `BuildConfig`. `API_BASE_URL` has no trailing slash and falls back to
@@ -407,8 +379,7 @@ anyone who can reach the server.
     into the APK and can be extracted from it.
 16. **Unused endpoints** (no client in this repo): `/api/latest2`, `/api/history`,
     `/api/stats24h`, `/api/occupancy_rolling`, `/api/presence/latest`,
-    `/api/presence/history`, `/api/widget`, `/api/soil/history`,
-    `/api/soil/stats24h`, `/api/next-events`. **UNCERTAIN**: they may have
+    `/api/presence/history`, `/api/widget`, `/api/next-events`. **UNCERTAIN**: they may have
     external users not in this repo.
 17. **`HEARTBEAT_TIMEOUT` defined twice** (300 with comment "seconds", later 120).
     The effective value is 120 s. Anyone reading the top of the file gets the wrong number.
