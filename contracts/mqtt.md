@@ -33,6 +33,7 @@ whether a device is online from the `devices.last_seen` timestamp in the DB
 | `home/esp32/presence` | main_node (`home_ping_esp32`) **and** eink_node (`hallway_presence_esp32`) | backend (via `home/esp32/#`) | 5 s per node | yes | 0 |
 | `home/esp32/co2` | co2_node (`co2_sensor_esp32`) | backend (via `home/esp32/#`), web page | 60 s | yes | 0 |
 | `home/backend/occupancy_hourly` | backend | web page | 300 s + on every (re)connect | yes | 0 |
+| `home/esp32/<device>/status` | every node (`online`); the broker (`offline`, last will) | backend (via `home/esp32/#`) | on connect / on drop-off | yes | 1 (will) / 0 |
 
 ### How the backend routes messages
 
@@ -171,6 +172,24 @@ skipped because `temp_c` and `humidity` are absent.
 
 ---
 
+## `home/esp32/<device>/status` (since #13)
+
+Plain text, not JSON: `online` or `offline`.
+
+- On every MQTT connect each node registers a **last will** on this topic
+  (`offline`, retained, QoS 1) and then publishes `online` (retained).
+- If the node drops off, the broker publishes the will about 1.5 × keepalive
+  (60 s) ≈ 90 s later. Because the client ID is fixed per node, a node that
+  reconnects after a short WiFi drop can also trigger the old session's will
+  right before its new `online`.
+- Backend: logs each live message as an `events` row `STATUS`. `online` counts
+  as a sign of life (`touch_device`); `offline` doesn't. The **offline push is
+  decided on data age, not on this topic** (see `notifications.md`, `NODE_STATUS`),
+  so the reconnect case above doesn't cause false alarms.
+- Retained replays are skipped like any other (#5).
+
+---
+
 ## `home/backend/occupancy_hourly`
 
 - Publisher: `backend/server.py` (`publish_hourly_occupancy()`), using the backend's
@@ -233,9 +252,8 @@ Example:
    cooldowns are stored in the DB (see `notifications.md`).
 4. **No timestamps in payloads.** Every stored `ts` is the backend's receive
    time (server local time). Delayed or replayed messages get the wrong time.
-5. **No LWT / status topic.** Offline detection relies on `devices.last_seen`
-   plus the 120 s `HEARTBEAT_TIMEOUT`. A node that drops off is only noticed
-   when the REST API is next queried.
+5. ~~**No LWT / status topic.**~~ Fixed in #13: `home/esp32/<device>/status` with a last
+   will, and the backend pushes when a node has sent nothing for 5 min.
 6. **`uptime` wraps at ~49.7 days.** `millis()/1000` wraps on main_node and co2_node,
    which have no scheduled reboot. The backend's restart detector
    (`note_uptime`, drop > 120 s) will log a false `RESTART` event when that
