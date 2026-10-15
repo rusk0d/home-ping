@@ -7,14 +7,20 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
+import android.content.res.Configuration
 import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
 import android.util.Base64
 import android.widget.RemoteViews
+import com.david.homeenv.ui.Level
+import com.david.homeenv.ui.Levels
+import com.david.homeenv.ui.WidgetGauge
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.concurrent.thread
 import com.david.homeenv.BuildConfig
@@ -53,6 +59,16 @@ class HomeEnvWidget : AppWidgetProvider() {
                 onUpdate(context, appWidgetManager, appWidgetIds)
             }
         }
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle
+    ) {
+        // Resized: redraw the gauges at the new width
+        updateWidget(context, appWidgetManager, appWidgetId)
     }
 
     override fun onEnabled(context: Context) {
@@ -149,20 +165,7 @@ class HomeEnvWidget : AppWidgetProvider() {
         manager: AppWidgetManager,
         widgetId: Int
     ) {
-        val views = RemoteViews(context.packageName, R.layout.widget_homeenv)
-
-        // SAFE placeholders (must never crash)
-        views.setTextViewText(R.id.widget_temp, "-- °C")
-        views.setTextViewText(R.id.widget_humidity, "-- %")
-        views.setTextViewText(R.id.widget_occupancy, "No")
-        views.setTextViewText(R.id.widget_confidence, "-- %")
-        views.setTextViewText(R.id.widget_online, "Off")
-
-        // Set default colors
-        views.setInt(R.id.widget_occupancy_icon, "setColorFilter", Color.GRAY)
-        views.setInt(R.id.widget_online_icon, "setColorFilter", Color.RED)
-
-        // Click = refresh widget
+        // Refresh button = refresh widget
         val intent = Intent(context, HomeEnvWidget::class.java).apply {
             action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(widgetId))
@@ -175,13 +178,27 @@ class HomeEnvWidget : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
+        // Tap anywhere else = open the app
+        val openApp = PendingIntent.getActivity(
+            context,
+            0,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        fun RemoteViews.attachClicks() {
+            setOnClickPendingIntent(R.id.widget_root, openApp)
+            setOnClickPendingIntent(R.id.w_refresh, pendingIntent)
+        }
 
-        manager.updateAppWidget(widgetId, views)
+        // Keep the last values on screen while fetching; only show that it's refreshing
+        val refreshing = RemoteViews(context.packageName, R.layout.widget_homeenv)
+        refreshing.setTextViewText(R.id.w_updated, "updating…")
+        refreshing.attachClicks()
+        manager.partiallyUpdateAppWidget(widgetId, refreshing)
 
         // Fetch data async
         thread {
-            try {
+            val fresh = try {
                 val client = OkHttpClient()
 
                 val authHeader = "Basic " + Base64.encodeToString(
@@ -194,70 +211,92 @@ class HomeEnvWidget : AppWidgetProvider() {
                     .addHeader("Authorization", authHeader)
                     .build()
 
-                val response = client.newCall(request).execute()
-                if (!response.isSuccessful) return@thread
-
-                val body = response.body?.string() ?: return@thread
-                val json = JSONArray(body)
-
-                val temp = json.optDouble(1)
-                val humidity = json.optDouble(2)
-                val occupancy = json.optInt(4)  // Index 4 = occupancy (0 or 1)
-                val confidence = json.optDouble(5)  // Index 5 = confidence %
-                val online = json.optBoolean(7)
-
-                val updated = RemoteViews(context.packageName, R.layout.widget_homeenv)
-
-                // Update all values
-                updated.setTextViewText(
-                    R.id.widget_temp,
-                    String.format(Locale.US, "%.1f °C", temp)
-                )
-
-                updated.setTextViewText(
-                    R.id.widget_humidity,
-                    String.format(Locale.US, "%.0f %%", humidity)
-                )
-
-                // Occupancy detection (Yes/No)
-                updated.setTextViewText(
-                    R.id.widget_occupancy,
-                    if (occupancy == 1) "Yes" else "No"
-                )
-
-                // Set occupancy icon color (green if occupied, gray if not)
-                updated.setInt(
-                    R.id.widget_occupancy_icon,
-                    "setColorFilter",
-                    if (occupancy == 1) Color.GREEN else Color.GRAY
-                )
-
-                // Confidence percentage
-                updated.setTextViewText(
-                    R.id.widget_confidence,
-                    String.format(Locale.US, "%.0f %%", confidence)
-                )
-
-                updated.setTextViewText(
-                    R.id.widget_online,
-                    if (online) "On" else "Off"
-                )
-
-                // Set icon color based on online status
-                updated.setInt(
-                    R.id.widget_online_icon,
-                    "setColorFilter",
-                    if (online) Color.GREEN else Color.RED
-                )
-
-                // Re-attach click listener
-                updated.setOnClickPendingIntent(R.id.widget_root, pendingIntent)
-
-                manager.updateAppWidget(widgetId, updated)
-
+                val body = client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) response.body?.string() else null
+                }
+                body?.let { render(context, manager, widgetId, JSONArray(it)) }
             } catch (_: Exception) {
-                // swallow exceptions – widgets must NEVER crash
+                null // widgets must NEVER crash
+            }
+
+            try {
+                if (fresh != null) {
+                    fresh.attachClicks()
+                    manager.updateAppWidget(widgetId, fresh)
+                } else {
+                    val views = offline(context)
+                    views.attachClicks()
+                    manager.partiallyUpdateAppWidget(widgetId, views)
+                }
+            } catch (_: Exception) {
             }
         }
+    }
+
+    /** Full widget from an /api/latest array (see contracts/api.md). */
+    private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, json: JSONArray): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.widget_homeenv)
+        val gaugeWidth = gaugeWidthPx(context, manager, widgetId)
+
+        // optDouble gives NaN for null/missing values
+        val temp = json.optDouble(1).takeUnless { it.isNaN() }
+        val humidity = json.optDouble(2).takeUnless { it.isNaN() }
+        val occupied = json.optInt(4) == 1                                       // 0 or 1
+        val confidence = json.optDouble(5).takeUnless { it.isNaN() || json.length() == 0 } // %
+        val online = json.optBoolean(7)
+
+        views.setTextViewText(R.id.w_temp_value, temp?.let { String.format(Locale.US, "%.1f", it) } ?: "--")
+        setLevel(context, views, R.id.w_temp_level, temp?.let { Levels.temperature(it) })
+        views.setImageViewBitmap(R.id.w_temp_gauge, WidgetGauge.render(context, WidgetGauge.TEMPERATURE, temp, gaugeWidth))
+
+        views.setTextViewText(R.id.w_hum_value, humidity?.let { String.format(Locale.US, "%.0f", it) } ?: "--")
+        setLevel(context, views, R.id.w_hum_level, humidity?.let { Levels.humidity(it) })
+        views.setImageViewBitmap(R.id.w_hum_gauge, WidgetGauge.render(context, WidgetGauge.HUMIDITY, humidity, gaugeWidth))
+
+        if (json.length() == 0) {
+            views.setTextViewText(R.id.w_occ_value, "--")
+            views.setTextViewText(R.id.w_occ_level, " ")
+        } else {
+            views.setTextViewText(R.id.w_occ_value, if (occupied) "Yes" else "No")
+            val pct = confidence ?: 0.0
+            views.setTextViewText(R.id.w_occ_level, String.format(Locale.US, "conf. %.0f%%", pct))
+            // Grey text below 20 % (the faint bar colour is too pale for text)
+            val color = if (pct < 20) R.color.muted else Levels.occupancy(pct)
+            views.setTextColor(R.id.w_occ_level, Levels.color(context, color))
+        }
+        views.setImageViewBitmap(R.id.w_occ_gauge, WidgetGauge.render(context, WidgetGauge.OCCUPANCY, confidence, gaugeWidth))
+
+        // Online = the sensor node reported within the backend's heartbeat timeout
+        views.setInt(R.id.w_online_dot, "setColorFilter", Levels.color(context, if (online) R.color.good else R.color.bad))
+        views.setTextViewText(R.id.w_online, if (online) "Sensors online" else "Sensors offline")
+        views.setTextColor(R.id.w_online, Levels.color(context, if (online) R.color.muted else R.color.bad))
+        views.setTextViewText(R.id.w_updated, "updated " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()))
+        return views
+    }
+
+    /** Server unreachable: keep the values, flag the status line. */
+    private fun offline(context: Context): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.widget_homeenv)
+        views.setInt(R.id.w_online_dot, "setColorFilter", Levels.color(context, R.color.bad))
+        views.setTextViewText(R.id.w_online, "Server unreachable")
+        views.setTextColor(R.id.w_online, Levels.color(context, R.color.bad))
+        views.setTextViewText(R.id.w_updated, "tried " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()))
+        return views
+    }
+
+    private fun setLevel(context: Context, views: RemoteViews, id: Int, level: Level?) {
+        views.setTextViewText(id, level?.text ?: " ")
+        if (level != null) views.setTextColor(id, Levels.color(context, level.color))
+    }
+
+    /** One gauge's width: a third of the widget minus its padding (14dp) and gaps (12dp). */
+    private fun gaugeWidthPx(context: Context, manager: AppWidgetManager, widgetId: Int): Int {
+        val options = manager.getAppWidgetOptions(widgetId)
+        val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val widthDp = options.getInt(
+            if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH
+        ).takeIf { it > 0 } ?: 250
+        val d = context.resources.displayMetrics.density
+        return (((widthDp - 2 * 14 - 2 * 12) / 3f) * d).toInt()
     }
 }
