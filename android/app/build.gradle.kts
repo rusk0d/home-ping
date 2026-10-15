@@ -34,12 +34,12 @@ android {
             applicationIdSuffix = ".preview"
             versionNameSuffix = "-preview"
             matchingFallbacks += "debug"
-            manifestPlaceholders["appLabel"] = "homeenv preview"
+            manifestPlaceholders["appLabel"] = "Home Ping preview"
             buildConfigField("boolean", "PUSH_ENABLED", "false")
         }
     }
     buildTypes.matching { it.name != "preview" }.configureEach {
-        manifestPlaceholders["appLabel"] = "homeenv"
+        manifestPlaceholders["appLabel"] = "Home Ping"
         buildConfigField("boolean", "PUSH_ENABLED", "true")
     }
 
