@@ -94,7 +94,7 @@ Known keys:
 
 | Key | Values | Seeded | Written by | Read by |
 |---|---|---|---|---|
-| `occupancy_armed` | `'0'` / `'1'` | `'0'` via `INSERT OR IGNORE` at startup | `POST /api/occupancy_arm` | presence handler (arrival alert), `/api/presence/latest`, `/api/widget` |
+| `occupancy_armed` | `'0'` / `'1'` | `'0'` via `INSERT OR IGNORE` at startup | `POST /api/occupancy_arm` | presence handler (arrival alert), `/api/occupancy_status` |
 
 ### `events` (audit / event log)
 
@@ -123,17 +123,17 @@ Event types written by `server.py`:
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12).
 | `OCCUPANCY_ARMED` | `system` | `1` / `0` | `POST /api/occupancy_arm` |
 
-Read by: `/api/restarts` (`RESTART` only), `/api/widget` (last 5 for a device + `home_ping_esp32`).
+Read by: `/api/restarts` (`RESTART` only).
 
 ## Queries by table (from `server.py`)
 
 | Table | Inserts / updates | Reads |
 |---|---|---|
-| `readings` | `log_to_db` (+ 8-day prune) | `/api/latest`, `/api/latest_all`, `/api/latest2`, `/api/history`, `/api/history_combined` (UNION with presence), `/api/stats24h`, `/api/stats24h_combined`, `/api/hourly`, `/api/air`, `/api/widget` |
-| `presence_readings` | `log_presence` (+ 8-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `get_last_occupancy`, `get_latest_presence`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/presence/history`, `/api/hourly`, `/api/history_combined` |
-| `devices` | `touch_device` | `/api/latest`, `/api/latest_all`, `/api/presence/latest`, `/api/devices` |
+| `readings` | `log_to_db` (+ 8-day prune) | `/api/latest`, `/api/latest_all`, `/api/history_combined` (UNION with presence), `/api/stats24h_combined`, `/api/hourly`, `/api/air` |
+| `presence_readings` | `log_presence` (+ 8-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `get_last_occupancy`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/hourly`, `/api/history_combined` |
+| `devices` | `touch_device` | `/api/latest`, `/api/latest_all`, `/api/devices` |
 | `system_state` | `init_db` seed, `set_state` | `get_state` |
-| `events` | `log_event` | `/api/restarts`, `/api/widget` |
+| `events` | `log_event` | `/api/restarts` |
 
 Notable derived values:
 
