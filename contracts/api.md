@@ -38,7 +38,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | Android `MainActivity` (FCM) | `POST /api/register_token` |
 | Android `HistoryActivity` | `/api/hourly?days=7` |
 | Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings` |
-| Android `HomeEnvWidget` | `/api/latest` |
+| Android `HomeEnvWidget` | `/api/latest`, `/api/air` |
 | Web (`web/index.html`) | none (MQTT only) |
 | Firmware | none (eink_node's unused `API_URL` config was removed in #16) |
 
@@ -50,7 +50,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | GET | `/api/latest_all` | Basic | Android Home |
 | GET | `/api/stats24h_combined` | Basic | Android Home |
 | GET | `/api/hourly` | Basic | Android Home, History |
-| GET | `/api/air` | Basic | Android Home |
+| GET | `/api/air` | Basic | Android Home, widget |
 | GET | `/api/devices` | Basic | Android Home |
 | GET | `/api/restarts` | Basic | Android Home |
 | POST | `/api/register_token` | Basic | Android (FCM) |
@@ -199,7 +199,8 @@ Latest CO2 and pressure from whichever device last reported them.
 - `pressure_3h_change`: hPa, latest pressure minus the newest reading at least 3 h old (1 dp), or null.
 - `ts`: env row ts if present, else co2 row ts, else null.
 
-Client: Android Home reads only `pressure` and `pressure_3h_change`. CO2 on Android comes from `/api/latest_all`.
+Clients: Android Home reads only `pressure` and `pressure_3h_change` (its CO2 comes from `/api/latest_all`).
+The widget reads `co2` for its CO2 row (fetched alongside `/api/latest`; `--` if this call fails).
 
 ### GET `/api/devices`
 

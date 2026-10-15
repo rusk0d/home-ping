@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Widget, 4x2: temperature, humidity and occupancy with a gauge each, and an
-     online line. Filled in by HomeEnvWidget (gauges are bitmaps from WidgetGauge). -->
+<!-- Widget, 4x2: temperature, humidity and occupancy with a gauge each, a CO2 row
+     with one full-width gauge, and an online line. Filled in by HomeEnvWidget
+     (gauges are bitmaps from WidgetGauge). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -12,7 +13,7 @@
     android:paddingEnd="14dp"
     android:paddingBottom="6dp">
 
-    <!-- Spacers 1:2 (FrameLayout: widgets can't inflate plain View) put the metrics a little above centre -->
+    <!-- Spacers (FrameLayout: widgets can't inflate plain View) keep the metrics near the top -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -211,6 +212,73 @@
         </LinearLayout>
 
     </LinearLayout>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="3" />
+
+    <!-- CO2: one line of text, then a thinner gauge as wide as the three above -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:baselineAligned="true"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:drawableStart="@drawable/ic_metric_co2"
+            android:drawablePadding="4dp"
+            android:drawableTint="@color/accent_co2"
+            android:gravity="center_vertical"
+            android:letterSpacing="0.08"
+            android:maxLines="1"
+            android:text="CO₂"
+            android:textColor="@color/muted"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/w_co2_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:maxLines="1"
+            android:text="--"
+            android:textColor="@color/text"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="2dp"
+            android:maxLines="1"
+            android:text="ppm"
+            android:textColor="@color/muted"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/w_co2_level"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:gravity="end"
+            android:maxLines="1"
+            android:text=" "
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/w_co2_gauge"
+        android:layout_width="match_parent"
+        android:layout_height="10dp"
+        android:layout_marginTop="4dp"
+        android:importantForAccessibility="no"
+        android:scaleType="fitXY" />
 
     <FrameLayout
         android:layout_width="match_parent"
