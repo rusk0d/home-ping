@@ -11,9 +11,13 @@ import android.graphics.Canvas
  */
 object WidgetGauge {
 
-    /** Draws [scale] [widthPx] wide, with the needle at [value] (null = no needle, faded bands). */
-    fun render(context: Context, scale: Scale, value: Double?, widthPx: Int): Bitmap {
-        val gauge = GaugeBar(context)
+    /**
+     * Draws [scale] [widthPx] wide and [heightDp] tall, with the needle at [value]
+     * (null = no needle, faded bands).
+     */
+    fun render(context: Context, scale: Scale, value: Double?, widthPx: Int,
+               heightDp: Float = GaugeBar.HEIGHT_DP): Bitmap {
+        val gauge = GaugeBar(context, heightDp)
         val d = context.resources.displayMetrics.density
         val w = widthPx.coerceAtLeast((40 * d).toInt())
         val bitmap = Bitmap.createBitmap(w, gauge.height.toInt(), Bitmap.Config.ARGB_8888)

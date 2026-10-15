@@ -11,18 +11,18 @@ import com.david.homeenv.R
  * Draws a [Scale] as the dashboard's gauge: a pill-shaped bar in the band colours and a
  * needle at the current value, with a thin card-coloured outline so it stands out.
  * Used by [Co2GaugeView] (the CO₂ card) and [WidgetGauge] (bitmaps for the widget).
- * The gauge is [HEIGHT_DP] tall; the bar sits in the middle.
+ * The gauge is [heightDp] tall (default [HEIGHT_DP]); the bar, half as tall, sits in the middle.
  */
-class GaugeBar(private val context: Context) {
+class GaugeBar(private val context: Context, heightDp: Float = HEIGHT_DP) {
 
     companion object {
         const val HEIGHT_DP = 16f
     }
 
     private val d = context.resources.displayMetrics.density
-    private val barHeight = 8 * d
+    private val barHeight = heightDp / 2 * d
     private val needleWidth = 4 * d
-    private val needleHeight = HEIGHT_DP * d
+    private val needleHeight = heightDp * d
     private val edge = 2 * d
 
     private val bandPaint = Paint(Paint.ANTI_ALIAS_FLAG)
