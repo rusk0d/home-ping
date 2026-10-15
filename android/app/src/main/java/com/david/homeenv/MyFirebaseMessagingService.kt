@@ -12,7 +12,7 @@ import com.google.firebase.messaging.RemoteMessage
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     companion object {
-        /** Sensor alerts (humidity, temperature, radar, soil). Also the FCM default channel (manifest). */
+        /** Sensor alerts (humidity, temperature, radar). Also the FCM default channel (manifest). */
         const val CHANNEL_SENSORS = "homeenv_channel"
         /** Arrival alerts, separate so they can stay on when sensor alerts are muted. */
         const val CHANNEL_OCCUPANCY = "occupancy"
