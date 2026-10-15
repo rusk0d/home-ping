@@ -53,7 +53,6 @@ TOPIC = "home/esp32/#"  # Subscribe to all topics under home/esp32/
 MAX_EVENTS = 3 
 HEARTBEAT_TIMEOUT = 300  # seconds
 FIREBASE_CRED = "firebase_service_account.json"
-SOIL_DRY_THRESHOLD = 25
 LAST_UPTIME = {}
 UPTIME_DROP_TOLERANCE = 120   # seconds; see note below
 # Presence (LD2410C radar) — the ONLY source of occupancy data.
@@ -137,15 +136,8 @@ def init_db():
         INSERT OR IGNORE INTO system_state (key, value)
         VALUES ('occupancy_armed', '0')
     """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS soil_readings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            device TEXT,
-            ts TIMESTAMP,
-            moisture INTEGER,
-            raw_value INTEGER
-        )
-    """)
+    # Soil moisture feature removed (#9): no sensor exists, drop its unused table
+    c.execute("DROP TABLE IF EXISTS soil_readings")
 
     # Presence readings from the LD2410C radar node
     c.execute("""
@@ -455,57 +447,6 @@ def get_access_token():
     return creds.token
 
 
-
-
-def handle_soil_data(data, topic):
-    """Handle soil moisture sensor data"""
-    device = data.get("device", "soil_sensor_01")
-    moisture = data.get("moisture")
-    raw = data.get("raw")
-    
-    # Log to database
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO soil_readings (device, ts, moisture, raw_value)
-        VALUES (?, datetime('now','localtime'), ?, ?)
-    """, (device, moisture, raw))
-    
-    # Keep last 1000 readings
-    c.execute("""
-        DELETE FROM soil_readings
-        WHERE device = ? AND id NOT IN (
-            SELECT id FROM soil_readings
-            WHERE device = ?
-            ORDER BY id DESC
-            LIMIT 1000
-        )
-    """, (device, device))
-    
-    # Update device heartbeat
-    c.execute("""
-        INSERT INTO devices (device, last_seen)
-        VALUES (?, datetime('now','localtime'))
-        ON CONFLICT(device)
-        DO UPDATE SET last_seen=datetime('now','localtime')
-    """, (device,))
-    
-    conn.commit()
-    conn.close()
-    
-    # Send alert if too dry
-    now = time.time()
-    last_dry_alert = LAST_NOTIFICATION.get(f"SOIL_DRY_{device}", 0)
-    
-    if moisture < SOIL_DRY_THRESHOLD and (now - last_dry_alert > NOTIFICATION_COOLDOWN):
-        alert(device, "SOIL_DRY_ALERT", f"moisture={moisture}%",
-              title="Plant Needs Water",
-              body=f"{device}: Soil moisture is low ({moisture}%)",
-              data={"event": "SOIL_DRY", "device": device, "moisture": str(moisture)},
-              cooldown_key=f"SOIL_DRY_{device}")
-    
-    print(f"[SOIL] {device}: {moisture}% (raw: {raw})")
-
 # ---- add near the other config constants, top of the file ----
 QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
 
@@ -616,10 +557,6 @@ def on_message(client, userdata, msg):
     print(f"[MQTT] Payload: {msg.payload.decode()}")
     try:
         data = json.loads(msg.payload.decode())
-
-        if "moisture" in data and "raw" in data:
-            handle_soil_data(data, msg.topic)
-            return
 
         if "presence" in data:
             handle_presence_data(data, msg.topic)
@@ -1310,95 +1247,6 @@ def history_combined():
     rows = c.fetchall()
     conn.close()
     return jsonify(rows)
-@app.route("/api/soil/latest")
-@require_auth
-def soil_latest():
-    """Get latest soil moisture reading"""
-    device = request.args.get("device", "soil_sensor_01")
-    
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT ts, moisture, raw_value
-        FROM soil_readings
-        WHERE device = ?
-        ORDER BY id DESC LIMIT 1
-    """, (device,))
-    row = c.fetchone()
-    
-    c.execute("SELECT last_seen FROM devices WHERE device = ?", (device,))
-    dev = c.fetchone()
-    conn.close()
-    
-    if not row:
-        return jsonify({"error": "No data"}), 404
-    
-    online = False
-    if dev:
-        last_seen = datetime.strptime(dev[0], "%Y-%m-%d %H:%M:%S")
-        online = (datetime.now() - last_seen).total_seconds() < HEARTBEAT_TIMEOUT
-    
-    return jsonify({
-        "ts": row[0],
-        "moisture": row[1],
-        "raw": row[2],
-        "online": online
-    })
-
-@app.route("/api/soil/history")
-@require_auth
-def soil_history():
-    """Get soil moisture history"""
-    device = request.args.get("device", "soil_sensor_01")
-    limit = int(request.args.get("limit", 50))
-    
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT ts, moisture, raw_value
-        FROM soil_readings
-        WHERE device = ?
-        ORDER BY id DESC LIMIT ?
-    """, (device, limit))
-    rows = c.fetchall()
-    conn.close()
-    
-    return jsonify([{
-        "ts": r[0],
-        "moisture": r[1],
-        "raw": r[2]
-    } for r in rows])
-
-@app.route("/api/soil/stats24h")
-@require_auth
-def soil_stats24h():
-    """Get 24h soil statistics"""
-    device = request.args.get("device", "soil_sensor_01")
-    
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT moisture
-        FROM soil_readings
-        WHERE device = ? AND ts >= datetime('now','localtime','-24 hours')
-    """, (device,))
-    rows = c.fetchall()
-    conn.close()
-    
-    if not rows:
-        return jsonify({
-            "avg_moisture": 0,
-            "min_moisture": 0,
-            "max_moisture": 0
-        })
-    
-    moistures = [r[0] for r in rows]
-    
-    return jsonify({
-        "avg_moisture": round(sum(moistures)/len(moistures), 1),
-        "min_moisture": min(moistures),
-        "max_moisture": max(moistures)
-    })
 # -------------------------
 # RUN
 # -------------------------
