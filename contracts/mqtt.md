@@ -36,8 +36,13 @@ whether a device is online from the `devices.last_seen` timestamp in the DB
 
 ### How the backend routes messages
 
-The backend subscribes to `home/esp32/#` and **ignores the topic name**. It
-routes on payload keys (`server.py` `on_message`), in this order:
+The backend subscribes to `home/esp32/#` and **ignores the topic name**.
+Messages delivered with the **retain flag** are skipped entirely (since #5): those
+are the broker replaying the last retained message of each topic on (re)subscribe,
+i.e. old readings. Live messages arrive with the flag cleared (MQTT 3.1.1). The
+firmware keeps publishing with retain for the web page.
+
+Other messages are routed on payload keys (`server.py` `on_message`), in this order:
 
 1. Payload has `presence` → presence handler → `presence_readings` table.
 2. Anything else → environmental handler → `readings` table.
@@ -223,12 +228,9 @@ Example:
    whichever node published last. The backend tells the nodes apart by
    `device`, so storage is fine, but the topic doesn't identify the
    device on its own.
-3. **Retained messages are replayed into the backend on every (re)connect.**
-   All three publishers set retain=true. When the backend restarts or
-   reconnects, it receives the last message on each topic and stores it as a
-   new row with the *current* timestamp (the payload has no timestamp). The
-   in-memory notification cooldowns are also reset on restart, so a replayed
-   message can trigger an immediate alert (see `notifications.md`).
+3. ~~**Retained messages are replayed into the backend on every (re)connect.**~~
+   Fixed in #5: the backend skips messages with the retain flag, and the alert
+   cooldowns are stored in the DB (see `notifications.md`).
 4. **No timestamps in payloads.** Every stored `ts` is the backend's receive
    time (server local time). Delayed or replayed messages get the wrong time.
 5. **No LWT / status topic.** Offline detection relies on `devices.last_seen`
