@@ -12,8 +12,13 @@ Status: draft, reverse-engineered from `backend/server.py` on branch `contracts-
   if they already exist), so older databases are upgraded on start.
 - There is no separate schema script. The old `backend/init_db.py` created an
   incompatible `readings` table and was removed (issue #4).
-- No indexes, foreign keys, migrations table or schema version.
+- Indexes (since #18, created by `init_db()`, which then runs `ANALYZE`):
+  `presence_readings(device, id)`, `presence_readings(device, ts)`, `readings(device, id)`,
+  `readings(device, ts)`, `events(type, ts)`. Deliberately **no** plain `ts` index: it made
+  SQLite choose worse plans. Without `ANALYZE` statistics it also picks the wrong index.
+- No foreign keys, migrations table or schema version.
 - Every query opens and closes its own `sqlite3.connect(DB)`. Connections are short-lived.
+  Kept on purpose (#18): with the indexes, a whole MQTT message takes ~10 ms.
 - Timestamps: every insert writes `ts` with `datetime('now','localtime')`, a
   TEXT value `"YYYY-MM-DD HH:MM:SS"` in **server local time** (no timezone).
   Columns are declared `TIMESTAMP`/`DATETIME`, which SQLite stores as TEXT.
@@ -70,8 +75,9 @@ Written by: MQTT presence handler (`log_presence`) for every message with a `pre
 | `radar_connected` | INTEGER 0/1 | yes | payload `radar_connected` (default 1) |
 
 Retention: rows older than 8 days are deleted on every insert.
-Volume: ~17,280 rows/day per radar node at the 5 s interval. With 2 nodes and 8 days that's ~276k rows,
-with no index on `device`/`ts` (**UNCERTAIN**: query performance not measured).
+Volume: ~17,280 rows/day per radar node at the 5 s interval. With 2 nodes and 8 days that's ~276k rows
+(~45 MB database with the indexes). Measured on such a DB (#18): a presence message ~10 ms,
+`/api/latest_all` ~7 ms (265 ms without indexes).
 
 `soil_readings` was removed with the soil feature (#9); `init_db()` drops it if it exists.
 
@@ -83,7 +89,8 @@ with no index on `device`/`ts` (**UNCERTAIN**: query performance not measured).
 | `last_seen` | TIMESTAMP (TEXT) | yes | last time any message touched it, local |
 
 Upserted by `touch_device()` on every env and presence message. Sensor nodes only: `init_db()` deletes the `"unknown"` row that
-`POST /api/register_token` used to create (#15). Otherwise never deleted.
+`POST /api/register_token` used to create (#15). Retention: rows not seen for
+`DEVICES_RETENTION_DAYS` (30) are deleted in `touch_device()`, so a retired node drops off the list.
 
 ### `system_state` (key/value settings)
 
@@ -108,7 +115,7 @@ Known keys:
 | `type` | TEXT | yes | see below |
 | `value` | TEXT | yes | free text |
 
-Retention: **never pruned**.
+Retention: rows older than `EVENTS_RETENTION_DAYS` (30) are deleted in `log_event()`.
 
 Event types written by `server.py`:
 
@@ -163,5 +170,5 @@ Notable derived values:
    *other* radar's latest row (**UNCERTAIN**: the intent was "exclude the row
    being processed", but the current row is inserted after this query runs, so
    the exclusion is probably unnecessary).
-7. **`events` and `devices` grow without limit.**
-8. **No indexes** on `(device, ts)` / `(device, id)` for tables queried by those columns every 5 s.
+7. ~~**`events` and `devices` grow without limit.**~~ Fixed in #18: 30 days retention for both.
+8. ~~**No indexes.**~~ Fixed in #18 (see Conventions).
