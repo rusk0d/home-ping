@@ -119,51 +119,20 @@ class HomeEnvWidget : AppWidgetProvider() {
 
         val triggerAtMillis = SystemClock.elapsedRealtime() + UPDATE_INTERVAL_MS
 
+        // Exact when allowed: always below Android 12, on 12+ with the exact-alarm
+        // permission. Otherwise inexact. Both still fire while the phone is idle.
+        val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
         try {
-            when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                    // Android 12+ - check if we can schedule exact alarms
-                    if (alarmManager.canScheduleExactAlarms()) {
-                        alarmManager.setExactAndAllowWhileIdle(
-                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                            triggerAtMillis,
-                            pendingIntent
-                        )
-                    } else {
-                        // Fallback to inexact alarm
-                        alarmManager.setAndAllowWhileIdle(
-                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                            triggerAtMillis,
-                            pendingIntent
-                        )
-                    }
-                }
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
-                    // Android 6-11
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAtMillis,
-                        pendingIntent
-                    )
-                }
-                else -> {
-                    // Android 5 and below
-                    alarmManager.setExact(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAtMillis,
-                        pendingIntent
-                    )
-                }
+            if (exact) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAtMillis, pendingIntent)
+            } else {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAtMillis, pendingIntent)
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            // Last resort - try setAndAllowWhileIdle
+            // Last resort (e.g. the exact-alarm permission was revoked in between)
             try {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
+                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAtMillis, pendingIntent)
             } catch (e2: Exception) {
                 e2.printStackTrace()
             }
