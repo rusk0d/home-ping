@@ -9,9 +9,6 @@ from functools import wraps
 from dotenv import load_dotenv
 import time
 import threading
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-import requests
 
 
 import firebase_admin
@@ -50,7 +47,6 @@ MQTT_PORT = 1883
 MQTT_USER = os.environ["MQTT_USER"]
 MQTT_PASS = os.environ["MQTT_PASS"]
 TOPIC = "home/esp32/#"  # Subscribe to all topics under home/esp32/
-MAX_EVENTS = 3 
 HEARTBEAT_TIMEOUT = 300  # seconds
 FIREBASE_CRED = "firebase_service_account.json"
 LAST_UPTIME = {}
@@ -327,33 +323,6 @@ def get_last_occupancy(device):
     conn.close()
     return row[0] if row else None
 
-def get_latest_presence():
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT ts, occupied, presence, stationary, moving,
-               distance, signal, rssi, uptime, radar_connected
-        FROM presence_readings
-        WHERE device = ?
-        ORDER BY id DESC LIMIT 1
-    """, (PRESENCE_DEVICE,))
-    row = c.fetchone()
-    conn.close()
-    if not row:
-        return None
-    return {
-        "ts": row[0],
-        "occupied": row[1],
-        "presence": row[2],
-        "stationary": row[3],
-        "moving": row[4],
-        "distance": row[5],
-        "signal": row[6],
-        "rssi": row[7],
-        "uptime": row[8],
-        "radar_connected": row[9],
-    }
-
 def log_event(device, event_type, value):
     conn = sqlite3.connect(DB)
     c = conn.cursor()
@@ -437,16 +406,6 @@ def alert(device, event_type, detail, title, body, data, cooldown_key=None):
         now = time.time()
         LAST_NOTIFICATION[cooldown_key] = now if ok else now - NOTIFICATION_COOLDOWN + PUSH_RETRY_SECONDS
     return ok
-def get_access_token():
-    """Refresh and return the Google OAuth access token."""
-    creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-    return creds.token
-
-
 # ---- add near the other config constants, top of the file ----
 QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
 
@@ -682,31 +641,6 @@ threading.Thread(target=hourly_occupancy_loop, daemon=True).start()
 # -------------------------
 # API ROUTES
 # -------------------------
-@app.route('/api/next-events')
-def next_events():
-    try:
-        calendar_ids = list_calendars()  # primary + ICS + any other
-        all_events = []
-        for cid in calendar_ids:
-            all_events += get_events(cid)
-
-        # sort all events by start time
-        all_events.sort(key=lambda e: e['start'])
-        next_three = all_events[:MAX_EVENTS]
-
-        return Response(
-            json.dumps(next_three, ensure_ascii=False),
-            content_type='application/json; charset=utf-8'
-        )
-
-    except Exception as e:
-        return Response(
-            json.dumps({'error': 'internal_exception', 'message': str(e)}, ensure_ascii=False),
-            status=500,
-            content_type='application/json; charset=utf-8'
-        )
-
-
 @app.route("/api/latest")
 @require_auth
 def latest():
@@ -839,85 +773,6 @@ def latest_all():
     }
 
     return jsonify(result)
-@app.route("/api/presence/latest")
-@require_auth
-def presence_latest():
-    """Latest radar reading"""
-    presence = get_latest_presence()
-    if not presence:
-        return jsonify({"error": "No data"}), 404
-
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("SELECT last_seen FROM devices WHERE device = ?", (PRESENCE_DEVICE,))
-    dev = c.fetchone()
-    conn.close()
-
-    online = False
-    if dev:
-        last_seen = datetime.strptime(dev[0], "%Y-%m-%d %H:%M:%S")
-        online = (datetime.now() - last_seen).total_seconds() < HEARTBEAT_TIMEOUT
-
-    presence["online"] = online
-    presence["occupancy_confidence"] = calculate_confidence(PRESENCE_DEVICE, 15)
-    presence["occupancy_armed"] = get_state("occupancy_armed") == "1"
-    return jsonify(presence)
-
-@app.route("/api/presence/history")
-@require_auth
-def presence_history():
-    """Radar reading history"""
-    limit = int(request.args.get("limit", 100))
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT ts, occupied, presence, stationary, moving, distance, signal, rssi
-        FROM presence_readings
-        WHERE device = ?
-        ORDER BY id DESC LIMIT ?
-    """, (PRESENCE_DEVICE, limit))
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([{
-        "ts": r[0], "occupied": r[1], "presence": r[2], "stationary": r[3],
-        "moving": r[4], "distance": r[5], "signal": r[6], "rssi": r[7]
-    } for r in rows])
-
-@app.route("/api/latest2")
-@require_auth
-def latest2():
-    device = request.args.get("device", "home_ping_esp32")
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-
-    c.execute("""
-        SELECT ts, temp, humidity, occupied, occupancy_confidence, dark
-        FROM readings
-        WHERE device = ?
-        ORDER BY id DESC
-        LIMIT 2
-    """, (device,))
-    rows = c.fetchall()
-    conn.close()
-
-    return jsonify(rows)
-
-@app.route("/api/history")
-@require_auth
-def history():
-    device = request.args.get("device", "home_ping_esp32")
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT ts, temp, humidity, uptime, occupied, occupancy_confidence, dark
-        FROM readings 
-        WHERE device = ?
-        ORDER BY id DESC LIMIT 30
-    """, (device,))
-    rows = c.fetchall()
-    conn.close()
-    return jsonify(rows)
-
 @app.route("/api/restarts")
 @require_auth
 def restarts():
@@ -959,55 +814,6 @@ def restarts():
             "last_7d": week.get(d, 0),
             "last_restart": last.get(d),
         } for d in devices
-    })
-
-@app.route("/api/stats24h")
-@require_auth
-def stats24h():
-    device = request.args.get("device", "home_ping_esp32")
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT temp, humidity
-        FROM readings
-        WHERE device = ? AND ts >= datetime('now','localtime','-24 hours')
-          AND temp IS NOT NULL
-          AND humidity IS NOT NULL
-    """, (device,))
-    rows = c.fetchall()
-    conn.close()
-
-    occ = occupancy_stats(24)
-
-    if not rows:
-        return jsonify({
-            "avg_temp": 0,
-            "avg_humidity": 0,
-            "avg_occupancy": occ["avg_occupancy"],
-            "avg_confidence": calculate_combined_confidence(60),
-            "occupied_hours": occ["occupied_hours"],
-            "coverage_hours": occ["coverage_hours"]
-        })
-
-    temps = [r[0] for r in rows]
-    hums = [r[1] for r in rows]
-
-    return jsonify({
-        "avg_temp": round(sum(temps)/len(temps), 1),
-        "avg_humidity": round(sum(hums)/len(hums), 1),
-        "avg_occupancy": occ["avg_occupancy"],
-        "avg_confidence": calculate_combined_confidence(60),
-        "occupied_hours": occ["occupied_hours"],
-        "coverage_hours": occ["coverage_hours"]
-    })
-@app.route("/api/occupancy_rolling")
-@require_auth
-def occupancy_rolling():
-    """Occupancy confidence from the radar over a rolling window"""
-    minutes = int(request.args.get("minutes", 60))
-    return jsonify({
-        "minutes": minutes,
-        "confidence": calculate_combined_confidence(minutes)
     })
 
 @app.route("/api/hourly")
@@ -1121,41 +927,6 @@ def devices():
 
     return jsonify(out)
 
-@app.route("/api/widget")
-@require_auth
-def widget():
-    device = request.args.get("device", "home_ping_esp32")
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-
-    c.execute("""
-        SELECT ts, temp, humidity, dark
-        FROM readings 
-        WHERE device = ?
-        ORDER BY id DESC LIMIT 1
-    """, (device,))
-    r = c.fetchone()
-
-    c.execute("""
-        SELECT ts, type, value
-        FROM events 
-        WHERE device IN (?, ?)
-        ORDER BY id DESC LIMIT 5
-    """, (device, PRESENCE_DEVICE))
-    events = c.fetchall()
-
-    armed = get_state("occupancy_armed")
-    conn.close()
-
-    # Same shape as before: [ts, temp, humidity, occupied, dark]
-    reading = [r[0], r[1], r[2], get_combined_occupancy(), r[3]] if r else None
-
-    return jsonify({
-        "reading": reading,
-        "events": events,
-        "occupancy_armed": armed == "1"
-    })
-
 @app.route("/api/register_token", methods=["POST"])
 @require_auth
 def register_token():
@@ -1183,8 +954,6 @@ def occupancy_arm():
 @require_auth
 def occupancy_status():
     return jsonify({"armed": get_state("occupancy_armed") == "1"})
-
-
 
 @app.route("/api/stats24h_combined")
 @require_auth

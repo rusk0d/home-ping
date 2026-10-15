@@ -12,7 +12,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 - Auth: HTTP Basic. One shared account, `DASH_USER` / `DASH_PASS` from
   `backend/.env`. On failure: `401`, body `Authentication required`
   (text/plain), header `WWW-Authenticate: Basic realm="Login Required"`.
-  Every endpoint uses the `require_auth` decorator **except `/api/next-events`**.
+  Every endpoint uses the `require_auth` decorator.
 - Content type: `application/json` (via `jsonify`) unless noted.
 - Timestamps: strings `"YYYY-MM-DD HH:MM:SS"` in the **server's local time**,
   no timezone (written with SQLite `datetime('now','localtime')`). They are the
@@ -41,23 +41,15 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 |---|---|---|---|
 | GET | `/api/latest` | Basic | Android widget |
 | GET | `/api/latest_all` | Basic | Android Home |
-| GET | `/api/latest2` | Basic | none found |
-| GET | `/api/history` | Basic | none found |
 | GET | `/api/history_combined` | Basic | Android Home |
-| GET | `/api/stats24h` | Basic | none found |
 | GET | `/api/stats24h_combined` | Basic | Android Home |
 | GET | `/api/hourly` | Basic | Android Home |
 | GET | `/api/air` | Basic | Android Home |
 | GET | `/api/devices` | Basic | Android Home |
 | GET | `/api/restarts` | Basic | Android Home |
-| GET | `/api/occupancy_rolling` | Basic | none found |
-| GET | `/api/presence/latest` | Basic | none found |
-| GET | `/api/presence/history` | Basic | none found |
-| GET | `/api/widget` | Basic | none found (the actual widget uses `/api/latest`) |
 | POST | `/api/register_token` | Basic | Android (FCM) |
 | POST | `/api/occupancy_arm` | Basic | Android Home |
 | GET | `/api/occupancy_status` | Basic | Android Home |
-| GET | `/api/next-events` | **none** | none found (broken, see below) |
 
 ---
 
@@ -135,19 +127,6 @@ Client: Android Home reads
 `home_ping_esp32.{temp, humidity, uptime}`, `hallway_presence_esp32.uptime`,
 `co2_sensor_esp32.{co2, uptime, co2_ok}`, `combined.{occupied, confidence}`.
 
-### GET `/api/latest2?device=<id>`
-
-Latest 2 `readings` rows for a device (default `home_ping_esp32`), newest first.
-Response: array of positional arrays `[ts, temp, humidity, occupied, occupancy_confidence, dark]`.
-`occupied`/`occupancy_confidence` from `readings` are always 0 now.
-Client: none found.
-
-### GET `/api/history?device=<id>`
-
-Last 30 `readings` rows for a device (default `home_ping_esp32`), newest first.
-Response: array of `[ts, temp, humidity, uptime, occupied, occupancy_confidence, dark]`.
-Client: none found.
-
 ### GET `/api/history_combined`
 
 Last 30 rows across **all** devices, merging `readings` and `presence_readings`,
@@ -171,27 +150,22 @@ Response: array of positional arrays:
 Client: Android Home "readings" table. Radar rows arrive every 5 s from two
 nodes, so the 30 rows usually cover only about 75 s and are almost all radar rows.
 
-### GET `/api/stats24h?device=<id>`
+### GET `/api/stats24h_combined`
 
-24 h averages for one device's env data plus radar occupancy stats.
+24 h averages over **all** devices' env data plus radar occupancy stats. No params.
 
 ```json
 {"avg_temp": 22.1, "avg_humidity": 47.9, "avg_occupancy": 41.0,
  "avg_confidence": 38, "occupied_hours": 9.84, "coverage_hours": 24.0}
 ```
 
-- `avg_temp`/`avg_humidity`: mean over rows with both non-null, rounded to 1 dp. **`0` (not null) when there are no rows.**
+- `avg_temp`/`avg_humidity`: mean over all `readings` rows in the last 24 h with both non-null,
+  rounded to 1 dp. **`0` (not null) when there are no rows.**
 - `avg_occupancy`: % (0–100, rounded to 0 dp) from `occupancy_stats(24)`. The highest-occupancy radar wins.
 - `occupied_hours`: that radar's span × occupied fraction (2 dp).
 - `coverage_hours`: longest per-radar span of data in the window (1 dp).
 - `avg_confidence`: `calculate_combined_confidence(60)`, i.e. **last 60 minutes**, not 24 h.
 
-Client: none found.
-
-### GET `/api/stats24h_combined`
-
-Same response shape as `/api/stats24h`, but `avg_temp`/`avg_humidity` average
-over **all** devices' `readings` rows in the last 24 h. No `device` param.
 Client: Android Home reads `avg_temp` (double), `avg_humidity` (int),
 `avg_confidence` (int), `occupied_hours` (double).
 
@@ -251,43 +225,6 @@ Restart counts per device from `events` where `type='RESTART'`.
 
 Devices with no restart ever are absent. Client: Android Home sums `last_24h`.
 
-### GET `/api/occupancy_rolling?minutes=<n>`
-
-`{"minutes": 60, "confidence": 38}`. Default `minutes=60`. `confidence` = `calculate_combined_confidence(minutes)`.
-Client: none found.
-
-### GET `/api/presence/latest`
-
-Latest radar row for **`home_ping_esp32` only**, or `404 {"error":"No data"}`.
-
-```json
-{"ts":"...","occupied":1,"presence":1,"stationary":1,"moving":0,"distance":142,
- "signal":37,"rssi":-61,"uptime":86405,"radar_connected":1,
- "online":true,"occupancy_confidence":73,"occupancy_armed":false}
-```
-
-`occupancy_armed` (bool) is the same value `/api/occupancy_status` returns as `armed`.
-Client: none found.
-
-### GET `/api/presence/history?limit=<n>`
-
-Latest `limit` (default 100) radar rows for **`home_ping_esp32` only**.
-`[{"ts","occupied","presence","stationary","moving","distance","signal","rssi"}, ...]`.
-Client: none found.
-
-### GET `/api/widget?device=<id>`
-
-```json
-{"reading": ["2026-10-13 19:42:10", 22.4, 48.3, 1, 0],
- "events": [["2026-10-13 19:30:02","OCCUPANCY_CHANGE","occupied"]],
- "occupancy_armed": false}
-```
-
-- `reading`: `[ts, temp, humidity, combined_occupied, dark]` or null.
-- `events`: last 5 `events` rows for `device` or `home_ping_esp32`, as `[ts, type, value]`.
-
-Client: none found. The Android widget calls `/api/latest` instead.
-
 ### POST `/api/register_token`
 
 Request (JSON):
@@ -319,21 +256,6 @@ Response: `{"armed": true|false}` (same shape as the `POST /api/occupancy_arm` r
 `false` until the switch is first armed.
 Client: Android Home, on startup, to set the toggle switch.
 
-### GET `/api/next-events` (no auth, broken)
-
-Intended to return the next `MAX_EVENTS` (3) calendar events, sorted by `start`.
-It calls `list_calendars()` and `get_events()`, **which aren't defined anywhere
-in `server.py`**, so every call returns:
-
-```json
-{"error":"internal_exception","message":"name 'list_calendars' is not defined"}
-```
-
-with status 500. The related helper `get_access_token()` references undefined
-`TOKEN_FILE` and `SCOPES`. **UNCERTAIN**: a removed Google Calendar feature.
-The endpoint has no `@require_auth`, so the exception message is visible to
-anyone who can reach the server.
-
 ---
 
 ## Mismatches and issues between components
@@ -355,31 +277,29 @@ anyone who can reach the server.
    longer calls `touch_device`, and the old `"unknown"` row is deleted on start.
 8. **Duplicate FCM topic subscription.** Android subscribes itself to topic `env`
    client-side *and* the backend subscribes the token server-side. This is harmless but redundant.
-9. **Positional array responses** (`/api/latest`, `/api/latest2`, `/api/history`,
-   `/api/history_combined`, `/api/widget.reading`, `/api/widget.events`) make
-   clients depend on column order. The comment in `/api/widget` ("Same shape as before")
-   suggests the order has already changed once.
+9. **Positional array responses** (`/api/latest`, `/api/history_combined`) make
+   clients depend on column order.
 10. **`occupied`/`occupancy_confidence` in `readings` are always 0** (the backend hard-codes
-    them for env messages). They still appear in `/api/history`, `/api/latest2`
-    and `/api/history_combined` env rows, where they look like real data.
-11. **`dark` is always 0** (no firmware sends it) but is returned by `/api/latest`,
-    `/api/latest_all`, `/api/widget`.
-12. **`avg_confidence` doesn't mean the same thing everywhere.** In `/api/stats24h*` it covers the last 60 min,
+    them for env messages). They still appear in `/api/history_combined` env rows,
+    where they look like real data.
+11. **`dark` is always 0** (no firmware sends it) but is returned by `/api/latest`
+    and `/api/latest_all`.
+12. **`avg_confidence` doesn't mean the same thing everywhere.** In `/api/stats24h_combined` it covers the last 60 min,
     not 24 h. In `/api/hourly` it equals `avg_occupancy`. In
     `/api/history_combined` "confidence" for radar rows is `100`/`signal`, which is a different
     quantity from `calculate_confidence`.
-13. **Hallway radar is invisible to several endpoints.** `/api/presence/*` and the
-    occupancy column of `/api/hourly` only use `home_ping_esp32`.
-14. **Empty-state values don't match.** `/api/stats24h*` return `0` instead of null
-    for no data, `/api/latest` returns `[]`, and `/api/presence/latest` returns 404.
+13. **Hallway radar is invisible to the occupancy column of `/api/hourly`**, which only
+    uses `home_ping_esp32`.
+14. **Empty-state values don't match.** `/api/stats24h_combined` returns `0` instead of null
+    for no data, and `/api/latest` returns `[]`.
 15. **Android config.** The server base URL and Basic-auth credentials come from the
     gitignored `android/local.properties` (`API_BASE_URL`, `API_USER`, `API_PASS`)
     via `BuildConfig`. `API_BASE_URL` has no trailing slash and falls back to
     `https://www.example.com` if unset. Note that `BuildConfig` values are compiled
     into the APK and can be extracted from it.
-16. **Unused endpoints** (no client in this repo): `/api/latest2`, `/api/history`,
+16. ~~**Unused endpoints**~~ removed in #14: `/api/latest2`, `/api/history`,
     `/api/stats24h`, `/api/occupancy_rolling`, `/api/presence/latest`,
-    `/api/presence/history`, `/api/widget`, `/api/next-events`. **UNCERTAIN**: they may have
-    external users not in this repo.
+    `/api/presence/history`, `/api/widget`, `/api/next-events` (and the broken Google
+    OAuth helper `get_access_token`).
 17. **`HEARTBEAT_TIMEOUT` defined twice** (300 with comment "seconds", later 120).
     The effective value is 120 s. Anyone reading the top of the file gets the wrong number.
