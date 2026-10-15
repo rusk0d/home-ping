@@ -18,7 +18,7 @@ import com.david.homeenv.ui.Levels
 import com.david.homeenv.ui.WidgetGauge
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -237,7 +237,7 @@ class HomeEnvWidget : AppWidgetProvider() {
                 val body = client.newCall(request).execute().use { response ->
                     if (response.isSuccessful) response.body?.string() else null
                 }
-                body?.let { render(context, manager, widgetId, JSONArray(it)) }
+                body?.let { render(context, manager, widgetId, JSONObject(it)) }
             } catch (_: Exception) {
                 null // widgets must NEVER crash
             }
@@ -256,17 +256,16 @@ class HomeEnvWidget : AppWidgetProvider() {
         }
     }
 
-    /** Full widget from an /api/latest array (see contracts/api.md). */
-    private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, json: JSONArray): RemoteViews {
+    /** Full widget from the /api/latest object (see contracts/api.md). Fields can be null. */
+    private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, json: JSONObject): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_homeenv)
         val gaugeWidth = gaugeWidthPx(context, manager, widgetId)
 
-        // optDouble gives NaN for null/missing values
-        val temp = json.optDouble(1).takeUnless { it.isNaN() }
-        val humidity = json.optDouble(2).takeUnless { it.isNaN() }
-        val occupied = json.optInt(4) == 1                                       // 0 or 1
-        val confidence = json.optDouble(5).takeUnless { it.isNaN() || json.length() == 0 } // %
-        val online = json.optBoolean(7)
+        val temp = json.optNum("temp")
+        val humidity = json.optNum("humidity")
+        val occupied = json.optNum("occupied")?.let { it == 1.0 }   // null = no radar data
+        val confidence = json.optNum("confidence")                  // %, null = no radar data
+        val online = json.optBoolean("online")
 
         views.setTextViewText(R.id.w_temp_value, temp?.let { String.format(Locale.US, "%.1f", it) } ?: "--")
         setLevel(context, views, R.id.w_temp_level, temp?.let { Levels.temperature(it) })
@@ -276,7 +275,7 @@ class HomeEnvWidget : AppWidgetProvider() {
         setLevel(context, views, R.id.w_hum_level, humidity?.let { Levels.humidity(it) })
         views.setImageViewBitmap(R.id.w_hum_gauge, WidgetGauge.render(context, WidgetGauge.HUMIDITY, humidity, gaugeWidth))
 
-        if (json.length() == 0) {
+        if (occupied == null) {
             views.setTextViewText(R.id.w_occ_value, "--")
             views.setTextViewText(R.id.w_occ_level, " ")
         } else {
@@ -306,6 +305,9 @@ class HomeEnvWidget : AppWidgetProvider() {
         views.setTextViewText(R.id.w_updated, "tried " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()))
         return views
     }
+
+    private fun JSONObject.optNum(key: String): Double? =
+        if (has(key) && !isNull(key)) optDouble(key).takeUnless { it.isNaN() } else null
 
     private fun setLevel(context: Context, views: RemoteViews, id: Int, level: Level?) {
         views.setTextViewText(id, level?.text ?: " ")
