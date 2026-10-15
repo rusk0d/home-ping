@@ -115,7 +115,7 @@ Known keys:
 | `type` | TEXT | yes | see below |
 | `value` | TEXT | yes | free text |
 
-Retention: rows older than `EVENTS_RETENTION_DAYS` (90) are deleted in `log_event()`.
+Retention: rows older than `EVENTS_RETENTION_DAYS` (30) are deleted in `log_event()`.
 
 Event types written by `server.py`:
 
@@ -170,5 +170,5 @@ Notable derived values:
    *other* radar's latest row (**UNCERTAIN**: the intent was "exclude the row
    being processed", but the current row is inserted after this query runs, so
    the exclusion is probably unnecessary).
-7. ~~**`events` and `devices` grow without limit.**~~ Fixed in #18: 90 / 30 days retention.
+7. ~~**`events` and `devices` grow without limit.**~~ Fixed in #18: 30 days retention for both.
 8. ~~**No indexes.**~~ Fixed in #18 (see Conventions).
