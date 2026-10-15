@@ -60,6 +60,7 @@ UPTIME_DROP_TOLERANCE = 120   # seconds; see note below
 # Presence (LD2410C radar) — the ONLY source of occupancy data.
 # PIR "occupied" fields from other devices are ignored.
 PRESENCE_DEVICE = "home_ping_esp32"
+HOURLY_MAX_DAYS = 7            # /api/hourly?days= limit (readings are kept 8 days)
 PRESENCE_SIGNAL_THRESHOLD = 15   # stationary readings below this energy are treated as noise
 # Hourly occupancy for the web page (outside home/esp32/# so we don't receive our own messages)
 OCCUPANCY_HOURLY_TOPIC = "home/backend/occupancy_hourly"
@@ -845,8 +846,9 @@ def on_message(client, userdata, msg):
 # -------------------------
 # MQTT SETUP
 # -------------------------
-def hourly_occupancy_today():
-    """{'YYYY-MM-DD HH:00': mean(occupied)*100} for PRESENCE_DEVICE since local midnight."""
+def hourly_occupancy_today(days=1):
+    """{'YYYY-MM-DD HH:00': mean(occupied)*100} for PRESENCE_DEVICE since local midnight
+    (days - 1) days ago; days=1 is today."""
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute("""
@@ -854,9 +856,9 @@ def hourly_occupancy_today():
             strftime('%Y-%m-%d %H:00', ts, 'localtime'),
             AVG(occupied)*100
         FROM presence_readings
-        WHERE device = ? AND ts >= datetime('now','localtime','start of day','utc')
+        WHERE device = ? AND ts >= datetime('now','localtime','start of day',?,'utc')
         GROUP BY 1
-    """, (PRESENCE_DEVICE,))
+    """, (PRESENCE_DEVICE, f"-{days - 1} days"))
     rows = {r[0]: r[1] for r in c.fetchall()}
     conn.close()
     return rows
@@ -1080,6 +1082,14 @@ def restarts():
 @require_auth
 def hourly():
     device = request.args.get("device", "home_ping_esp32")
+    # days=1: today; days=N: today and the N-1 days before it (history screen, #82).
+    # Readings are kept for 8 days, so 7 full days is the most there is.
+    days = request.args.get("days", "1")
+    if not days.isdigit() or not 1 <= int(days) <= HOURLY_MAX_DAYS:
+        return jsonify({"error": f"days must be 1-{HOURLY_MAX_DAYS}"}), 400
+    days = int(days)
+    since = f"-{days - 1} days"
+
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute("""
@@ -1088,22 +1098,37 @@ def hourly():
             AVG(temp),
             AVG(humidity)
         FROM readings
-        WHERE device = ? AND ts >= datetime('now','localtime','start of day','utc')
+        WHERE device = ? AND ts >= datetime('now','localtime','start of day',?,'utc')
         GROUP BY 1
-    """, (device,))
+    """, (device, since))
     env_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
+    # CO2 and pressure from whichever device reports them (like /api/air)
+    c.execute("""
+        SELECT
+            strftime('%Y-%m-%d %H:00', ts, 'localtime'),
+            AVG(co2),
+            AVG(pressure)
+        FROM readings
+        WHERE (co2 IS NOT NULL OR pressure IS NOT NULL)
+          AND ts >= datetime('now','localtime','start of day',?,'utc')
+        GROUP BY 1
+    """, (since,))
+    air_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
     conn.close()
-    occ_rows = hourly_occupancy_today()
+    occ_rows = hourly_occupancy_today(days)
 
-    hours = sorted(set(env_rows) | set(occ_rows), reverse=True)
+    hours = sorted(set(env_rows) | set(air_rows) | set(occ_rows), reverse=True)
     out = []
     for h in hours:
         t, hu = env_rows.get(h, (None, None))
+        co2, pr = air_rows.get(h, (None, None))
         o = occ_rows.get(h)
         out.append({
             "hour": h,
             "avg_temp": round(t, 1) if t is not None else None,
             "avg_humidity": round(hu, 1) if hu is not None else None,
+            "avg_co2": round(co2) if co2 is not None else None,
+            "avg_pressure": round(pr, 1) if pr is not None else None,
             "avg_occupancy": round(o, 0) if o is not None else None,
         })
     return jsonify(out)

@@ -62,3 +62,7 @@ object Api {
         return c.newCall(request.addHeader("Authorization", authHeader).build()).execute()
     }
 }
+
+/** [key] as a number, or null when it is missing, JSON null or not a number. */
+fun JSONObject.optNum(key: String): Double? =
+    if (has(key) && !isNull(key)) optDouble(key).takeUnless { it.isNaN() } else null

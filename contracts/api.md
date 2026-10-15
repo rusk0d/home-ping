@@ -36,6 +36,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 |---|---|
 | Android `HomeFragment` | `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`, `POST /api/occupancy_arm`, `/api/occupancy_status` |
 | Android `MainActivity` (FCM) | `POST /api/register_token` |
+| Android `HistoryActivity` | `/api/hourly?days=7` |
 | Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings` |
 | Android `HomeEnvWidget` | `/api/latest` |
 | Web (`web/index.html`) | none (MQTT only) |
@@ -48,7 +49,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | GET | `/api/latest` | Basic | Android widget |
 | GET | `/api/latest_all` | Basic | Android Home |
 | GET | `/api/stats24h_combined` | Basic | Android Home |
-| GET | `/api/hourly` | Basic | Android Home |
+| GET | `/api/hourly` | Basic | Android Home, History |
 | GET | `/api/air` | Basic | Android Home |
 | GET | `/api/devices` | Basic | Android Home |
 | GET | `/api/restarts` | Basic | Android Home |
@@ -152,23 +153,36 @@ Client: Android Home reads
 Client: Android Home reads `avg_temp` (double), `avg_humidity` (int),
 `avg_occupancy` (int), `occupied_hours` (double).
 
-### GET `/api/hourly?device=<id>`
+### GET `/api/hourly?device=<id>&days=<n>`
 
-Per-hour buckets **since local (Budapest) midnight today** (not a rolling 24 h), newest first.
+Per-hour buckets **since local (Budapest) midnight** (not a rolling 24 h), newest first.
+`days` (optional, integer 1–7, default 1): `1` = today only; `n` = today and the `n-1`
+days before it (since #82). Readings are kept 8 days, so 7 is the maximum. Anything
+else → 400 `{"error": "days must be 1-7"}`.
 `hour` is a local-time label (`"YYYY-MM-DD HH:00"`, no zone). On the autumn DST change the
 repeated hour 02:00–03:00 falls into one bucket.
-Env averages come from `readings` for `device` (default `home_ping_esp32`).
+Temperature/humidity averages come from `readings` for `device` (default `home_ping_esp32`).
+CO2/pressure averages come from `readings` of any device (like `/api/air`).
 Occupancy comes from `presence_readings` for `home_ping_esp32` only (`PRESENCE_DEVICE`).
+An hour appears if any of these has data.
 
 ```json
-[{"hour":"2026-10-13 19:00","avg_temp":22.3,"avg_humidity":48.0,"avg_occupancy":62.0}]
+[{"hour":"2026-10-13 19:00","avg_temp":22.3,"avg_humidity":48.0,"avg_co2":812,
+  "avg_pressure":1013.4,"avg_occupancy":62.0}]
 ```
 
 - `avg_temp`/`avg_humidity`: number or null (1 dp).
+- `avg_co2`: integer ppm or null (since #82).
+- `avg_pressure`: hPa, number or null (1 dp, since #82).
 - `avg_occupancy`: mean(`occupied`)×100, rounded to 0 dp. null if no radar rows that hour.
 
-Client: Android Home occupancy bar strip and sparklines (reads `hour`, `avg_occupancy`,
-`avg_temp`, `avg_humidity`; reverses the order). A null `avg_occupancy` is drawn as "no data".
+Clients:
+- Android Home occupancy bar strip and sparklines (`days` omitted; reads `hour`,
+  `avg_occupancy`, `avg_temp`, `avg_humidity`; reverses the order). A null
+  `avg_occupancy` is drawn as "no data".
+- Android History (`days=7`): one line chart per metric over 7 × 24 hourly slots (a
+  missing hour or null value breaks the line), and occupied hours per day
+  = sum(`avg_occupancy`) / 100.
 
 ### GET `/api/air`
 

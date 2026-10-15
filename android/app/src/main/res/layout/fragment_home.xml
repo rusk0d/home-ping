@@ -21,6 +21,20 @@
             android:paddingTop="4dp"
             android:paddingBottom="32dp">
 
+            <!-- Shown while the server can't be reached; tinted in HomeFragment -->
+            <TextView
+                android:id="@+id/offlineBanner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
             <!-- Occupancy alerts (arm switch) -->
             <com.david.homeenv.ui.AccentCard
                 style="@style/HomeCard"
@@ -436,6 +450,18 @@
                         android:text="--" />
                 </com.david.homeenv.ui.AccentCard>
             </LinearLayout>
+
+            <!-- Opens the 7-day history (#82) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/history_button"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Last 7 days"
+                android:textAllCaps="false"
+                android:textColor="@color/text"
+                app:strokeColor="@color/card_edge" />
 
         </LinearLayout>
     </ScrollView>
