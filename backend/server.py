@@ -4,7 +4,7 @@ import os
 import re
 from flask import Flask, jsonify, request, Response, abort
 from werkzeug.exceptions import HTTPException
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 from functools import wraps
 from dotenv import load_dotenv
@@ -56,7 +56,7 @@ NODE_CHECK_INTERVAL = 30          # seconds between offline checks
 HEARTBEAT_TIMEOUT = 120  # seconds without a message before a device counts as offline
 FIREBASE_CRED = "firebase_service_account.json"
 LAST_UPTIME = {}
-UPTIME_DROP_TOLERANCE = 120   # seconds; see note below
+UPTIME_DROP_TOLERANCE = 120   # seconds; a restart needs uptime to drop by more (see note_uptime)
 # Presence (LD2410C radar) — the ONLY source of occupancy data.
 # PIR "occupied" fields from other devices are ignored.
 PRESENCE_DEVICE = "home_ping_esp32"
@@ -101,9 +101,10 @@ def json_body():
 # -------------------------
 # FIREBASE INIT
 # -------------------------
-if not firebase_admin._apps:
-    cred = credentials.Certificate(FIREBASE_CRED)
-    firebase_admin.initialize_app(cred)
+try:
+    firebase_admin.get_app()   # already initialised (e.g. module imported twice)
+except ValueError:
+    firebase_admin.initialize_app(credentials.Certificate(FIREBASE_CRED))
 
 # -------------------------
 # DATABASE INIT
@@ -452,8 +453,9 @@ def note_uptime(device, uptime):
     if prev is None:
         return
 
-    # A real reboot resets uptime to near zero. Require a meaningful drop,
-    # not just a smaller number (see note on multi-topic devices).
+    # A real reboot resets uptime to near zero. Require a meaningful drop, not just
+    # a smaller number: a node that publishes on several topics (env, presence) can
+    # send them slightly out of order, so its uptime may briefly go back a little.
     if uptime < prev - UPTIME_DROP_TOLERANCE:
         log_event(device, "RESTART", f"uptime {prev}s -> {uptime}s")
         print(f"[RESTART] {device}: was up {prev}s, now {uptime}s")
@@ -549,7 +551,6 @@ def alert_muted(kind):
     if in_quiet_hours():
         return "quiet hours"
     return None
-# ---- add near the other config constants, top of the file ----
 QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
 
 
@@ -571,7 +572,7 @@ def any_radar_quiet_minutes():
     return (utcnow() - last_occ).total_seconds() / 60
 
 
-def handle_presence_data(data, topic):
+def handle_presence_data(data):
     """Handle LD2410C radar presence data — the only occupancy source."""
     device = data.get("device", PRESENCE_DEVICE)
     presence = 1 if data.get("presence", False) else 0
@@ -760,7 +761,6 @@ PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the
 TEMP_THRESHOLD = 18
 HUMIDITY_HIGH_THRESHOLD = 65
 HUMIDITY_LOW_THRESHOLD = 25
-CONFIDENCE_THRESHOLD = 65
 
 def on_message(client, userdata, msg):
     # Nothing may escape this callback: paho re-raises callback exceptions, which
@@ -788,7 +788,7 @@ def on_message(client, userdata, msg):
         data = json.loads(payload)
 
         if "presence" in data:
-            handle_presence_data(data, msg.topic)
+            handle_presence_data(data)
             return
 
         # ---- Everything else: environmental sensors. PIR fields are ignored. ----
