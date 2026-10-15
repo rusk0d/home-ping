@@ -27,7 +27,7 @@ Status: draft, reverse-engineered from `backend/server.py` on branch `contracts-
 ### `readings` (environmental data)
 
 Written by: MQTT env handler (`log_to_db`) for every message that has no
-`presence` and no `moisture`+`raw` key (currently `home/esp32/bme280` and `home/esp32/co2`).
+`presence` key (currently `home/esp32/bme280` and `home/esp32/co2`).
 
 | Column | Type | Null | Source / meaning |
 |---|---|---|---|
@@ -71,19 +71,7 @@ Retention: rows older than 8 days are deleted on every insert.
 Volume: ~17,280 rows/day per radar node at the 5 s interval. With 2 nodes and 8 days that's ~276k rows,
 with no index on `device`/`ts` (**UNCERTAIN**: query performance not measured).
 
-### `soil_readings`
-
-Written by: MQTT soil handler (`handle_soil_data`) for messages with both `moisture` and `raw`.
-
-| Column | Type | Null | Source / meaning |
-|---|---|---|---|
-| `id` | INTEGER PK AUTOINCREMENT | no | |
-| `device` | TEXT | yes | payload `device` (default `"soil_sensor_01"`) |
-| `ts` | TIMESTAMP (TEXT) | yes | receive time, local |
-| `moisture` | INTEGER | yes | payload `moisture`, % (**UNCERTAIN** unit) |
-| `raw_value` | INTEGER | yes | payload **`raw`** (renamed in the DB) |
-
-Retention: last 1000 rows **per device** are kept (no time limit).
+`soil_readings` was removed with the soil feature (#9); `init_db()` drops it if it exists.
 
 ### `devices` (heartbeat)
 
@@ -92,8 +80,7 @@ Retention: last 1000 rows **per device** are kept (no time limit).
 | `device` | TEXT PK | no | device ID |
 | `last_seen` | TIMESTAMP (TEXT) | yes | last time any message touched it, local |
 
-Upserted by `touch_device()` on every env and presence message and inline in the soil
-handler. Sensor nodes only: `init_db()` deletes the `"unknown"` row that
+Upserted by `touch_device()` on every env and presence message. Sensor nodes only: `init_db()` deletes the `"unknown"` row that
 `POST /api/register_token` used to create (#15). Otherwise never deleted.
 
 ### `system_state` (key/value settings)
@@ -132,7 +119,6 @@ Event types written by `server.py`:
 | `HUMIDITY_HIGH_ALERT` | env ID | `sent, humidity=67.2` | humidity push attempted |
 | `HUMIDITY_LOW_ALERT` | env ID | `sent, humidity=23.9` | humidity push attempted |
 | `TEMP_ALERT` | env ID | `sent, temp=17.6` | temperature push attempted |
-| `SOIL_DRY_ALERT` | soil ID | `sent, moisture=22%` | soil push attempted |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12).
 | `OCCUPANCY_ARMED` | `system` | `1` / `0` | `POST /api/occupancy_arm` |
@@ -145,8 +131,7 @@ Read by: `/api/restarts` (`RESTART` only), `/api/widget` (last 5 for a device + 
 |---|---|---|
 | `readings` | `log_to_db` (+ 8-day prune) | `/api/latest`, `/api/latest_all`, `/api/latest2`, `/api/history`, `/api/history_combined` (UNION with presence), `/api/stats24h`, `/api/stats24h_combined`, `/api/hourly`, `/api/air`, `/api/widget` |
 | `presence_readings` | `log_presence` (+ 8-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `get_last_occupancy`, `get_latest_presence`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/presence/history`, `/api/hourly`, `/api/history_combined` |
-| `soil_readings` | `handle_soil_data` (+ keep 1000/device) | `/api/soil/latest`, `/api/soil/history`, `/api/soil/stats24h` |
-| `devices` | `touch_device`, `handle_soil_data` | `/api/latest`, `/api/latest_all`, `/api/presence/latest`, `/api/devices`, `/api/soil/latest` |
+| `devices` | `touch_device` | `/api/latest`, `/api/latest_all`, `/api/presence/latest`, `/api/devices` |
 | `system_state` | `init_db` seed, `set_state` | `get_state` |
 | `events` | `log_event` | `/api/restarts`, `/api/widget` |
 
