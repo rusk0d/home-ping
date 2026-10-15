@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light theme, from web/index.html @media (prefers-color-scheme: light) -->
+    <color name="bg">#f3f5f9</color>
+    <color name="bg_glow">#e3e9f5</color>
+    <color name="card">#ffffff</color>
+    <color name="card_edge">#dfe4ee</color>
+    <color name="text">#1b2130</color>
+    <color name="muted">#667085</color>
+    <color name="faint">#d4d9e3</color>
+
+    <color name="good">#12a36b</color>
+    <color name="ok">#c7920c</color>
+    <color name="poor">#d56a12</color>
+    <color name="bad">#d63c3c</color>
+
+    <color name="accent_temp">#e5602b</color>
+    <color name="accent_hum">#1f8ad6</color>
+    <color name="accent_pres">#7c55e0</color>
+    <color name="accent_co2">#12a36b</color>
+</resources>
