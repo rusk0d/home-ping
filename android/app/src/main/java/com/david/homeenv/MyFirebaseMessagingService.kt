@@ -53,7 +53,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val channelId = if (event == "OCCUPIED") CHANNEL_OCCUPANCY else CHANNEL_SENSORS
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)   // white silhouette; a colour icon shows as a blob
+            .setColor(getColor(R.color.good))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
