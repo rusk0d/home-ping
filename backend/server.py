@@ -24,7 +24,7 @@ AUTH_USER = os.environ["DASH_USER"]
 AUTH_PASS = os.environ["DASH_PASS"]
 
 
-    
+
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -92,38 +92,49 @@ if not firebase_admin._apps:
 # -------------------------
 # DATABASE INIT
 # -------------------------
+READINGS_COLUMNS = """
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device TEXT,
+    ts TIMESTAMP,
+    temp REAL,
+    humidity REAL,
+    uptime INTEGER,
+    co2 INTEGER,
+    pressure REAL,
+    co2_ok INTEGER
+"""
+
+
 def init_db():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
 
-    # Modified readings table to include device column
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS readings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            device TEXT,
-            ts TIMESTAMP,
-            temp REAL,
-            humidity REAL,
-            uptime INTEGER,
-            occupied INTEGER,
-            occupancy_confidence INTEGER,
-            dark INTEGER,
-            co2 INTEGER,
-            pressure REAL,
-            co2_ok INTEGER
-        )
-    """)
+    c.execute(f"CREATE TABLE IF NOT EXISTS readings ({READINGS_COLUMNS})")
 
     # Add columns missing from older databases (including ones created by the
     # removed init_db.py, which had only id/ts/temp/humidity)
     for col, coltype in (("device", "TEXT"), ("uptime", "INTEGER"),
-                         ("occupied", "INTEGER"), ("occupancy_confidence", "INTEGER"),
-                         ("dark", "INTEGER"), ("co2", "INTEGER"), ("pressure", "REAL"),
-                         ("co2_ok", "INTEGER")):
+                         ("co2", "INTEGER"), ("pressure", "REAL"), ("co2_ok", "INTEGER")):
         try:
             c.execute(f"ALTER TABLE readings ADD COLUMN {col} {coltype}")
         except sqlite3.OperationalError:
             pass  # Column already exists
+
+    # Drop columns that were always 0 (#14). Rebuild the table instead of
+    # ALTER TABLE ... DROP COLUMN, which needs SQLite 3.35+.
+    cols = {r[1] for r in c.execute("PRAGMA table_info(readings)")}
+    if cols & {"occupied", "occupancy_confidence", "dark"}:
+        keep = "id, device, ts, temp, humidity, uptime, co2, pressure, co2_ok"
+        conn.commit()
+        c.executescript(f"""
+            BEGIN;
+            CREATE TABLE readings_new ({READINGS_COLUMNS});
+            INSERT INTO readings_new ({keep}) SELECT {keep} FROM readings;
+            DROP TABLE readings;
+            ALTER TABLE readings_new RENAME TO readings;
+            COMMIT;
+        """)
+        print("[DB] readings: dropped occupied, occupancy_confidence, dark")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS devices (
@@ -196,16 +207,15 @@ def touch_device(device):
     conn.commit()
     conn.close()
 
-def log_to_db(device, temp, hum, uptime, occupied, conf, dark, co2=None, pressure=None, co2_ok=None):
+def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None):
     conn = sqlite3.connect(DB)
     c = conn.cursor()
 
     c.execute("""
         INSERT INTO readings
-        (device, ts, temp, humidity, uptime, occupied, occupancy_confidence,
-         dark, co2, pressure, co2_ok)
-        VALUES (?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (device, temp, hum, uptime, occupied, conf, dark, co2, pressure, co2_ok))
+        (device, ts, temp, humidity, uptime, co2, pressure, co2_ok)
+        VALUES (?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?)
+    """, (device, temp, hum, uptime, co2, pressure, co2_ok))
 
     c.execute("""
         DELETE FROM readings
@@ -252,7 +262,7 @@ def occupancy_stats(hours=24):
     conn.close()
 
     if not rows:
-        return {"avg_occupancy": 0, "occupied_hours": 0, "coverage_hours": 0}
+        return {"avg_occupancy": None, "occupied_hours": None, "coverage_hours": None}
 
     best_pct = 0
     best_hours = 0
@@ -278,9 +288,14 @@ def occupancy_stats(hours=24):
         "occupied_hours": round(best_hours, 2),
         "coverage_hours": round(coverage, 1),
     }
-    
-def calculate_confidence(device, minutes):
-    """Occupancy confidence from the radar over a time window (0-100)."""
+
+# "confidence" everywhere in the API: % of a radar's rows in the last
+# CONFIDENCE_MINUTES that were occupied (0-100), or None without radar data.
+CONFIDENCE_MINUTES = 15
+
+
+def calculate_confidence(device, minutes=CONFIDENCE_MINUTES):
+    """Occupancy confidence for one radar over a time window (0-100), None without data."""
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute("""
@@ -291,18 +306,19 @@ def calculate_confidence(device, minutes):
     conn.close()
 
     if not rows:
-        return 0
+        return None
 
     return int((sum(r[0] for r in rows) / len(rows)) * 100)
 
 def get_combined_occupancy():
-    """Occupied if any radar has 2+ occupied rows in its last 3 reports."""
+    """1 if any radar has 2+ occupied rows in its last 3 reports (last 2 min), 0 if not,
+    None if no radar reported in the last 2 minutes."""
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute("SELECT DISTINCT device FROM presence_readings")
     devices = [r[0] for r in c.fetchall()]
 
-    result = 0
+    result = None
     for d in devices:
         c.execute("""
             SELECT occupied FROM presence_readings
@@ -310,14 +326,16 @@ def get_combined_occupancy():
             ORDER BY id DESC LIMIT 3
         """, (d,))
         rows = [r[0] for r in c.fetchall()]
+        if rows and result is None:
+            result = 0
         if sum(rows) >= 2:
             result = 1
     conn.close()
     return result
 
 
-def calculate_combined_confidence(minutes):
-    """Per-radar average over the window, then the highest of them."""
+def calculate_combined_confidence(minutes=CONFIDENCE_MINUTES):
+    """Per-radar confidence over the window, then the highest of them; None without data."""
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute("""
@@ -330,7 +348,7 @@ def calculate_combined_confidence(minutes):
     conn.close()
 
     if not rows:
-        return 0
+        return None
     return int(max(r[1] for r in rows) * 100)
 
 def get_last_occupancy(device):
@@ -547,15 +565,13 @@ def on_message(client, userdata, msg):
         temp = data.get("temp_c")
         hum = data.get("humidity")
         uptime = data.get("uptime", 0)
-        dark = 1 if data.get("dark", 0) else 0
         co2 = data.get("co2")
         pressure = data.get("pressure")
 
         # co2_ok is stored with the reading so it survives a backend restart
         co2_ok = (1 if data["co2_ok"] else 0) if "co2_ok" in data else None
 
-        # occupied / confidence intentionally 0 for non-radar devices
-        log_to_db(device, temp, hum, uptime, 0, 0, dark, co2, pressure, co2_ok)
+        log_to_db(device, temp, hum, uptime, co2, pressure, co2_ok)
         touch_device(device)
         note_uptime(device, uptime)
 
@@ -663,45 +679,40 @@ threading.Thread(target=hourly_occupancy_loop, daemon=True).start()
 # -------------------------
 # API ROUTES
 # -------------------------
+
 @app.route("/api/latest")
 @require_auth
 def latest():
-    """Latest temp/humidity from the OLED node + occupancy from the radar node"""
+    """Latest temp/humidity from the main node + combined radar occupancy (widget)."""
     device = "home_ping_esp32"
-    
+
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-
     c.execute("""
-        SELECT ts, temp, humidity, uptime, occupied, occupancy_confidence, dark
-        FROM readings 
+        SELECT ts, temp, humidity, uptime
+        FROM readings
         WHERE device = ?
         ORDER BY id DESC LIMIT 1
     """, (device,))
-    row = c.fetchone()
-
+    row = c.fetchone() or (None, None, None, None)
     c.execute("SELECT last_seen FROM devices WHERE device = ?", (device,))
     dev = c.fetchone()
     conn.close()
-
-    if not row:
-        return jsonify([])
 
     online = False
     if dev:
         last_seen = datetime.strptime(dev[0], "%Y-%m-%d %H:%M:%S")
         online = (datetime.now() - last_seen).total_seconds() < HEARTBEAT_TIMEOUT
 
-    return jsonify([
-        row[0],                            # timestamp
-        row[1],                            # temp (from OLED ESP32)
-        row[2],                            # humidity (from OLED ESP32)
-        row[3],                            # uptime
-        get_combined_occupancy(),          # radar occupancy
-        calculate_combined_confidence(15), # radar confidence
-        row[6],                            # dark
-        online
-    ])
+    return jsonify({
+        "ts": row[0],
+        "temp": row[1],
+        "humidity": row[2],
+        "uptime": row[3],
+        "online": online,
+        "occupied": get_combined_occupancy(),
+        "confidence": calculate_combined_confidence(),
+    })
 
 @app.route("/api/latest_all")
 @require_auth
@@ -726,7 +737,7 @@ def latest_all():
     c.execute("SELECT DISTINCT device FROM readings")
     for device in [row[0] for row in c.fetchall()]:
         c.execute("""
-            SELECT ts, temp, humidity, uptime, dark, co2, pressure, co2_ok
+            SELECT ts, temp, humidity, uptime, co2, pressure, co2_ok
             FROM readings
             WHERE device = ?
             ORDER BY id DESC LIMIT 1
@@ -740,13 +751,10 @@ def latest_all():
             "temp": row[1],
             "humidity": row[2],
             "uptime": row[3],
-            "occupied": 0,
-            "occupancy_confidence": 0,
-            "dark": row[4],
-            "co2": row[5],
-            "pressure": row[6],
+            "co2": row[4],
+            "pressure": row[5],
             "online": is_online(device),
-            "co2_ok": None if row[7] is None else bool(row[7]),
+            "co2_ok": None if row[6] is None else bool(row[6]),
         }
 
     # ---- Radar nodes: merge in, or add if they have no env readings ----
@@ -766,7 +774,6 @@ def latest_all():
         entry = result.get(device, {
             "temp": None,
             "humidity": None,
-            "dark": None,
             "co2": None,
             "pressure": None,
         })
@@ -775,7 +782,7 @@ def latest_all():
             "ts": p[0],
             "uptime": p[8],
             "occupied": p[1],
-            "occupancy_confidence": calculate_confidence(device, 15),
+            "confidence": calculate_confidence(device),
             "online": is_online(device),
             "presence": p[2],
             "stationary": p[3],
@@ -791,7 +798,7 @@ def latest_all():
 
     result["combined"] = {
         "occupied": get_combined_occupancy(),
-        "confidence": calculate_combined_confidence(15)
+        "confidence": calculate_combined_confidence()
     }
 
     return jsonify(result)
@@ -861,13 +868,12 @@ def hourly():
     out = []
     for h in hours:
         t, hu = env_rows.get(h, (None, None))
-        o = occ_rows.get(h, 0)
+        o = occ_rows.get(h)
         out.append({
             "hour": h,
             "avg_temp": round(t, 1) if t is not None else None,
             "avg_humidity": round(hu, 1) if hu is not None else None,
-            "avg_occupancy": round(o, 0),
-            "avg_confidence": round(o, 0)
+            "avg_occupancy": round(o, 0) if o is not None else None,
         })
     return jsonify(out)
 
@@ -905,7 +911,7 @@ def air():
     conn.close()
 
     co2 = co2_row[1] if co2_row else None
-    if co2 is None:        band = "unknown"
+    if co2 is None:        band = None
     elif co2 < 800:        band = "good"
     elif co2 < 1200:       band = "fair"
     elif co2 < 2000:       band = "stuffy"
@@ -996,50 +1002,16 @@ def stats24h_combined():
     conn.close()
 
     occ = occupancy_stats(24)
-
-    if not rows:
-        return jsonify({
-            "avg_temp": 0,
-            "avg_humidity": 0,
-            "avg_occupancy": occ["avg_occupancy"],
-            "avg_confidence": calculate_combined_confidence(60),
-            "occupied_hours": occ["occupied_hours"],
-            "coverage_hours": occ["coverage_hours"]
-        })
-
     temps = [r[0] for r in rows]
     hums = [r[1] for r in rows]
 
     return jsonify({
-        "avg_temp": round(sum(temps)/len(temps), 1),
-        "avg_humidity": round(sum(hums)/len(hums), 1),
+        "avg_temp": round(sum(temps)/len(temps), 1) if rows else None,
+        "avg_humidity": round(sum(hums)/len(hums), 1) if rows else None,
         "avg_occupancy": occ["avg_occupancy"],
-        "avg_confidence": calculate_combined_confidence(60),
         "occupied_hours": occ["occupied_hours"],
         "coverage_hours": occ["coverage_hours"]
     })
-@app.route("/api/history_combined")
-@require_auth
-
-def history_combined():
-    '''Last 30 readings from ALL devices, env + radar merged'''
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT ts, device, temp, humidity, occupied, occupancy_confidence
-        FROM (
-            SELECT ts, device, temp, humidity, occupied, occupancy_confidence
-            FROM readings
-            UNION ALL
-            SELECT ts, device, NULL AS temp, NULL AS humidity, occupied,
-                   CASE WHEN moving THEN 100 ELSE signal END AS occupancy_confidence
-            FROM presence_readings
-        )
-        ORDER BY ts DESC LIMIT 30
-    """)
-    rows = c.fetchall()
-    conn.close()
-    return jsonify(rows)
 # -------------------------
 # RUN
 # -------------------------

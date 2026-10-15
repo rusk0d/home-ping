@@ -247,8 +247,6 @@ Example:
    - bme280: all fields are used.
    - presence: all fields are stored.
 9. **Fields the backend reads that no firmware sends:**
-   - env handler reads `dark` (stored in `readings.dark`, always 0 now).
-     **UNCERTAIN**: probably from a removed light-sensor/OLED node.
    - `server.py` comments mention "PIR occupied fields from other devices are
      ignored". No current firmware sends PIR fields.
 10. **Backend defaults hide malformed messages.** A presence payload without
