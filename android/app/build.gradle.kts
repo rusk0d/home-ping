@@ -66,8 +66,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
     implementation("com.google.firebase:firebase-messaging-ktx:23.2.0")
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.cardview:cardview:1.0.0")
 	implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 }
