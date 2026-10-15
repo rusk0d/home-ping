@@ -273,9 +273,6 @@ class HomeEnvWidget : AppWidgetProvider() {
         return views
     }
 
-    private fun JSONObject.optNum(key: String): Double? =
-        if (has(key) && !isNull(key)) optDouble(key).takeUnless { it.isNaN() } else null
-
     private fun setLevel(context: Context, views: RemoteViews, id: Int, level: Level?) {
         views.setTextViewText(id, level?.text ?: " ")
         if (level != null) views.setTextColor(id, Levels.color(context, level.color))
