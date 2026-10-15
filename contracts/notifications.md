@@ -107,11 +107,6 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
-### Not a push
-
-- `/api/next-events` and `get_access_token()` reference Google OAuth/calendar code that is
-  incomplete. It's not related to FCM.
-
 ## Summary table
 
 | `data.event` | Title | Condition | Cooldown | Source |
