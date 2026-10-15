@@ -22,6 +22,7 @@ import com.david.homeenv.ui.Level
 import com.david.homeenv.ui.Levels
 import com.david.homeenv.ui.OccupancyBarsView
 import com.david.homeenv.ui.SparklineView
+import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.switchmaterial.SwitchMaterial
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -163,11 +164,12 @@ class HomeFragment : Fragment() {
         occLegend.text = buildLegend()
         swipeRefresh.setOnRefreshListener { loadDashboardData() }
         occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
-        loadOccupancyArmedState()
     }
 
     override fun onResume() {
         super.onResume()
+        // Also on resume, so a change made elsewhere (another phone, the API) shows up
+        loadOccupancyArmedState()
         handler.post(refreshLoop)
         handler.postDelayed(ageLoop, AGE_TICK_MS)
     }
@@ -241,7 +243,12 @@ class HomeFragment : Fragment() {
                 false
             }
             ui {
-                if (ok) showArmed(armed) else setSwitchSilently(!armed)
+                if (ok) {
+                    showArmed(armed)
+                } else {
+                    setSwitchSilently(!armed)
+                    Snackbar.make(requireView(), "Couldn't change occupancy alerts. Check the connection.", Snackbar.LENGTH_LONG).show()
+                }
             }
         }
     }
