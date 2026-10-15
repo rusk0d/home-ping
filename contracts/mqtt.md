@@ -246,6 +246,9 @@ Example:
   "last known value" instead of "just now".
 - A card is greyed out as stale after 90 s (bme280) or 180 s (co2) without a message.
 - `home/esp32/dht11` (an old, unpublished topic) is no longer used.
+- Level thresholds (CO₂ 800/1200/2000 ppm, humidity 30/40/60/70 %, temperature 18/20/24/27 °C)
+  are duplicated in `index.html` (`co2Level`, `humLevel`, `tempLevel`). The Android app's single
+  source is `ui/Levels.kt` (#74). Change both together.
 
 ---
 
