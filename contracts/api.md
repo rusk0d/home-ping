@@ -240,7 +240,8 @@ Every row in the `devices` table.
 [{"device":"home_ping_esp32","last_seen":"2026-10-13 19:42:15","online":true}]
 ```
 
-Includes non-sensor entries, for example `"unknown"` created by `/api/register_token`.
+Sensor nodes only. (Until #15, `/api/register_token` added an `"unknown"` row for
+the phone; the backend deletes that row on start.)
 Client: Android Home reads `device`, `online` for `home_ping_esp32`,
 `hallway_presence_esp32`, `co2_sensor_esp32`.
 
@@ -300,8 +301,8 @@ Request (JSON):
 ```
 
 - `token` required. Missing → `400 {"error":"No token provided"}`.
-- `device` optional, default `"unknown"`. It is written to the `devices` table
-  through `touch_device`, so the phone shows up as a "device".
+- `device` optional and ignored. Phones aren't written to the `devices` table
+  (that table is for sensor nodes).
 - Subscribes the token to the FCM topic `env` (server side).
 - Response: `{"success": true}`.
 - Non-JSON or missing body → 500 (`request.json` is None).
@@ -378,8 +379,8 @@ anyone who can reach the server.
    "No data".
 6. **Soil endpoints have no data source in this repo** (no soil firmware), so
    the Plants tab always shows "No data".
-7. **`register_token` pollutes `devices`.** Android doesn't send `device`, so a
-   `"unknown"` row appears in `/api/devices` and goes "offline" 120 s later.
+7. ~~**`register_token` pollutes `devices`.**~~ Fixed in #15: `register_token` no
+   longer calls `touch_device`, and the old `"unknown"` row is deleted on start.
 8. **Duplicate FCM topic subscription.** Android subscribes itself to topic `env`
    client-side *and* the backend subscribes the token server-side. This is harmless but redundant.
 9. **Positional array responses** (`/api/latest`, `/api/latest2`, `/api/history`,
