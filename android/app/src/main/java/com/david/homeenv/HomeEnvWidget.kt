@@ -56,7 +56,10 @@ class HomeEnvWidget : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
 
-        if (intent.action == ACTION_AUTO_UPDATE) {
+        // AUTO_UPDATE: our 2-minute alarm. MY_PACKAGE_REPLACED: the app was just updated,
+        // which clears our alarms and resets the widget to its initial layout (no data,
+        // no click handlers), so refresh it and restart the alarm chain right away.
+        if (intent.action == ACTION_AUTO_UPDATE || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val componentName = ComponentName(context, HomeEnvWidget::class.java)
             val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
