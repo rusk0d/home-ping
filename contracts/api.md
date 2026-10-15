@@ -14,9 +14,10 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
   (text/plain), header `WWW-Authenticate: Basic realm="Login Required"`.
   Every endpoint uses the `require_auth` decorator.
 - Content type: `application/json` (via `jsonify`) unless noted.
-- Timestamps: strings `"YYYY-MM-DD HH:MM:SS"` in the **server's local time**,
-  no timezone (written with SQLite `datetime('now','localtime')`). They are the
-  time the backend received the message, not the device's measurement time.
+- Timestamps: **ISO 8601 in UTC**, `"YYYY-MM-DDTHH:MM:SSZ"` (since #65; before that,
+  server-local `"YYYY-MM-DD HH:MM:SS"` without a zone). They are the time the backend
+  received the message, not the device's measurement time. Exception: the `hour` labels of
+  `/api/hourly` are Budapest (server) local time, because they describe "today".
 - "online": `now - devices.last_seen < HEARTBEAT_TIMEOUT` (**120 s**).
 - Responses are JSON objects or arrays of objects; no positional arrays (since #14).
 - No data: values are `null` (status 200), never `0`, `[]` or 404 (since #14).
@@ -64,7 +65,7 @@ Latest env reading for `home_ping_esp32` plus combined radar occupancy (the widg
 Always 200; fields are null when there is no data.
 
 ```json
-{"ts":"2026-10-13 19:42:10","temp":22.4,"humidity":48.3,"uptime":86400,
+{"ts":"2026-10-13T17:42:10Z","temp":22.4,"humidity":48.3,"uptime":86400,
  "online":true,"occupied":1,"confidence":73}
 ```
 
@@ -119,9 +120,9 @@ Full example (abridged):
 
 ```json
 {
-  "home_ping_esp32": {"ts":"2026-10-13 19:42:15","temp":22.4,"humidity":48.3,"uptime":86405,"co2":null,"pressure":1013.6,"online":true,"co2_ok":null,"occupied":1,"confidence":73,"presence":1,"stationary":1,"moving":0,"distance":142,"signal":37,"rssi":-61,"radar_connected":1},
-  "hallway_presence_esp32": {"temp":null,"humidity":null,"co2":null,"pressure":null,"ts":"2026-10-13 19:42:13","uptime":3605,"occupied":0,"confidence":0,"online":true,"presence":0,"stationary":0,"moving":0,"distance":0,"signal":0,"rssi":-70,"radar_connected":1},
-  "co2_sensor_esp32": {"ts":"2026-10-13 19:41:58","temp":null,"humidity":null,"uptime":7260,"co2":812,"pressure":null,"online":true,"co2_ok":true},
+  "home_ping_esp32": {"ts":"2026-10-13T17:42:15Z","temp":22.4,"humidity":48.3,"uptime":86405,"co2":null,"pressure":1013.6,"online":true,"co2_ok":null,"occupied":1,"confidence":73,"presence":1,"stationary":1,"moving":0,"distance":142,"signal":37,"rssi":-61,"radar_connected":1},
+  "hallway_presence_esp32": {"temp":null,"humidity":null,"co2":null,"pressure":null,"ts":"2026-10-13T17:42:13Z","uptime":3605,"occupied":0,"confidence":0,"online":true,"presence":0,"stationary":0,"moving":0,"distance":0,"signal":0,"rssi":-70,"radar_connected":1},
+  "co2_sensor_esp32": {"ts":"2026-10-13T17:41:58Z","temp":null,"humidity":null,"uptime":7260,"co2":812,"pressure":null,"online":true,"co2_ok":true},
   "combined": {"occupied":1,"confidence":73}
 }
 ```
@@ -151,7 +152,9 @@ Client: Android Home reads `avg_temp` (double), `avg_humidity` (int),
 
 ### GET `/api/hourly?device=<id>`
 
-Per-hour buckets **since local midnight today** (not a rolling 24 h), newest first.
+Per-hour buckets **since local (Budapest) midnight today** (not a rolling 24 h), newest first.
+`hour` is a local-time label (`"YYYY-MM-DD HH:00"`, no zone). On the autumn DST change the
+repeated hour 02:00–03:00 falls into one bucket.
 Env averages come from `readings` for `device` (default `home_ping_esp32`).
 Occupancy comes from `presence_readings` for `home_ping_esp32` only (`PRESENCE_DEVICE`).
 
@@ -170,7 +173,7 @@ Client: Android Home occupancy bar strip and sparklines (reads `hour`, `avg_occu
 Latest CO2 and pressure from whichever device last reported them.
 
 ```json
-{"ts":"2026-10-13 19:42:10","co2":812,"band":"fair","pressure":1013.6,
+{"ts":"2026-10-13T17:42:10Z","co2":812,"band":"fair","pressure":1013.6,
  "pressure_3h_change":-1.2,"temp":22.4,"humidity":48.3}
 ```
 
@@ -187,7 +190,7 @@ Client: Android Home reads only `pressure` and `pressure_3h_change`. CO2 on Andr
 Every row in the `devices` table.
 
 ```json
-[{"device":"home_ping_esp32","last_seen":"2026-10-13 19:42:15","online":true}]
+[{"device":"home_ping_esp32","last_seen":"2026-10-13T17:42:15Z","online":true}]
 ```
 
 Sensor nodes only. (Until #15, `/api/register_token` added an `"unknown"` row for
@@ -200,7 +203,7 @@ Client: Android Home reads `device`, `online` for `home_ping_esp32`,
 Restart counts per device from `events` where `type='RESTART'`.
 
 ```json
-{"co2_sensor_esp32":{"last_24h":1,"last_7d":3,"last_restart":"2026-10-13 07:12:40"}}
+{"co2_sensor_esp32":{"last_24h":1,"last_7d":3,"last_restart":"2026-10-13T05:12:40Z"}}
 ```
 
 Devices with no restart ever are absent. Client: Android Home sums `last_24h`.

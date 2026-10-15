@@ -19,12 +19,16 @@ Status: draft, reverse-engineered from `backend/server.py` on branch `contracts-
 - No foreign keys, migrations table or schema version.
 - Every query opens and closes its own `sqlite3.connect(DB)`. Connections are short-lived.
   Kept on purpose (#18): with the indexes, a whole MQTT message takes ~10 ms.
-- Timestamps: every insert writes `ts` with `datetime('now','localtime')`, a
-  TEXT value `"YYYY-MM-DD HH:MM:SS"` in **server local time** (no timezone).
-  Columns are declared `TIMESTAMP`/`DATETIME`, which SQLite stores as TEXT.
-  Range queries compare these strings to `datetime('now','localtime', '-N ...')`,
-  which works because the format is the same. DST changes will cause gaps and overlaps
-  (**UNCERTAIN**: impact not assessed).
+- Timestamps: every insert writes `ts` / `last_seen` with `datetime('now')`, a TEXT value
+  `"YYYY-MM-DD HH:MM:SS"` in **UTC** (since #65). Columns are declared `TIMESTAMP`, which
+  SQLite stores as TEXT. Range queries compare with `datetime('now', '-N ...')`, so
+  windows and the offline check are unaffected by DST changes.
+  "Today" queries use `datetime('now','localtime','start of day','utc')` (Budapest
+  midnight as UTC) and label hours with `strftime(..., ts, 'localtime')`.
+- Migration (#65): until then timestamps were server-local. `init_db()` converts the
+  existing rows of `readings`, `presence_readings`, `events` and `devices` once with
+  `datetime(ts, 'utc')` (each row's own DST offset) and marks it in `system_state`
+  (`ts_utc` = `'1'`).
 - Booleans are stored as INTEGER 0/1.
 
 ## Tables
@@ -106,6 +110,7 @@ Known keys:
 | `occupancy_armed` | `'0'` / `'1'` | `'0'` via `INSERT OR IGNORE` at startup | `POST /api/occupancy_arm` | presence handler (arrival alert), `/api/occupancy_status` |
 | `cooldown:<key>` | unix time (float, as text) when the cooldown for alert `<key>` started (e.g. `cooldown:HUMIDITY_home_ping_esp32`) | no | `alert()` via `set_cooldown()` | loaded into `LAST_NOTIFICATION` at startup (#5) |
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
+| `ts_utc` | `'1'` once the timestamps were converted to UTC | no | `init_db()` (#65) | `init_db()` |
 | `node_offline:<device>` | `'1'` while that node's current outage has been pushed, else `'0'` | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
 
 ### `events` (audit / event log)
@@ -132,7 +137,7 @@ Event types written by `server.py`:
 | `HUMIDITY_LOW_ALERT` | env ID | `sent, humidity=23.9` | humidity push attempted |
 | `TEMP_ALERT` | env ID | `sent, temp=17.6` | temperature push attempted |
 | `STATUS` | node ID | `online` / `offline` | live message on `home/esp32/<device>/status` (#13) |
-| `NODE_OFFLINE` | node ID | `sent, last seen 2026-10-16 08:12:40` | node-offline push attempted (#13) |
+| `NODE_OFFLINE` | node ID | `sent, last seen 2026-10-16 06:12:40` (UTC) | node-offline push attempted (#13) |
 | `NODE_ONLINE` | node ID | `sent, data again` | back-online push attempted (#13) |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12).
