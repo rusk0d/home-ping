@@ -1,0 +1,8 @@
+# Copy to android/local.properties (gitignored). Android Studio adds sdk.dir itself.
+# sdk.dir=C\:\Users\you\AppData\Local\Android\Sdk
+
+# Backend REST API, compiled into BuildConfig (API_BASE_URL, API_USER, API_PASS).
+# Base URL without a trailing slash.
+API_BASE_URL=https://example.com
+API_USER=your-api-user
+API_PASS=your-api-password
