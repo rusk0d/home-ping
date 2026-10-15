@@ -22,6 +22,7 @@ import org.json.JSONArray
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import com.david.homeenv.BuildConfig
 
@@ -32,7 +33,12 @@ class HomeEnvWidget : AppWidgetProvider() {
         private val AUTH = "${BuildConfig.API_USER}:${BuildConfig.API_PASS}"
         private const val ACTION_AUTO_UPDATE = "com.david.homeenv.AUTO_UPDATE"
         private const val UPDATE_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes
+        private const val FETCH_TIMEOUT_S = 8L  // stay well inside goAsync's ~10 s budget
     }
+
+    // Fetches queued by updateWidget during this broadcast; run in onReceive under goAsync().
+    // (A new receiver instance is created for every broadcast, so this is per broadcast.)
+    private val fetches = mutableListOf<() -> Unit>()
 
     override fun onUpdate(
         context: Context,
@@ -57,6 +63,21 @@ class HomeEnvWidget : AppWidgetProvider() {
 
             if (appWidgetIds.isNotEmpty()) {
                 onUpdate(context, appWidgetManager, appWidgetIds)
+            }
+        }
+
+        // Keep the broadcast (and so the process) alive until the fetches are done;
+        // otherwise Android may freeze or kill the app as soon as onReceive returns.
+        if (fetches.isNotEmpty()) {
+            val pending = goAsync()
+            val queued = fetches.toList()
+            fetches.clear()
+            thread {
+                try {
+                    queued.forEach { it() }
+                } finally {
+                    pending.finish()
+                }
             }
         }
     }
@@ -196,10 +217,12 @@ class HomeEnvWidget : AppWidgetProvider() {
         refreshing.attachClicks()
         manager.partiallyUpdateAppWidget(widgetId, refreshing)
 
-        // Fetch data async
-        thread {
+        // Fetch data async (run by onReceive under goAsync)
+        fetches += {
             val fresh = try {
-                val client = OkHttpClient()
+                val client = OkHttpClient.Builder()
+                    .callTimeout(FETCH_TIMEOUT_S, TimeUnit.SECONDS)
+                    .build()
 
                 val authHeader = "Basic " + Base64.encodeToString(
                     AUTH.toByteArray(),
