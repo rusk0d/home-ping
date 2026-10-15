@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     
+    <!-- Only this app (same signing key) may send broadcasts to the widget receiver;
+         system broadcasts (widget updates, package replaced) always pass (#63) -->
+    <permission
+        android:name="${applicationId}.permission.UPDATE_WIDGET"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="${applicationId}.permission.UPDATE_WIDGET" />
+
     <!-- Internet permission for API calls -->
     <uses-permission android:name="android.permission.INTERNET" />
     
@@ -13,7 +20,7 @@
     
     <application
         android:name=".HomeEnvApp"   
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:label="${appLabel}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -50,13 +57,15 @@
             </intent-filter>
         </service>
         
-        <!-- Widget receiver -->
+        <!-- Widget receiver. Exported because the system's widget host calls it; the
+             permission keeps other apps from triggering fetches. The 2-minute alarm
+             uses an explicit intent, so its action needs no filter entry. -->
         <receiver
             android:name=".HomeEnvWidget"
-            android:exported="true">
+            android:exported="true"
+            android:permission="${applicationId}.permission.UPDATE_WIDGET">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
-                <action android:name="com.david.homeenv.AUTO_UPDATE"/>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
             </intent-filter>
             <meta-data
