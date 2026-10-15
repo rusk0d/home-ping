@@ -37,6 +37,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | Android `HomeFragment` | `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`, `POST /api/occupancy_arm`, `/api/occupancy_status` |
 | Android `MainActivity` (FCM) | `POST /api/register_token` |
 | Android `HistoryActivity` | `/api/hourly?days=7` |
+| Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings` |
 | Android `HomeEnvWidget` | `/api/latest` |
 | Web (`web/index.html`) | none (MQTT only) |
 | Firmware | none (eink_node's unused `API_URL` config was removed in #16) |
@@ -55,6 +56,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | POST | `/api/register_token` | Basic | Android (FCM) |
 | POST | `/api/occupancy_arm` | Basic | Android Home |
 | GET | `/api/occupancy_status` | Basic | Android Home |
+| GET, POST | `/api/notification_settings` | Basic | Android notification settings |
 
 ---
 
@@ -253,6 +255,30 @@ Current arm state for occupancy-arrival pushes, read from `system_state.occupanc
 Response: `{"armed": true|false}` (same shape as the `POST /api/occupancy_arm` response).
 `false` until the switch is first armed.
 Client: Android Home, on startup, to set the toggle switch.
+
+### GET / POST `/api/notification_settings` (since #82)
+
+Which alerts send a push, and quiet hours. Stored in `system_state` (see `db-schema.md`),
+so the settings apply to every phone. Behaviour: `notifications.md` → "Settings".
+
+```json
+{"humidity":true,"temperature":true,"radar":true,"nodes":true,
+ "quiet_hours":{"enabled":false,"start":"22:00","end":"07:00"}}
+```
+
+- `humidity`, `temperature`, `radar`, `nodes`: bool, default `true`. `false` mutes that alert type.
+- `quiet_hours.enabled`: bool, default `false`. `start`/`end`: `"HH:MM"` (24 h, server
+  local time = Budapest), defaults `22:00`/`07:00`. The window may cross midnight.
+- Occupancy alerts are not in here: they keep their own switch (`/api/occupancy_arm`)
+  and are never muted by quiet hours.
+
+POST takes any subset of the GET fields (e.g. `{"quiet_hours":{"start":"23:00"}}`) and
+returns the full settings, like GET. All fields are validated before anything is
+written; a wrong type or a time that isn't `HH:MM` → 400 `{"error": ...}`. Each POST
+that changes something logs a `NOTIFICATION_SETTINGS` event.
+
+Client: Android notification settings screen (bell icon in the header). Each switch
+or time change is one POST; on failure the screen goes back to the last confirmed state.
 
 ---
 

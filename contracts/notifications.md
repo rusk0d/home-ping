@@ -16,6 +16,8 @@ Status: draft, reverse-engineered from `backend/server.py` and
 - `send_push()` returns whether FCM accepted the message. `alert()` logs the matching
   `events` row as `sent, ...` or `failed, ...`. The cooldown only starts after a
   successful send; a failed send is retried after `PUSH_RETRY_SECONDS` (60 s).
+- A muted alert (see "Settings") is logged as `muted (off), ...` or
+  `muted (quiet hours), ...` and sends nothing (since #82).
 
 ### Subscription to topic `env`
 
@@ -34,6 +36,25 @@ Status: draft, reverse-engineered from `backend/server.py` and
   `homeenv_channel` FCM's default channel for notification messages it shows itself.
 - Notification ID = hash of `event/device`: a repeat of the same alert replaces the
   previous one, different alerts stack.
+
+## Settings (since #82)
+
+Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored in `system_state`.
+
+- One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
+  `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
+  and back online). All on by default.
+- **Quiet hours**: off by default. When on, the alert types above are muted between
+  `start` and `end` (server local time, Budapest; the window may cross midnight,
+  `start` inclusive, `end` exclusive).
+- **Occupancy alerts (`OCCUPIED`) are never muted**: they keep their own Armed switch
+  and come through during quiet hours.
+- A muted alert counts as handled: its cooldown starts (so it's logged at most once per
+  15 min, like a sent one) and once-per-outage alerts (radar, node offline) are not
+  repeated after quiet hours end or the switch is turned back on.
+- Node back online: pushed only if that outage's offline push was actually sent.
+  If the offline alert was muted there is nothing to replace on the phone, so the
+  back-online push is skipped (logged as `NODE_ONLINE` `no push (offline alert was muted), ...`).
 
 ## Cooldowns and state
 
@@ -113,8 +134,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   `last_seen` is older than `NODE_OFFLINE_ALERT_SECONDS` (**300 s**) is offline.
   That's longer than the API's 120 s "online" threshold, so a reboot or a short WiFi
   drop doesn't alert. Decided on data age, not on the MQTT last will (see `mqtt.md`).
-- **Once per outage:** after a successful push the device is in `NODE_OFFLINE`
-  (persisted as `system_state` `node_offline:<device>`) until it sends data again.
+- **Once per outage:** after a successful (or muted, #82) push the device is in `NODE_OFFLINE`
+  (persisted as `system_state` `node_offline:<device>`: `'1'` pushed, `'m'` muted) until it sends data again.
   Cooldown key `NODE_<device>` (15 min, also limits flapping; failed sends retry after 60 s).
 - No checks during the first 300 s after a backend start (every `last_seen` is old then).
 - Offline: title `Node offline`, body `{device}: no data for {N} min`,
