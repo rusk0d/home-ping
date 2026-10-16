@@ -48,6 +48,17 @@ const float TEMP_OFFSET = 0.0;
 // The sensor needs ~3 min after power-up before readings mean anything
 const uint32_t CO2_WARMUP_S = 180;
 
+// Calibration (#167). Automatic baseline correction (ABC) is OFF: it takes the lowest
+// reading of each 24 h as 400 ppm, which only works if the room is aired to outdoor level
+// every day; here it made the readings go as low as 261 ppm. Instead, a manual zero-point
+// calibration now and then: run the node in fresh air (outdoors, or at a wide-open window)
+// for at least CAL_MIN_UPTIME_S, then hold the BOOT button for CAL_HOLD_MS (or send
+// "calibrate" on serial). The sensor then takes the current air as 400 ppm.
+#define CAL_BUTTON 0     // the board's BOOT button; a normal input once the sketch runs
+#define STATUS_LED 2     // the board's LED: slow blinks = calibrated, fast = refused
+const uint32_t CAL_MIN_UPTIME_S = 20 * 60;   // the sensor must have settled in fresh air
+const unsigned long CAL_HOLD_MS = 5000;
+
 /* =======================
    GLOBALS
    ======================= */
@@ -62,6 +73,7 @@ bool bmeReady = false;
 unsigned long lastPresencePublish = 0;
 unsigned long lastEnvPublish = 0;
 unsigned long lastCo2Publish = 0;
+unsigned long calPressedAt = 0;   // 0 = BOOT button not held
 StaticJsonDocument<256> doc;
 
 /* =======================
@@ -114,6 +126,7 @@ void publishCO2() {
   doc["err"]     = err;
   doc["rssi"]    = WiFi.RSSI();
   doc["uptime"]  = hpUptimeSeconds();
+  doc["abc"]     = mhz.getABC();   // the sensor's own setting, so "off" can be checked remotely (#167)
 
   // Only include a reading when it is actually trustworthy.
   // The backend stores NULL otherwise, so bad values never enter the history.
@@ -130,6 +143,47 @@ void publishCO2() {
     Serial.println(payload);
   } else {
     Serial.println("CO2 publish failed");
+  }
+}
+
+void blink(int times, int ms) {
+  for (int i = 0; i < times; i++) {
+    digitalWrite(STATUS_LED, HIGH); delay(ms);
+    digitalWrite(STATUS_LED, LOW);  delay(ms);
+  }
+}
+
+// Zero-point calibration (#167): the current air becomes 400 ppm. Refused until the node
+// has run CAL_MIN_UPTIME_S, so a short press right after carrying it outside can't
+// calibrate on stale indoor air.
+void calibrateCO2() {
+  uint32_t up = hpUptimeSeconds();
+  if (up < CAL_MIN_UPTIME_S) {
+    Serial.printf("CO2 calibration refused: up %us, needs %us in fresh air first\n", up, CAL_MIN_UPTIME_S);
+    blink(10, 100);
+    return;
+  }
+  Serial.printf("CO2 calibration: zero point (400 ppm) at a reading of %d ppm\n", mhz.getCO2());
+  mhz.calibrate();
+  blink(3, 500);
+}
+
+// BOOT held for CAL_HOLD_MS, or "calibrate" on serial
+void checkCalibrationRequest() {
+  if (digitalRead(CAL_BUTTON) == LOW) {
+    if (calPressedAt == 0) calPressedAt = millis();
+    else if (millis() - calPressedAt >= CAL_HOLD_MS) {
+      calibrateCO2();
+      while (digitalRead(CAL_BUTTON) == LOW) delay(10);   // once per press
+      calPressedAt = 0;
+    }
+  } else {
+    calPressedAt = 0;
+  }
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    if (cmd == "calibrate") calibrateCO2();
   }
 }
 
@@ -166,8 +220,10 @@ void setup() {
   // MH-Z19C: warms up for ~3 min, readings are flagged invalid until then
   Serial1.begin(CO2_BAUD, SERIAL_8N1, CO2_RX, CO2_TX);
   mhz.begin(Serial1);
-  mhz.autoCalibration(true);     // assumes the lowest reading in 24h is 400ppm
-  Serial.println("MH-Z19C initialized (warming up ~3 min)");
+  mhz.autoCalibration(false);    // ABC off, manual calibration instead (#167, see CAL_*)
+  Serial.printf("MH-Z19C initialized (warming up ~3 min), ABC %s\n", mhz.getABC() ? "ON" : "off");
+  pinMode(CAL_BUTTON, INPUT_PULLUP);
+  pinMode(STATUS_LED, OUTPUT);
 
   // Network next, so nothing blocks once the radar starts streaming
   hpConnectWiFi(WIFI_SSID, WIFI_PASS);
@@ -198,6 +254,7 @@ void loop() {
   mqttClient.loop();
 
   radar.read();
+  checkCalibrationRequest();
 
   unsigned long now = millis();
   if (now - lastPresencePublish >= PRESENCE_INTERVAL) {
