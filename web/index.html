@@ -457,7 +457,7 @@
     drawSpark('temp', 1); drawSpark('hum', 0); drawSpark('pres', 0);
 
     noteNode(d.device || 'home_ping_esp32', d, retained);
-    addHistory('env', { temp: fmt(d.temp_c, 1) + ' °C', hum: fmt(d.humidity, 0) + ' %', pres: fmt(d.pressure, 0) + ' hPa' });
+    addHistory('env', d.device, { temp: fmt(d.temp_c, 1) + ' °C', hum: fmt(d.humidity, 0) + ' %', pres: fmt(d.pressure, 0) + ' hPa' });
   }
 
   function onCo2(d, retained) {
@@ -483,7 +483,7 @@
     }
 
     noteNode(d.device || 'home_ping_esp32', d, retained);
-    addHistory('co2', { co2: valid ? d.co2 + ' ppm' : (d.warming ? 'warming' : 'invalid') });
+    addHistory('co2', d.device, { co2: valid ? d.co2 + ' ppm' : (d.warming ? 'warming' : 'invalid') });
   }
 
   // ---------- nodes ----------
@@ -627,8 +627,10 @@
     summary.replaceChildren(strong, ' occupied' + (peak !== null ? ` · busiest ${pad2(peak)}:00 (${byHour[peak]}%)` : ''));
   }
 
-  function addHistory(source, values) {
-    history.unshift({ time: new Date().toLocaleTimeString(), source, ...values });
+  // device: the node that sent it (both readings come from the main node since the merge, #57)
+  function addHistory(source, device, values) {
+    const node = NODES[device || 'home_ping_esp32'];
+    history.unshift({ time: new Date().toLocaleTimeString(), source, from: node ? node.name : device, ...values });
     if (history.length > MAX_HISTORY) history.pop();
 
     const rows = history.map(e => {
@@ -636,7 +638,7 @@
       const src = document.createElement('td');
       const dot = document.createElement('span');
       dot.className = 'src ' + (e.source === 'env' ? 'temp' : 'co2');
-      src.append(dot, e.source === 'env' ? 'Main node' : 'CO₂ node');
+      src.append(dot, e.from);
       const cells = [e.time, null, e.temp, e.hum, e.pres, e.co2].map((v, i) => {
         if (i === 1) return src;
         const td = document.createElement('td');
