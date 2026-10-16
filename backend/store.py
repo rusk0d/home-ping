@@ -18,6 +18,11 @@ def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def parse_ts(ts):
+    """A stored timestamp ("YYYY-MM-DD HH:MM:SS", UTC) as a naive datetime, like utcnow()."""
+    return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+
+
 # -------------------------
 # CONNECTION
 # -------------------------
@@ -220,8 +225,8 @@ def occupancy_stats(hours=24):
         pct = (occupied / total) * 100
 
         # Real span this device actually covered
-        t0 = datetime.strptime(first_ts, "%Y-%m-%d %H:%M:%S")
-        t1 = datetime.strptime(last_ts, "%Y-%m-%d %H:%M:%S")
+        t0 = parse_ts(first_ts)
+        t1 = parse_ts(last_ts)
         span_h = max((t1 - t0).total_seconds() / 3600, 0)
 
         if pct > best_pct:
