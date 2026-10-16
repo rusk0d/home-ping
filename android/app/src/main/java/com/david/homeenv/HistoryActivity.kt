@@ -218,6 +218,8 @@ class HistoryActivity : AppCompatActivity() {
     /**
      * Line chart plus its summary "min–max · avg". [mins]/[maxes]: the real extremes per
      * point when known (daily/monthly views); otherwise the extremes of the plotted values.
+     * With only [maxes] (CO₂: /api/daily has no daily minimum) it is "avg · peak", and a
+     * range that rounds to one value (e.g. a single month) shows just the average.
      */
     private fun line(
         chart: HistoryChartView, summary: TextView, labels: List<String>,
@@ -226,10 +228,14 @@ class HistoryActivity : AppCompatActivity() {
     ) {
         chart.setLine(labels, slots, fmt)
         val values = slots.filterNotNull()
-        val lo = mins?.filterNotNull()?.minOrNull() ?: values.minOrNull()
-        val hi = maxes?.filterNotNull()?.maxOrNull() ?: values.maxOrNull()
-        summary.text = if (values.isEmpty() || lo == null || hi == null) "No data" else
-            "${fmt.format(Locale.US, lo)}–${fmt.format(Locale.US, hi)}$unit" +
-                " · avg ${fmt.format(Locale.US, values.average())}$unit"
+        if (values.isEmpty()) { summary.text = "No data"; return }
+        fun f(v: Double) = fmt.format(Locale.US, v) + unit
+        val avg = "avg ${f(values.average())}"
+        val peak = maxes?.filterNotNull()?.maxOrNull()
+        if (mins == null && peak != null) { summary.text = "$avg · peak ${f(peak)}"; return }
+        val lo = mins?.filterNotNull()?.minOrNull() ?: values.min()
+        val hi = peak ?: values.max()
+        summary.text = if (f(lo) == f(hi)) avg else
+            "${fmt.format(Locale.US, lo)}–${f(hi)} · $avg"
     }
 }
