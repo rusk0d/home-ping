@@ -58,6 +58,10 @@ HOURLY_MAX_DAYS = 7            # /api/hourly?days= limit (readings are kept 8 da
 TEMP_THRESHOLD = 18
 HUMIDITY_HIGH_THRESHOLD = 65
 HUMIDITY_LOW_THRESHOLD = 25
+# Once per excursion (#117): an alerted humidity/temperature condition only ends once the
+# value is back by this margin (high humidity < 63 %, low > 27 %, temperature > 18.5 °C)
+HUMIDITY_HYSTERESIS = 2
+TEMP_HYSTERESIS = 0.5
 NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
 PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
 QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts

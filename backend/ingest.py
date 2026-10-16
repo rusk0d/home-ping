@@ -8,9 +8,9 @@ from datetime import datetime
 
 import state
 from config import (
-    ARRIVAL_CONFIRM_SECONDS, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_LOW_THRESHOLD,
+    ARRIVAL_CONFIRM_SECONDS, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
     NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
-    PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, QUIET_MINUTES_BEFORE_ALERT, TEMP_THRESHOLD,
+    PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD,
     TOPIC,
 )
 from store import (
@@ -117,6 +117,17 @@ def handle_presence_data(data):
               rssi, quiet_minutes)
 
 
+# An alerted humidity/temperature condition (#117), in system_state so it survives a restart:
+# env_alerted:<HUMIDITY|TEMP>_<device> = "high" / "low" while that excursion has been pushed
+# (or muted); removed once the value is back in range by the hysteresis margin.
+def env_alerted(key):
+    return get_state(f"env_alerted:{key}", "") or None
+
+
+def set_env_alerted(key, band):
+    set_state(f"env_alerted:{key}", band or "")
+
+
 def on_message(client, userdata, msg):
     # Nothing may escape this callback: paho re-raises callback exceptions, which
     # ends its network thread and silently stops all ingestion (#58). So the whole
@@ -166,34 +177,47 @@ def on_message(client, userdata, msg):
         # Each alert only needs its own value (a node may send just one of them)
 
         # -------------------------
-        # HUMIDITY ALERT
+        # HUMIDITY ALERT (once per excursion, #117)
         # -------------------------
-        last_hum_sent = state.LAST_NOTIFICATION.get(f"HUMIDITY_{device}", 0)
-        if hum is not None and now - last_hum_sent > NOTIFICATION_COOLDOWN:
+        if hum is not None:
             if hum > HUMIDITY_HIGH_THRESHOLD:
-                alert(device, "HUMIDITY_HIGH_ALERT", f"humidity={hum}",
-                      title="Humidity Alert",
-                      body=f"Humidity is high: {hum:.1f}%",
-                      data={"event": "HUMIDITY_HIGH", "device": device},
-                      cooldown_key=f"HUMIDITY_{device}", kind="humidity")
-
+                band = "high"
             elif hum < HUMIDITY_LOW_THRESHOLD:
-                alert(device, "HUMIDITY_LOW_ALERT", f"humidity={hum}",
-                      title="Humidity Alert",
-                      body=f"Humidity is low: {hum:.1f}%",
-                      data={"event": "HUMIDITY_LOW", "device": device},
-                      cooldown_key=f"HUMIDITY_{device}", kind="humidity")
+                band = "low"
+            else:
+                band = None
+            key = f"HUMIDITY_{device}"
+            alerted = env_alerted(key)
+            # Back in range by the hysteresis margin: the excursion is over
+            if (alerted == "high" and hum < HUMIDITY_HIGH_THRESHOLD - HUMIDITY_HYSTERESIS
+                    or alerted == "low" and hum > HUMIDITY_LOW_THRESHOLD + HUMIDITY_HYSTERESIS):
+                set_env_alerted(key, None)
+                alerted = None
+            if band and band != alerted and now - state.LAST_NOTIFICATION.get(key, 0) > NOTIFICATION_COOLDOWN:
+                if alert(device, f"HUMIDITY_{band.upper()}_ALERT", f"humidity={hum}",
+                         title="Humidity Alert",
+                         body=f"Humidity is {band}: {hum:.1f}%",
+                         data={"event": f"HUMIDITY_{band.upper()}", "device": device},
+                         cooldown_key=key, kind="humidity"):
+                    set_env_alerted(key, band)
 
         # -------------------------
-        # TEMPERATURE ALERT
+        # TEMPERATURE ALERT (once per excursion, #117)
         # -------------------------
-        last_temp_sent = state.LAST_NOTIFICATION.get(f"TEMP_{device}", 0)
-        if temp is not None and temp < TEMP_THRESHOLD and (now - last_temp_sent > NOTIFICATION_COOLDOWN):
-            alert(device, "TEMP_ALERT", f"temp={temp}",
-                  title="Temperature Alert",
-                  body=f"Temperature is low on {device}: {temp:.1f}°C",
-                  data={"event": "TEMP", "device": device},
-                  cooldown_key=f"TEMP_{device}", kind="temperature")
+        if temp is not None:
+            key = f"TEMP_{device}"
+            alerted = env_alerted(key)
+            if alerted and temp > TEMP_THRESHOLD + TEMP_HYSTERESIS:
+                set_env_alerted(key, None)
+                alerted = None
+            if (temp < TEMP_THRESHOLD and not alerted
+                    and now - state.LAST_NOTIFICATION.get(key, 0) > NOTIFICATION_COOLDOWN):
+                if alert(device, "TEMP_ALERT", f"temp={temp}",
+                         title="Temperature Alert",
+                         body=f"Temperature is low on {device}: {temp:.1f}°C",
+                         data={"event": "TEMP", "device": device},
+                         cooldown_key=key, kind="temperature"):
+                    set_env_alerted(key, "low")
 
     except Exception as e:
         log.error("MQTT error on %s: %r", getattr(msg, "topic", "?"), e)
