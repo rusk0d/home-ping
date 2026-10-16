@@ -269,7 +269,7 @@ Latest CO2 and pressure from whichever device last reported them.
 ### Level bands
 
 The one place the level thresholds are defined (#127). Change them here first, then in
-every copy: `backend/api.py` (`/api/air` `band`, CO₂ only), `web/index.html`
+every copy: `backend/api.py` (`/api/air` `band`, CO₂ only), `web/app.js`
 (`co2Level`, `humLevel`, `tempLevel`) and `android/.../ui/Levels.kt` (chips and gauge stops).
 
 | Value | Bands (label, from low to high) |
