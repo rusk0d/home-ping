@@ -12,8 +12,9 @@ import com.david.homeenv.R
 import java.util.Locale
 
 /**
- * Multi-day chart for the history screen (#82), one column per day with the day
- * labels underneath. Two modes:
+ * Multi-day chart for the history screen (#82), one column per label (a day, or a
+ * month in the 12-month view) with the labels underneath; columns with a blank label
+ * (the 30-day view labels every 7th day) get no separator. Two modes:
  * - [setLine]: hourly averages as a line with a soft fill, scaled to their own
  *   min/max (shown on the left); the line breaks where hours have no data.
  * - [setBars]: one value per day as a bar from zero, with the value above it.
@@ -75,7 +76,10 @@ class HistoryChartView @JvmOverloads constructor(
         }
     }
 
-    /** [hourly]: 24 values per day, oldest day first; [labelFmt] formats the min/max labels. */
+    /**
+     * [hourly]: the line's points, oldest first, spread evenly over the columns (24 per
+     * day in the 7-day view, one per column otherwise); [labelFmt] formats the min/max labels.
+     */
     fun setLine(days: List<String>, hourly: List<Double?>, labelFmt: String) {
         dayLabels = days
         slots = hourly
@@ -109,7 +113,7 @@ class HistoryChartView @JvmOverloads constructor(
         textPaint.textAlign = Paint.Align.CENTER
         val baseline = plotHeight + axisGap - textPaint.ascent()
         dayLabels.forEachIndexed { i, label ->
-            if (i > 0) canvas.drawLine(i * dayW, 0f, i * dayW, plotHeight, gridPaint)
+            if (i > 0 && label.isNotBlank()) canvas.drawLine(i * dayW, 0f, i * dayW, plotHeight, gridPaint)
             canvas.drawText(label, (i + 0.5f) * dayW, baseline, textPaint)
         }
         canvas.drawLine(0f, plotHeight, width.toFloat(), plotHeight, gridPaint)
