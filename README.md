@@ -46,6 +46,8 @@ in its working directory.
   `backend/` with a `.env` next to it. In production it runs as the systemd unit
   `iot-backend` (`sudo systemctl restart iot-backend`, logs: `journalctl -u iot-backend -f`).
   Test a push with `python3 test_push.py ["Title" "Text"]`.
-- **Web:** serve `web/` (with `config.js`) from any static web server.
+- **Web:** serve `web/` (with `config.js`, which holds only the broker URL) from any static
+  web server. Each person signs in with their own read-only MQTT account; see
+  `contracts/mqtt.md` → "Web users" for adding one.
 - **Android:** `./gradlew assembleDebug` in `android/`. The `preview` build type
   (`./gradlew assemblePreview`) runs without Firebase.
