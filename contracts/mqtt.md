@@ -97,6 +97,9 @@ ingestion (#58).
 - Interval: every 30 s (`ENV_INTERVAL = 30000`).
 - Retained: yes (`publish(..., true)`). QoS 0.
 - Not published at all if the BME280 failed to initialise or a read returned NaN.
+- The backend drops `temp_c`, `humidity` and `pressure` together (stores them as null, logs a
+  warning) if any is outside the BME280's range: −40…85 °C, 0…100 %RH, 300…1100 hPa
+  (`config.ENV_VALID`, #57). A disconnected sensor reads e.g. 178 °C / 100 % / −121 hPa.
   Readings are skipped silently, so no null fields are ever sent.
 
 | Field | Type | Unit | Notes |
