@@ -50,9 +50,9 @@ whether a device is online from the `devices.last_seen` timestamp in the DB
 
 | Topic | Publisher(s) | Subscriber(s) | Interval | Retained | QoS |
 |---|---|---|---|---|---|
-| `home/esp32/bme280` | co2_node (`co2_sensor_esp32`) during the node merge (#57); main_node (`home_ping_esp32`) before | backend (via `home/esp32/#`), web page | 30 s | yes | 0 |
+| `home/esp32/bme280` | main_node (`home_ping_esp32`) | backend (via `home/esp32/#`), web page | 30 s | yes | 0 |
 | `home/esp32/presence` | main_node (`home_ping_esp32`) **and** eink_node (`hallway_presence_esp32`) | backend (via `home/esp32/#`), web page (node list only) | 5 s per node | yes | 0 |
-| `home/esp32/co2` | co2_node (`co2_sensor_esp32`) | backend (via `home/esp32/#`), web page | 60 s | yes | 0 |
+| `home/esp32/co2` | main_node (`home_ping_esp32`) since the node merge (#57); before: co2_node (`co2_sensor_esp32`) | backend (via `home/esp32/#`), web page | 60 s | yes | 0 |
 | `home/backend/occupancy_hourly` | backend | web page | 300 s + on every (re)connect | yes | 0 |
 | `home/esp32/<device>/status` | every node (`online`); the broker (`offline`, last will) | backend (via `home/esp32/#`), web page (`home/esp32/+/status`) | on connect / on drop-off | yes | 1 (will) / 0 |
 
@@ -90,10 +90,10 @@ ingestion (#58).
 
 ## `home/esp32/bme280`
 
-- Publisher: `firmware/co2_node` (`DEVICE_NAME = "co2_sensor_esp32"`) since node merge step 1 (#57): the
-  BME280 moved to the CO₂ board (I2C on GPIO 21/22, address 0x76 or 0x77). Until then
-  `firmware/main_node` (`home_ping_esp32`); its code still publishes if a BME280 is attached.
-  After the merge the merged node publishes it as `home_ping_esp32` again. Same payload either way.
+- Publisher: `firmware/main_node` (`DEVICE_NAME = "home_ping_esp32"`), BME280 on I2C (GPIO 21/22,
+  address 0x76 or 0x77). Since the node merge (#57) the main node is the former CO₂ board with the
+  radar and BME280 added; during the merge the CO₂ board briefly published it as
+  `co2_sensor_esp32`. Same payload either way.
 - Interval: every 30 s (`ENV_INTERVAL = 30000`).
 - Retained: yes (`publish(..., true)`). QoS 0.
 - Not published at all if the BME280 failed to initialise or a read returned NaN.
@@ -162,7 +162,9 @@ checks (see `notifications.md`). Missing fields default to: `presence`/`stationa
 
 ## `home/esp32/co2`
 
-- Publisher: `firmware/co2_node` (`DEVICE_NAME = "co2_sensor_esp32"`), MH-Z19C on UART1.
+- Publisher: `firmware/main_node` (`DEVICE_NAME = "home_ping_esp32"`) since the node merge (#57),
+  MH-Z19C on UART1 (GPIO 25/26). Before: `firmware/co2_node` (`co2_sensor_esp32`), removed.
+- `warming` is true for the first 180 s of uptime (64-bit uptime since #119).
 - Interval: every 60 s (`PUBLISH_INTERVAL = 60000`). The first publish happens
   as soon as the loop starts. Readings are flagged invalid for the first 180 s
   (`WARMUP_MS`).
@@ -172,7 +174,7 @@ checks (see `notifications.md`). Missing fields default to: `presence`/`stationa
 
 | Field | Type | Unit | Always present | Notes |
 |---|---|---|---|---|
-| `device` | string | n/a | yes | `"co2_sensor_esp32"` |
+| `device` | string | n/a | yes | `"home_ping_esp32"` (before #57: `"co2_sensor_esp32"`) |
 | `co2_ok` | bool | n/a | yes | true when the reading is valid (rule above) |
 | `warming` | bool | n/a | yes | `millis() < 180000` |
 | `err` | integer | n/a | yes | MH-Z19 library `errorCode` (**UNCERTAIN**: `RESULT_OK` is 1 in the WifWaf MHZ19 library) |
@@ -184,13 +186,13 @@ checks (see `notifications.md`). Missing fields default to: `presence`/`stationa
 Example (valid):
 
 ```json
-{"device":"co2_sensor_esp32","co2_ok":true,"warming":false,"err":1,"rssi":-58,"uptime":7260,"co2":812,"sensor_tmp":24}
+{"device":"home_ping_esp32","co2_ok":true,"warming":false,"err":1,"rssi":-58,"uptime":7260,"co2":812,"sensor_tmp":24}
 ```
 
 Example (warming up):
 
 ```json
-{"device":"co2_sensor_esp32","co2_ok":false,"warming":true,"err":1,"rssi":-58,"uptime":60}
+{"device":"home_ping_esp32","co2_ok":false,"warming":true,"err":1,"rssi":-58,"uptime":60}
 ```
 
 Backend handling: env handler (no `presence`). Stores a

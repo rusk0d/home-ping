@@ -58,7 +58,7 @@ Retention: rows older than 8 days are deleted on every insert.
 rebuilds the table without them if an older database still has them (works on any SQLite
 version; the rows are kept).
 
-Typical rows: main_node writes `temp`/`humidity`/`pressure` every 30 s. co2_node
+Typical rows (since the node merge, #57, all from main_node `home_ping_esp32`; before, the CO₂ rows came from `co2_sensor_esp32`): main_node writes `temp`/`humidity`/`pressure` every 30 s. The CO₂ part
 writes `co2` (or NULL) every 60 s with NULL temp/humidity/pressure.
 
 ### `presence_readings` (LD2410C radar)
