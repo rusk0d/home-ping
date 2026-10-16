@@ -113,6 +113,7 @@ Known keys:
 | `cooldown:<key>` | unix time (float, as text) when the cooldown for alert `<key>` started (e.g. `cooldown:HUMIDITY_home_ping_esp32`) | no | `alert()` via `set_cooldown()` | loaded into `LAST_NOTIFICATION` at startup (#5) |
 | `arrival_started` | unix time an arrival started (first occupied reading after the quiet spell), `'0'` once confirmed | no | presence handler | presence handler (arrival alert) |
 | `arrival_quiet` | quiet minutes before that arrival, as an int | no | presence handler | arrival alert body |
+| `env_alerted:HUMIDITY_<device>` / `env_alerted:TEMP_<device>` | `'high'`/`'low'` while that humidity/temperature excursion has been pushed or muted, `''` after it ended (#117) | no | env handler (`ingest.set_env_alerted`) | env handler |
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
 | `ts_utc` | `'1'` once the timestamps were converted to UTC | no | `init_db()` (#65) | `init_db()` |
 | `node_offline:<device>` | `'1'` while that node's current outage has been pushed, `'m'` while it is offline but the push was muted (#82), else `'0'` | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
