@@ -253,7 +253,8 @@ class HomeEnvWidget : AppWidgetProvider() {
         val co2 = air?.optNum("co2")
         views.setTextViewText(R.id.w_co2_value, co2?.let { String.format(Locale.US, "%.0f", it) } ?: "--")
         // Short level text ("Stuffy", not "Stuffy – open a window"): the row is narrow
-        setLevel(context, views, R.id.w_co2_level, co2?.let { Levels.co2(it.toInt()).let { l -> l.copy(text = l.text.substringBefore(" –")) } })
+        val co2Level = co2?.let { Levels.co2Band(air?.optString("band")) ?: Levels.co2(it.toInt()) }
+        setLevel(context, views, R.id.w_co2_level, co2Level?.let { it.copy(text = it.text.substringBefore(" –")) })
         val co2Width = gaugeWidth * 3 + (2 * GAUGE_GAP_DP * context.resources.displayMetrics.density).toInt()
         views.setImageViewBitmap(R.id.w_co2_gauge, WidgetGauge.render(context, Levels.CO2, co2, co2Width, CO2_GAUGE_HEIGHT_DP))
 

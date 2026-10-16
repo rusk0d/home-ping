@@ -13,8 +13,8 @@ data class Level(val text: String, @param:ColorRes val color: Int)
 
 /**
  * A banded scale: the value range a gauge shows, the band stops, and the colour of each
- * band (one more colour than stops). The single source for the chip thresholds below,
- * the CO₂ card's gauge and the widget gauges. web/index.html has its own copy.
+ * band (one more colour than stops). Used by the chip thresholds below, the CO₂ card's
+ * gauge and the widget gauges.
  */
 class Scale(val min: Double, val max: Double, val stops: List<Double>, val colors: List<Int>) {   // colour resource IDs
     init { require(colors.size == stops.size + 1) }
@@ -26,7 +26,11 @@ class Scale(val min: Double, val max: Double, val stops: List<Double>, val color
     val bandStarts: List<Float> get() = listOf(0f) + stops.map { fraction(it).toFloat() }
 }
 
-/** Level thresholds, same as web/index.html (co2Level, humLevel, tempLevel). */
+/**
+ * Level thresholds. The bands are defined in contracts/api.md ("Level bands"); change them
+ * there first, then here, in web/index.html (co2Level, humLevel, tempLevel) and, for CO₂,
+ * in the backend's /api/air `band`.
+ */
 object Levels {
     // Gauge ranges, band stops and band colours. The chips use the same stops.
     val TEMPERATURE = Scale(14.0, 30.0, listOf(18.0, 20.0, 24.0, 27.0),
@@ -47,6 +51,18 @@ object Levels {
             ppm < stuffy -> Level("Stuffy – open a window", R.color.poor)
             else -> Level("Poor – ventilate now", R.color.bad)
         }
+    }
+
+    /**
+     * CO₂ level from the `band` that /api/air returns (#127), so the server decides the
+     * band. Null for an unknown or missing band: callers then fall back to [co2].
+     */
+    fun co2Band(band: String?): Level? = when (band) {
+        "good" -> Level("Fresh", R.color.good)
+        "fair" -> Level("OK", R.color.ok)
+        "stuffy" -> Level("Stuffy – open a window", R.color.poor)
+        "bad" -> Level("Poor – ventilate now", R.color.bad)
+        else -> null
     }
 
     fun humidity(h: Double): Level {
