@@ -12,5 +12,7 @@ ExecStart=/opt/iot/venv/bin/python backup_db.py --keep 7
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/opt/iot
+# New files (data.db, its -wal/-shm, backups) only for iot (#169)
+UMask=0077
 ProtectHome=true
 PrivateTmp=true

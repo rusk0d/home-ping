@@ -90,27 +90,31 @@ served by waitress on `127.0.0.1:5000`. nginx is the only public entry point and
 `/api/` to it. The unit (`backend/systemd/iot-backend.service`) also limits what the
 process can write to `/opt/iot`.
 
-Moving an existing install from `/root/iot` (as root, one time; `/root/iot` stays as a
-fallback until everything works):
+Installing on a server (as root, one time):
 
 ```
 apt install -y python3-venv                       # if "python3 -m venv" is missing
 useradd --system --home-dir /opt/iot --shell /usr/sbin/nologin iot
-systemctl stop iot-backend iot-backup.timer
-cp /etc/systemd/system/iot-backend.service /root/iot-backend.service.bak   # for a rollback
-mkdir -p /opt/iot && cp -a /root/iot/. /opt/iot/
-# now copy the current backend/*.py, requirements.txt and systemd/ from the repo into /opt/iot
+mkdir -p /opt/iot
+# copy backend/*.py, requirements.txt and systemd/ from the repo into /opt/iot, plus .env
+# (from .env.example) and the Firebase service-account JSON
 python3 -m venv /opt/iot/venv && /opt/iot/venv/bin/pip install -r /opt/iot/requirements.txt
 chown -R iot:iot /opt/iot && chmod 750 /opt/iot && chmod 600 /opt/iot/.env /opt/iot/firebase_service_account.json
 grep -rn proxy_pass /etc/nginx/sites-enabled/   # must point to 127.0.0.1:5000 (or localhost:5000)
-cp /opt/iot/systemd/iot-backend.service /opt/iot/systemd/iot-backup.service /etc/systemd/system/
-systemctl daemon-reload && systemctl start iot-backend iot-backup.timer
+cp /opt/iot/systemd/iot-backend.service /opt/iot/systemd/iot-backup.service /opt/iot/systemd/iot-backup.timer /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now iot-backend iot-backup.timer
 systemctl status iot-backend --no-pager; curl -s https://<your domain>/api/health
 ```
 
-Rolling back: `cp /root/iot-backend.service.bak /etc/systemd/system/iot-backend.service`,
-`systemctl daemon-reload && systemctl restart iot-backend`. That runs the old code in
-`/root/iot` again. Don't copy the new code there: it needs waitress from the venv.
+Both units run with `UMask=0077` (#169), so `data.db`, its WAL files and the backups are
+readable only by `iot`.
+
+### Ports
+
+Public (ufw): 22 (SSH), 80/443 (nginx: the web page, `/api/` and `/mqtt`), 1883 (MQTT for
+the nodes; plain TCP until TLS, #31). Everything else listens on `127.0.0.1` only: the
+backend on 5000 and Mosquitto's WebSockets listener on 9001 (`listener 9001 127.0.0.1`;
+nginx `/mqtt` is its only client). Check with `ss -ltnp` and `ufw status`.
 
 ## Uptime monitoring
 
