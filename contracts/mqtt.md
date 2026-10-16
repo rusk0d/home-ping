@@ -84,7 +84,7 @@ ingestion (#58).
 | Field | Type | Unit | Notes |
 |---|---|---|---|
 | `device` | string | n/a | Fixed per sketch (`DEVICE_NAME`). Used by the backend as the device ID everywhere. |
-| `uptime` | integer | seconds | `millis() / 1000`. Wraps after ~49.7 days (32-bit `millis()`). |
+| `uptime` | integer | seconds | Seconds since boot. eink_node: `esp_timer_get_time()` (64-bit, no wrap, since #50). main_node, co2_node: `millis() / 1000`, wraps after ~49.7 days (32-bit `millis()`, #8). |
 | `rssi` | integer | dBm | `WiFi.RSSI()`. Sent on presence and co2, **not** on bme280. |
 
 ---
@@ -293,7 +293,8 @@ Example:
 6. **`uptime` wraps at ~49.7 days.** `millis()/1000` wraps on main_node and co2_node,
    which have no scheduled reboot. The backend's restart detector
    (`note_uptime`, drop > 120 s) will log a false `RESTART` event when that
-   happens. eink_node reboots every 12 h, so it's not affected.
+   happens (#8). eink_node no longer reboots every 12 h (#50) and uses the 64-bit
+   `esp_timer_get_time()` instead, so it's not affected.
 7. **main_node reports `uptime` on two topics.** The same device ID sends `uptime` on both
    `presence` and `bme280`. The backend's `LAST_UPTIME` per device mixes the two
    streams. The 120 s tolerance hides this, since both come from the same
