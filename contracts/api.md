@@ -54,6 +54,7 @@ inferred then and hasn't been confirmed since.
 | GET | `/api/latest_all` | Basic | Android Home |
 | GET | `/api/stats24h_combined` | Basic | Android Home |
 | GET | `/api/hourly` | Basic | Android Home, History |
+| GET | `/api/daily` | Basic | Android History (#129) |
 | GET | `/api/air` | Basic | Android Home, widget |
 | GET | `/api/devices` | Basic | Android Home |
 | GET | `/api/restarts` | Basic | Android Home |
@@ -225,6 +226,34 @@ Clients:
   missing hour or null value breaks the line), and occupied hours per day
   = sum(`avg_occupancy`) / 100.
 
+### GET `/api/daily` (since #129)
+
+One entry per **server-local day** from the `hourly` table (see `db-schema.md`), newest
+first. For ranges beyond the 8 days of raw readings that `/api/hourly` is limited to.
+
+- `?days=N`: today and the N-1 days before it, 1–400 (`DAILY_MAX_DAYS`), default 30.
+  Anything else → `400 {"error": "days must be 1-400"}`.
+- Only days with at least one stored hour appear. Today has only its complete hours.
+- Day values are over its stored hours: averages are the mean of the hourly averages (each
+  hour weighs the same), min/max the extremes of the hourly min/max.
+
+```json
+[{"date":"2026-10-16","avg_temp":22.6,"min_temp":21.8,"max_temp":24.1,
+  "avg_humidity":41.3,"min_humidity":34.0,"max_humidity":48.2,
+  "avg_co2":712,"max_co2":1180,"avg_pressure":1011.4,"occupied_hours":8.9,"hours":20}]
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `date` | string | `YYYY-MM-DD`, server local date |
+| `avg_temp` / `min_temp` / `max_temp` | number or null | °C, 1 dp |
+| `avg_humidity` / `min_humidity` / `max_humidity` | number or null | %, 1 dp |
+| `avg_co2` | integer or null | ppm |
+| `max_co2` | integer or null | ppm |
+| `avg_pressure` | number or null | hPa, 1 dp |
+| `occupied_hours` | number or null | sum of the hourly occupancy % / 100 (like the History screen's occupancy bars), 1 dp; null = no radar data that day |
+| `hours` | integer | stored hours that day (24 for a full day) |
+
 ### GET `/api/air`
 
 Latest CO2 and pressure from whichever device last reported them.
@@ -395,3 +424,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #15: `register_token` no longer adds the phone to `devices`; the old `"unknown"` row is deleted on start.
 - Android no longer crashes on a null `temp`/`humidity` in `/api/latest_all`: it reads them
   null-safely (`optNum`) instead of `getDouble`/`getInt`.
+- #129: `GET /api/daily`, long-term daily values from the new `hourly` table.

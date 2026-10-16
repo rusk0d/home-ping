@@ -4,11 +4,11 @@
 import logging
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import config
 import state
-from config import CONFIDENCE_MINUTES, DB, EVENTS_RETENTION_DAYS, UPTIME_DROP_TOLERANCE
+from config import CONFIDENCE_MINUTES, DB, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, UPTIME_DROP_TOLERANCE
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +135,20 @@ def init_db():
             )
         """)
 
+        # Long-term history (#129): one row per complete hour, all devices combined (like
+        # the app's charts), filled by rollup_hourly() from the raw tables, which are only
+        # kept 8 days. Kept for good: ~2.4 KB a day.
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS hourly (
+                hour TEXT PRIMARY KEY,   -- start of the hour, UTC, "YYYY-MM-DD HH:00:00"
+                temp_avg REAL, temp_min REAL, temp_max REAL,
+                humidity_avg REAL, humidity_min REAL, humidity_max REAL,
+                co2_avg REAL, co2_min INTEGER, co2_max INTEGER,
+                pressure_avg REAL, pressure_min REAL, pressure_max REAL,
+                occupancy REAL           -- % of PRESENCE_DEVICE's radar rows occupied
+            )
+        """)
+
         # Timestamps were stored in server local time until #65; convert existing rows to
         # UTC once. SQLite's 'utc' modifier applies the DST offset of each row's own date.
         if c.execute("SELECT 1 FROM system_state WHERE key = 'ts_utc'").fetchone() is None:
@@ -194,6 +208,47 @@ def log_presence(device, occupied, presence, stationary, moving,
             DELETE FROM presence_readings
             WHERE ts < datetime('now','-8 days')
         """)
+
+
+HOURLY_COLUMNS = ("hour", "temp_avg", "temp_min", "temp_max", "humidity_avg", "humidity_min",
+                  "humidity_max", "co2_avg", "co2_min", "co2_max", "pressure_avg", "pressure_min",
+                  "pressure_max", "occupancy")
+
+
+def rollup_hourly(now=None):
+    """Aggregate complete hours from readings/presence_readings into `hourly` (#129).
+
+    system_state 'hourly_until' is where the last run stopped (the then-current hour). A run
+    starts an hour before it (redone, in case rows arrived late), or at the oldest raw row
+    on the first run, and does nothing until another hour has completed, so it is cheap to
+    call often. Returns the number of hours written.
+    """
+    end = (now or utcnow()).replace(minute=0, second=0, microsecond=0)   # current hour: not complete
+    end_s = end.strftime("%Y-%m-%d %H:%M:%S")
+    until = get_state("hourly_until", None)
+    if until is not None and parse_ts(until) >= end:
+        return 0
+    since = (parse_ts(until) - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S") if until else "0000-01-01 00:00:00"
+    with db() as conn:
+        hours = {}
+        for row in conn.execute("""
+            SELECT strftime('%Y-%m-%d %H:00:00', ts),
+                   AVG(temp), MIN(temp), MAX(temp), AVG(humidity), MIN(humidity), MAX(humidity),
+                   AVG(co2), MIN(co2), MAX(co2), AVG(pressure), MIN(pressure), MAX(pressure)
+            FROM readings WHERE ts >= ? AND ts < ? GROUP BY 1
+        """, (since, end_s)):
+            hours[row[0]] = list(row) + [None]
+        for h, occ in conn.execute("""
+            SELECT strftime('%Y-%m-%d %H:00:00', ts), AVG(occupied) * 100
+            FROM presence_readings WHERE device = ? AND ts >= ? AND ts < ? GROUP BY 1
+        """, (PRESENCE_DEVICE, since, end_s)):
+            hours.setdefault(h, [h] + [None] * 12 + [None])[13] = occ
+        conn.executemany(
+            f"INSERT OR REPLACE INTO hourly ({', '.join(HOURLY_COLUMNS)}) "
+            f"VALUES ({', '.join('?' * len(HOURLY_COLUMNS))})",
+            hours.values())
+    set_state("hourly_until", end_s)
+    return len(hours)
 
 
 def occupancy_stats(hours=24):
