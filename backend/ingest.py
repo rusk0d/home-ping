@@ -2,6 +2,7 @@
 """
 
 import json
+import logging
 import time
 from datetime import datetime
 
@@ -18,6 +19,8 @@ from store import (
 )
 from alerts import alert, set_radar_alerted
 from nodes import handle_status, touch_device
+
+log = logging.getLogger(__name__)
 
 
 def any_radar_quiet_minutes():
@@ -109,9 +112,9 @@ def handle_presence_data(data):
                   body=f"Movement in the {where} after {quiet} min of quiet ({distance}cm)",
                   data={"event": "OCCUPIED", "device": device, "distance": str(distance)})
 
-    print(f"[PRESENCE] {device}: occupied={occupied} moving={moving} "
-          f"stationary={stationary} dist={distance}cm signal={signal} "
-          f"rssi={rssi} quiet={int(quiet_minutes)}min")
+    log.debug("presence %s: occupied=%s moving=%s stationary=%s dist=%scm signal=%s "
+              "rssi=%s quiet=%dmin", device, occupied, moving, stationary, distance, signal,
+              rssi, quiet_minutes)
 
 
 def on_message(client, userdata, msg):
@@ -120,15 +123,14 @@ def on_message(client, userdata, msg):
     # body is in the try, and the payload is decoded leniently (bad bytes -> U+FFFD).
     try:
         payload = msg.payload.decode("utf-8", errors="replace")
-        print(f"[MQTT] Received message on topic: {msg.topic}")
-        print(f"[MQTT] Payload: {payload}")
+        log.debug("received on %s: %s", msg.topic, payload)
         # The broker replays the last retained message of each topic when we
         # (re)subscribe, with the retain flag set. That's an old reading: storing it
         # would add a duplicate row with a fresh ts and could re-send alerts (#5).
         # Live messages arrive without the flag. The firmware keeps retaining for
         # the web page, which wants the last value immediately.
         if msg.retain:
-            print(f"[MQTT] Skipping retained message on {msg.topic}")
+            log.debug("skipping retained message on %s", msg.topic)
             return
         state.LAST_MESSAGE_AT = time.time()
 
@@ -194,7 +196,7 @@ def on_message(client, userdata, msg):
                   cooldown_key=f"TEMP_{device}", kind="temperature")
 
     except Exception as e:
-        print("MQTT error:", repr(e), "on", getattr(msg, "topic", "?"))
+        log.error("MQTT error on %s: %r", getattr(msg, "topic", "?"), e)
 
 
 # -------------------------
@@ -240,17 +242,22 @@ def hourly_occupancy_loop():
         try:
             publish_hourly_occupancy()
         except Exception as e:
-            print("[MQTT] hourly occupancy publish failed:", e)
+            log.warning("hourly occupancy publish failed: %s", e)
 
 
-def on_connect(client, userdata, flags, rc):
-    print(f"[MQTT] Connected, rc={rc}")
+# paho callback API v2 (#66). A refused connect also arrives here, as a failure code;
+# paho keeps retrying in its loop either way.
+def on_connect(client, userdata, flags, reason_code, properties):
+    if reason_code.is_failure:
+        log.warning("MQTT connect refused: %s", reason_code)
+        return
+    log.info("MQTT connected")
     client.subscribe(TOPIC)
     try:
         publish_hourly_occupancy()
     except Exception as e:
-        print("[MQTT] hourly occupancy publish failed:", e)
+        log.warning("hourly occupancy publish failed: %s", e)
 
 
-def on_disconnect(client, userdata, rc):
-    print(f"[MQTT] Disconnected, rc={rc}")
+def on_disconnect(client, userdata, flags, reason_code, properties):
+    log.warning("MQTT disconnected: %s (reconnecting)", reason_code)

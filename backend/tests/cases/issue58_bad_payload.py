@@ -10,15 +10,20 @@ for n in ["firebase_admin", "firebase_admin.credentials", "firebase_admin.messag
     sys.modules[n] = mock.MagicMock()
 sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
-import builtins; _p = builtins.print; logged = []
-builtins.print = lambda *a, **k: logged.append(" ".join(map(str, a)))
+logged = []
+_p = print
+import logging
+class _Log(logging.Handler):   # errors are logged since #66
+    def emit(self, r): logged.append(r.getMessage())
+logging.getLogger("ingest").addHandler(_Log(level=logging.ERROR))
+logging.getLogger("ingest").propagate = False
 import server
 import config, ingest
 server.prepare()   # importing does no work (#73)
 sys.modules.update(saved)
 def check(label, cond): _p(("PASS " if cond else "FAIL ") + label)
 
-client = real_paho.Client(real_paho.CallbackAPIVersion.VERSION1)   # same as the backend
+client = real_paho.Client(real_paho.CallbackAPIVersion.VERSION2)   # same as the backend (#66)
 check("paho re-raises callback errors by default", client.suppress_exceptions is False)
 client.on_message = ingest.on_message
 def deliver(topic, payload):
@@ -37,7 +42,7 @@ for label, topic, payload in [
         deliver(topic, payload); check(f"{label}: handled inside the callback", True)
     except Exception as e:
         check(f"{label}: escaped to paho ({type(e).__name__})", False)
-check("errors are logged", any(l.startswith("MQTT error:") for l in logged))
+check("errors are logged", any(l.startswith("MQTT error on ") for l in logged))
 check("no row stored from bad payloads", rows() == 0)
 deliver("home/esp32/bme280", json.dumps({"device": "home_ping_esp32", "temp_c": 22.0, "humidity": 45.0, "uptime": 5}).encode())
 check("next valid message is still stored", rows() == 1)
