@@ -29,7 +29,8 @@ inferred then and hasn't been confirmed since.
   data. Combined = the highest radar. Other occupancy figures are called "occupancy".
 - Default device: many endpoints take `?device=` and default to `"home_ping_esp32"`.
 - Errors: JSON `{"error": "<message>"}` with the HTTP status (400 bad request body,
-  404 unknown path, 405 wrong method, 500 unexpected error without details). The only
+  404 unknown path, 405 wrong method, 413 body over 16 KB (`MAX_CONTENT_LENGTH`, #123),
+  500 unexpected error without details). The only
   exception is the 401 from Basic auth (text/plain, see Auth).
 - CORS: none configured. The web page does not use the REST API.
 

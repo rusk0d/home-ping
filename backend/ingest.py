@@ -15,7 +15,7 @@ from config import (
 )
 from store import (
     db, get_last_occupancy, get_state, log_event, log_presence, log_to_db, note_uptime,
-    set_state, utcnow,
+    parse_ts, set_state, utcnow,
 )
 from alerts import alert, set_radar_alerted
 from nodes import handle_status, touch_device
@@ -36,7 +36,7 @@ def any_radar_quiet_minutes():
 
     if not row:
         return 9999
-    last_occ = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+    last_occ = parse_ts(row[0])
     return (utcnow() - last_occ).total_seconds() / 60
 
 
