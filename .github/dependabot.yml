@@ -1,0 +1,28 @@
+# Weekly dependency updates (#121), one grouped PR per ecosystem so they stay
+# reviewable. CI runs on each PR. The Arduino core and libraries aren't covered by
+# Dependabot; they are pinned in .github/workflows/ci.yml.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+    groups:
+      android:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
