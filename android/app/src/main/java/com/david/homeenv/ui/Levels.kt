@@ -7,6 +7,7 @@ import android.widget.TextView
 import androidx.annotation.ColorRes
 import androidx.core.content.ContextCompat
 import com.david.homeenv.R
+import kotlin.math.ln
 
 /** A level label and its colour, e.g. "Comfortable" / good. */
 data class Level(val text: String, @param:ColorRes val color: Int)
@@ -85,6 +86,17 @@ object Levels {
             t <= warm -> Level("Warm", R.color.ok)
             else -> Level("Hot", R.color.bad)
         }
+    }
+
+    /**
+     * Dew point in °C from temperature (°C) and relative humidity (%), Magnus formula with
+     * the Sonntag constants (contracts/api.md, "Dew point"; web: dewPoint). Null for a
+     * humidity of 0 or less.
+     */
+    fun dewPoint(tempC: Double, rh: Double): Double? {
+        if (rh <= 0) return null
+        val g = ln(rh / 100) + 17.62 * tempC / (243.12 + tempC)
+        return 243.12 * g / (17.62 - g)
     }
 
     /** 3 h pressure change in hPa → outlook (kept from the old Android screen). */
