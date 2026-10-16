@@ -55,11 +55,11 @@ def test_issue65_utc_timestamps(env):
     check("/api/restarts last_restart ISO", bool(ISO.match(get("/api/restarts")["x"]["last_restart"])))
 
     # "today" stays local
-    h = get("/api/hourly")
+    h = get("/api/hourly?device=home_ping_esp32")   # the migrated rows include one dated 2026-10-30
     local_hour = datetime.now().strftime("%Y-%m-%d %H:00")
     check(f"/api/hourly label is local time ({local_hour})", h and h[0]["hour"] == local_hour)
     old = db(); old.execute("INSERT INTO readings (device, ts, temp, humidity) VALUES ('home_ping_esp32', datetime('now','localtime','start of day','utc','-1 minutes'), 10, 10)"); old.commit(); old.close()
-    check("/api/hourly ignores readings from before local midnight", all(r["avg_temp"] != 10 for r in get("/api/hourly")))
+    check("/api/hourly ignores readings from before local midnight", all(r["avg_temp"] != 10 for r in get("/api/hourly?device=home_ping_esp32")))
 
     # Offline check uses UTC
     con = db(); con.execute("INSERT OR REPLACE INTO devices VALUES ('quiet', datetime('now','-400 seconds'))"); con.execute("INSERT OR REPLACE INTO devices VALUES ('fresh', datetime('now','-60 seconds'))"); con.commit(); con.close()
