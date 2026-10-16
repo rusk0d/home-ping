@@ -195,10 +195,13 @@ checks (see `notifications.md`). Missing fields default to: `presence`/`stationa
 
 - Publisher: `firmware/main_node` (`DEVICE_NAME = "home_ping_esp32"`) since the node merge (#57),
   MH-Z19C on UART1 (GPIO 25/26). Before: `firmware/co2_node` (`co2_sensor_esp32`), removed.
-- `warming` is true for the first 180 s of uptime (64-bit uptime since #119).
-- Interval: every 60 s (`PUBLISH_INTERVAL = 60000`). The first publish happens
-  as soon as the loop starts. Readings are flagged invalid for the first 180 s
-  (`WARMUP_MS`).
+- `warming` is true for the first 180 s of uptime (`CO2_WARMUP_S`, 64-bit uptime since #119).
+- Interval: every 60 s (`CO2_INTERVAL`). The first publish happens as soon as the loop starts.
+- Calibration (#167): the sensor's automatic baseline correction (ABC) is **off**; it had made
+  the readings go below outdoor level (hourly minima down to 261 ppm). Instead, a manual
+  zero-point calibration: run the node ≥20 min in fresh air, then hold the board's BOOT
+  button 5 s (or send `calibrate` on serial); the current air becomes 400 ppm. Refused before
+  20 min of uptime (LED blinks fast), done = 3 slow blinks. The node also logs it on serial.
 - Retained: yes. QoS 0.
 - `co2` and `sensor_tmp` are **only present when the reading is valid**
   (`err == RESULT_OK && !warming && 0 < co2 <= 5000`). Otherwise the keys are omitted.
@@ -207,30 +210,32 @@ checks (see `notifications.md`). Missing fields default to: `presence`/`stationa
 |---|---|---|---|---|
 | `device` | string | n/a | yes | `"home_ping_esp32"` (before #57: `"co2_sensor_esp32"`) |
 | `co2_ok` | bool | n/a | yes | true when the reading is valid (rule above) |
-| `warming` | bool | n/a | yes | `millis() < 180000` |
+| `warming` | bool | n/a | yes | uptime < 180 s |
 | `err` | integer | n/a | yes | MH-Z19 library `errorCode` (**UNCERTAIN**: `RESULT_OK` is 1 in the WifWaf MHZ19 library) |
 | `rssi` | integer | dBm | yes | |
 | `uptime` | integer | s | yes | |
+| `abc` | bool | n/a | yes (since #167) | the MH-Z19's automatic baseline correction as the sensor reports it; should be `false` |
 | `co2` | integer | ppm | only if valid | 1–5000 |
 | `sensor_tmp` | integer | °C | only if valid | MH-Z19 internal temperature, coarse, not room temperature |
 
 Example (valid):
 
 ```json
-{"device":"home_ping_esp32","co2_ok":true,"warming":false,"err":1,"rssi":-58,"uptime":7260,"co2":812,"sensor_tmp":24}
+{"device":"home_ping_esp32","co2_ok":true,"warming":false,"err":1,"rssi":-58,"uptime":7260,"abc":false,"co2":812,"sensor_tmp":24}
 ```
 
 Example (warming up):
 
 ```json
-{"device":"home_ping_esp32","co2_ok":false,"warming":true,"err":1,"rssi":-58,"uptime":60}
+{"device":"home_ping_esp32","co2_ok":false,"warming":true,"err":1,"rssi":-58,"uptime":60,"abc":false}
 ```
 
 Backend handling: env handler (no `presence`). Stores a
 `readings` row with `co2` (NULL when absent), `uptime`; `temp`, `humidity` and
 `pressure` are NULL. Stores `co2_ok` in `readings.co2_ok` (1/0, NULL when the message
 has none) and serves it via `/api/latest_all`. Temp/humidity alerts are
-skipped because `temp_c` and `humidity` are absent.
+skipped because `temp_c` and `humidity` are absent. `abc` is not stored (the web page and
+`mosquitto_sub` show it).
 
 ---
 
