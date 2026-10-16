@@ -61,6 +61,7 @@ UPTIME_DROP_TOLERANCE = 120   # seconds; a restart needs uptime to drop by more 
 # PIR "occupied" fields from other devices are ignored.
 PRESENCE_DEVICE = "home_ping_esp32"
 HOURLY_MAX_DAYS = 7            # /api/hourly?days= limit (readings are kept 8 days)
+HEALTH_MAX_MESSAGE_AGE = 300   # /api/health fails when no live MQTT message came for this long (#77)
 PRESENCE_SIGNAL_THRESHOLD = 15   # stationary readings below this energy are treated as noise
 # Hourly occupancy for the web page (outside home/esp32/# so we don't receive our own messages)
 OCCUPANCY_HOURLY_TOPIC = "home/backend/occupancy_hourly"
@@ -763,6 +764,7 @@ def handle_status(device, status):
     log_event(device, "STATUS", status)
     if status == "online":
         touch_device(device)   # a sign of life; "offline" (sent by the broker) is not
+LAST_MESSAGE_AT = None  # last live (non-retained) MQTT message, for /api/health (#77)
 RADAR_FAIL_COUNT = {}  # consecutive radar_connected=false messages (in memory; 12 needed to alert)
 NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
 PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
@@ -786,6 +788,8 @@ def on_message(client, userdata, msg):
         if msg.retain:
             print(f"[MQTT] Skipping retained message on {msg.topic}")
             return
+        global LAST_MESSAGE_AT
+        LAST_MESSAGE_AT = time.time()
 
         # home/esp32/<device>/status carries plain "online"/"offline" (#13)
         parts = msg.topic.split("/")
@@ -920,6 +924,29 @@ threading.Thread(target=node_check_loop, daemon=True).start()
 # -------------------------
 # API ROUTES
 # -------------------------
+
+@app.route("/api/health")
+def health():
+    """For an external uptime monitor (#77): no auth and no sensor data.
+
+    503 when MQTT is disconnected, no live message came for HEALTH_MAX_MESSAGE_AGE
+    (counted from startup until the first one), or the DB can't be read.
+    """
+    now = time.time()
+    last_age = int(now - LAST_MESSAGE_AT) if LAST_MESSAGE_AT else None
+    try:
+        conn = sqlite3.connect(DB)
+        conn.execute("SELECT 1 FROM system_state LIMIT 1").fetchall()
+        conn.close()
+        db_ok = True
+    except sqlite3.Error:
+        db_ok = False
+    mqtt_ok = mqttc.is_connected()
+    fresh = now - (LAST_MESSAGE_AT or STARTED_AT) < HEALTH_MAX_MESSAGE_AGE
+    ok = mqtt_ok and fresh and db_ok
+    body = {"ok": ok, "mqtt_connected": mqtt_ok, "last_message_age_s": last_age, "db_ok": db_ok}
+    return jsonify(body), 200 if ok else 503
+
 
 @app.route("/api/latest")
 @require_auth
