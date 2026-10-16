@@ -504,3 +504,25 @@ def stats24h_combined():
         "occupied_hours": occ["occupied_hours"],
         "coverage_hours": occ["coverage_hours"]
     })
+
+
+@app.route("/api/dashboard")
+@require_auth
+def dashboard():
+    """Everything the Android home screen shows, in one response (#128).
+
+    Calls the six endpoints' own functions, so each part has exactly the shape (and
+    defaults, e.g. /api/hourly = today) of the endpoint it is named after.
+    """
+    def part(view):
+        rv = view.__wrapped__()   # the login was checked once, for /api/dashboard
+        return (rv[0] if isinstance(rv, tuple) else rv).get_json()
+
+    return jsonify({
+        "latest_all": part(latest_all),
+        "devices": part(devices),
+        "stats24h_combined": part(stats24h_combined),
+        "restarts": part(restarts),
+        "air": part(air),
+        "hourly": part(hourly),
+    })
