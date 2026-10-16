@@ -13,6 +13,7 @@ sys.path.insert(0, backend)
 import builtins; _p = builtins.print; logged = []
 builtins.print = lambda *a, **k: logged.append(" ".join(map(str, a)))
 import server
+server.prepare()   # importing does no work (#73)
 sys.modules.update(saved)
 def check(label, cond): _p(("PASS " if cond else "FAIL ") + label)
 

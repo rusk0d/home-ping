@@ -14,6 +14,7 @@ for name in ["firebase_admin", "firebase_admin.credentials", "firebase_admin.mes
 sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
 import server
+server.prepare()   # importing does no work (#73)
 
 m = server.messaging
 sent = []        # (kwargs of each Message) for accepted sends

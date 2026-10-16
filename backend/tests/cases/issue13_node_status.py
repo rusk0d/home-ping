@@ -12,6 +12,7 @@ import builtins; _p = builtins.print
 errors = []
 builtins.print = lambda *a, **k: errors.append(a) if a and str(a[0]).startswith("MQTT error") else (None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[ERROR]", "[DB]", "[STATUS]")) else _p(*a, **k))
 import server
+server.prepare()   # importing does no work (#73)
 m = server.messaging
 def check(label, cond): print(("PASS " if cond else "FAIL ") + label)
 def status_pushes():
@@ -24,7 +25,7 @@ def set_seen(dev, ago_s):
     con = db(); con.execute("INSERT OR REPLACE INTO devices VALUES (?, datetime('now',?))", (dev, f"-{ago_s} seconds")); con.commit(); con.close()
 def restart():
     global server, m
-    server = importlib.reload(server); m = server.messaging; m.Message.reset_mock(); m.send.reset_mock()
+    server = importlib.reload(server); server.prepare(); m = server.messaging; m.Message.reset_mock(); m.send.reset_mock()
 def past_grace(): server.STARTED_AT = time.time() - server.NODE_OFFLINE_ALERT_SECONDS - 1
 
 # status topic

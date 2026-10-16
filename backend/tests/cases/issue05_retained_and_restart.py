@@ -11,13 +11,14 @@ sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 builtins.print = lambda *a, **k: None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[ERROR]", "[DB]")) else _p(*a, **k)
 import server
+server.prepare()   # importing does no work (#73)
 m = server.messaging   # what server.py actually calls
 def check(label, cond): print(("PASS " if cond else "FAIL ") + label)
 def pushes(event): return sum(1 for c in m.send.call_args_list if m.Message.call_args_list and True) and \
     sum(1 for c in m.Message.call_args_list if c.kwargs.get("data", {}).get("event") == event)
 def restart():
     global server
-    server = importlib.reload(server)
+    server = importlib.reload(server); server.prepare()
 def mqtt(topic, p, retain=False):
     server.on_message(None, None, types.SimpleNamespace(retain=retain, topic=topic, payload=json.dumps(p).encode()))
 rows = lambda t: sqlite3.connect(server.DB).execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
