@@ -42,15 +42,15 @@ const unsigned long HP_MQTT_RETRY_MS = 5000;
 inline bool hpConnectMQTT(PubSubClient& mqtt, const char* device,
                           const char* user, const char* pass) {
   if (mqtt.connected()) return true;
-  static unsigned long lastAttempt = 0;
+  static uint32_t lastAttempt = 0;   // uint32_t like millis() on the ESP32, so the wrap works the same in the host test
   static bool attempted = false;
-  unsigned long now = millis();
-  if (attempted && now - lastAttempt < HP_MQTT_RETRY_MS) return false;
+  uint32_t now = millis();
+  if (attempted && (uint32_t)(now - lastAttempt) < HP_MQTT_RETRY_MS) return false;
   attempted = true;
   lastAttempt = now;
 
   char clientId[64];
-  snprintf(clientId, sizeof(clientId), "%s_%llx", device, ESP.getEfuseMac());
+  snprintf(clientId, sizeof(clientId), "%s_%llx", device, (unsigned long long)ESP.getEfuseMac());
   char statusTopic[64];
   snprintf(statusTopic, sizeof(statusTopic), "home/esp32/%s/status", device);
   Serial.println("Connecting to MQTT...");
@@ -59,7 +59,6 @@ inline bool hpConnectMQTT(PubSubClient& mqtt, const char* device,
     Serial.println("MQTT connected");
     return true;
   }
-  Serial.printf("MQTT failed, rc=%d, retrying in %lus
-", mqtt.state(), HP_MQTT_RETRY_MS / 1000);
+  Serial.printf("MQTT failed, rc=%d, retrying in %lus\n", mqtt.state(), HP_MQTT_RETRY_MS / 1000);
   return false;
 }
