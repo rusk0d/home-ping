@@ -12,6 +12,7 @@ sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 import server
+server.prepare()   # importing does no work (#73)
 builtins.print = lambda *a, **k: None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[ERROR]", "[PRESENCE]")) else _p(*a, **k)
 c = server.app.test_client()
 A = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}

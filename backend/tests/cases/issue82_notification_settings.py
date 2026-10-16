@@ -13,6 +13,7 @@ sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 builtins.print = lambda *a, **k: None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[DB]", "[STATUS]", "[RESTART]")) else _p(*a, **k)
 import server
+server.prepare()   # importing does no work (#73)
 pushes = []
 server.send_push = lambda title, body, data=None: pushes.append(data.get("event")) or True
 db = lambda: sqlite3.connect(server.DB)

@@ -7,6 +7,7 @@ from werkzeug.exceptions import HTTPException
 from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 from functools import wraps
+from contextlib import contextmanager
 from dotenv import load_dotenv
 import time
 import threading
@@ -39,33 +40,66 @@ def require_auth(f):
     return decorated
 
 # -------------------------
-# CONFIG
+# CONFIG (all settings in one place, #73)
 # -------------------------
+# Files and broker
 DB = "data.db"
-
+FIREBASE_CRED = "firebase_service_account.json"
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
 MQTT_USER = os.environ["MQTT_USER"]
 MQTT_PASS = os.environ["MQTT_PASS"]
 TOPIC = "home/esp32/#"  # Subscribe to all topics under home/esp32/
-EVENTS_RETENTION_DAYS = 30    # events older than this are deleted
-DEVICES_RETENTION_DAYS = 30   # devices not seen for this long are removed from the list
-NODE_OFFLINE_ALERT_SECONDS = 300  # no data this long -> "node offline" push (longer than
-                                  # HEARTBEAT_TIMEOUT so a reboot or WiFi blip doesn't alert)
-NODE_CHECK_INTERVAL = 30          # seconds between offline checks
-HEARTBEAT_TIMEOUT = 120  # seconds without a message before a device counts as offline
-FIREBASE_CRED = "firebase_service_account.json"
-LAST_UPTIME = {}
-UPTIME_DROP_TOLERANCE = 120   # seconds; a restart needs uptime to drop by more (see note_uptime)
-# Presence (LD2410C radar) — the ONLY source of occupancy data.
-# PIR "occupied" fields from other devices are ignored.
-PRESENCE_DEVICE = "home_ping_esp32"
-HOURLY_MAX_DAYS = 7            # /api/hourly?days= limit (readings are kept 8 days)
-HEALTH_MAX_MESSAGE_AGE = 300   # /api/health fails when no live MQTT message came for this long (#77)
-PRESENCE_SIGNAL_THRESHOLD = 15   # stationary readings below this energy are treated as noise
 # Hourly occupancy for the web page (outside home/esp32/# so we don't receive our own messages)
 OCCUPANCY_HOURLY_TOPIC = "home/backend/occupancy_hourly"
 OCCUPANCY_HOURLY_INTERVAL = 300  # seconds
+
+# Retention
+EVENTS_RETENTION_DAYS = 30    # events older than this are deleted
+DEVICES_RETENTION_DAYS = 30   # devices not seen for this long are removed from the list
+
+# Devices
+HEARTBEAT_TIMEOUT = 120  # seconds without a message before a device counts as offline
+NODE_OFFLINE_ALERT_SECONDS = 300  # no data this long -> "node offline" push (longer than
+                                  # HEARTBEAT_TIMEOUT so a reboot or WiFi blip doesn't alert)
+NODE_CHECK_INTERVAL = 30          # seconds between offline checks
+UPTIME_DROP_TOLERANCE = 120   # seconds; a restart needs uptime to drop by more (see note_uptime)
+HEALTH_MAX_MESSAGE_AGE = 300   # /api/health fails when no live MQTT message came for this long (#77)
+
+# Presence (LD2410C radar) — the ONLY source of occupancy data.
+# PIR "occupied" fields from other devices are ignored.
+PRESENCE_DEVICE = "home_ping_esp32"
+PRESENCE_SIGNAL_THRESHOLD = 15   # stationary readings below this energy are treated as noise
+# "confidence" everywhere in the API: % of a radar's rows in the last
+# CONFIDENCE_MINUTES that were occupied (0-100), or None without radar data.
+CONFIDENCE_MINUTES = 15
+HOURLY_MAX_DAYS = 7            # /api/hourly?days= limit (readings are kept 8 days)
+
+# Alerts
+TEMP_THRESHOLD = 18
+HUMIDITY_HIGH_THRESHOLD = 65
+HUMIDITY_LOW_THRESHOLD = 25
+NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
+PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
+QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
+ARRIVAL_CONFIRM_SECONDS = 120     # movement this soon after the quiet spell ends confirms the arrival
+# Notification settings (#82)
+NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes")
+QUIET_DEFAULTS = {"start": "22:00", "end": "07:00"}
+HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+# -------------------------
+# RUNTIME STATE (in memory; the alert state is loaded from the DB in prepare())
+# -------------------------
+LAST_UPTIME = {}        # device -> last reported uptime
+RADAR_FAIL_COUNT = {}   # consecutive radar_connected=false messages (12 needed to alert)
+LAST_NOTIFICATION = {}  # cooldown key -> unix time its cooldown started
+RADAR_ALERTED = set()   # radars whose current outage has been handled
+NODE_OFFLINE = {}       # device -> whether its offline push was sent (False: muted)
+NODE_LOCK = threading.Lock()  # offline checks (own thread) vs. messages (MQTT thread)
+STARTED_AT = time.time()      # reset by start(); the offline check and health count from it
+LAST_MESSAGE_AT = None  # last live (non-retained) MQTT message, for /api/health (#77)
+mqttc = None            # MQTT client, created by start()
 
 app = Flask(__name__)
 
@@ -102,10 +136,22 @@ def json_body():
 # -------------------------
 # FIREBASE INIT
 # -------------------------
-try:
-    firebase_admin.get_app()   # already initialised (e.g. module imported twice)
-except ValueError:
-    firebase_admin.initialize_app(credentials.Certificate(FIREBASE_CRED))
+@contextmanager
+def db():
+    """A connection that is committed on success and always closed (#73)."""
+    conn = sqlite3.connect(DB)
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def init_firebase():
+    try:
+        firebase_admin.get_app()   # already initialised (e.g. start() called twice)
+    except ValueError:
+        firebase_admin.initialize_app(credentials.Certificate(FIREBASE_CRED))
 
 # -------------------------
 # DATABASE INIT
@@ -124,190 +170,179 @@ READINGS_COLUMNS = """
 
 
 def init_db():
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
+    with db() as conn:
+        c = conn.cursor()
 
-    c.execute(f"CREATE TABLE IF NOT EXISTS readings ({READINGS_COLUMNS})")
+        c.execute(f"CREATE TABLE IF NOT EXISTS readings ({READINGS_COLUMNS})")
 
-    # Add columns missing from older databases (including ones created by the
-    # removed init_db.py, which had only id/ts/temp/humidity)
-    for col, coltype in (("device", "TEXT"), ("uptime", "INTEGER"),
-                         ("co2", "INTEGER"), ("pressure", "REAL"), ("co2_ok", "INTEGER")):
-        try:
-            c.execute(f"ALTER TABLE readings ADD COLUMN {col} {coltype}")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+        # Add columns missing from older databases (including ones created by the
+        # removed init_db.py, which had only id/ts/temp/humidity)
+        for col, coltype in (("device", "TEXT"), ("uptime", "INTEGER"),
+                             ("co2", "INTEGER"), ("pressure", "REAL"), ("co2_ok", "INTEGER")):
+            try:
+                c.execute(f"ALTER TABLE readings ADD COLUMN {col} {coltype}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
-    # Drop columns that were always 0 (#14). Rebuild the table instead of
-    # ALTER TABLE ... DROP COLUMN, which needs SQLite 3.35+.
-    cols = {r[1] for r in c.execute("PRAGMA table_info(readings)")}
-    if cols & {"occupied", "occupancy_confidence", "dark"}:
-        keep = "id, device, ts, temp, humidity, uptime, co2, pressure, co2_ok"
-        conn.commit()
-        c.executescript(f"""
-            BEGIN;
-            CREATE TABLE readings_new ({READINGS_COLUMNS});
-            INSERT INTO readings_new ({keep}) SELECT {keep} FROM readings;
-            DROP TABLE readings;
-            ALTER TABLE readings_new RENAME TO readings;
-            COMMIT;
+        # Drop columns that were always 0 (#14). Rebuild the table instead of
+        # ALTER TABLE ... DROP COLUMN, which needs SQLite 3.35+.
+        cols = {r[1] for r in c.execute("PRAGMA table_info(readings)")}
+        if cols & {"occupied", "occupancy_confidence", "dark"}:
+            keep = "id, device, ts, temp, humidity, uptime, co2, pressure, co2_ok"
+            conn.commit()
+            c.executescript(f"""
+                BEGIN;
+                CREATE TABLE readings_new ({READINGS_COLUMNS});
+                INSERT INTO readings_new ({keep}) SELECT {keep} FROM readings;
+                DROP TABLE readings;
+                ALTER TABLE readings_new RENAME TO readings;
+                COMMIT;
+            """)
+            print("[DB] readings: dropped occupied, occupancy_confidence, dark")
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS devices (
+                device TEXT PRIMARY KEY,
+                last_seen TIMESTAMP
+            )
         """)
-        print("[DB] readings: dropped occupied, occupancy_confidence, dark")
+        # register_token used to add phones as "unknown"; devices is for sensor nodes only
+        c.execute("DELETE FROM devices WHERE device = 'unknown'")
 
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS devices (
-            device TEXT PRIMARY KEY,
-            last_seen TIMESTAMP
-        )
-    """)
-    # register_token used to add phones as "unknown"; devices is for sensor nodes only
-    c.execute("DELETE FROM devices WHERE device = 'unknown'")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS system_state (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
 
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS system_state (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device TEXT,
+                ts TIMESTAMP,
+                type TEXT,
+                value TEXT
+            )
+        """)
 
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            device TEXT,
-            ts TIMESTAMP,
-            type TEXT,
-            value TEXT
-        )
-    """)
+        c.execute("""
+            INSERT OR IGNORE INTO system_state (key, value)
+            VALUES ('occupancy_armed', '0')
+        """)
+        # Soil moisture feature removed (#9): no sensor exists, drop its unused table
+        c.execute("DROP TABLE IF EXISTS soil_readings")
 
-    c.execute("""
-        INSERT OR IGNORE INTO system_state (key, value)
-        VALUES ('occupancy_armed', '0')
-    """)
-    # Soil moisture feature removed (#9): no sensor exists, drop its unused table
-    c.execute("DROP TABLE IF EXISTS soil_readings")
+        # Presence readings from the LD2410C radar node
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS presence_readings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device TEXT,
+                ts TIMESTAMP,
+                occupied INTEGER,
+                presence INTEGER,
+                stationary INTEGER,
+                moving INTEGER,
+                distance INTEGER,
+                signal INTEGER,
+                rssi INTEGER,
+                uptime INTEGER,
+                radar_connected INTEGER
+            )
+        """)
 
-    # Presence readings from the LD2410C radar node
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS presence_readings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            device TEXT,
-            ts TIMESTAMP,
-            occupied INTEGER,
-            presence INTEGER,
-            stationary INTEGER,
-            moving INTEGER,
-            distance INTEGER,
-            signal INTEGER,
-            rssi INTEGER,
-            uptime INTEGER,
-            radar_connected INTEGER
-        )
-    """)
+        # Timestamps were stored in server local time until #65; convert existing rows to
+        # UTC once. SQLite's 'utc' modifier applies the DST offset of each row's own date.
+        if c.execute("SELECT 1 FROM system_state WHERE key = 'ts_utc'").fetchone() is None:
+            for table, col in (("readings", "ts"), ("presence_readings", "ts"),
+                               ("events", "ts"), ("devices", "last_seen")):
+                c.execute(f"UPDATE {table} SET {col} = datetime({col}, 'utc') WHERE {col} IS NOT NULL")
+            c.execute("INSERT INTO system_state (key, value) VALUES ('ts_utc', '1')")
+            conn.commit()
+            print("[DB] timestamps converted to UTC")
 
-    # Timestamps were stored in server local time until #65; convert existing rows to
-    # UTC once. SQLite's 'utc' modifier applies the DST offset of each row's own date.
-    if c.execute("SELECT 1 FROM system_state WHERE key = 'ts_utc'").fetchone() is None:
-        for table, col in (("readings", "ts"), ("presence_readings", "ts"),
-                           ("events", "ts"), ("devices", "last_seen")):
-            c.execute(f"UPDATE {table} SET {col} = datetime({col}, 'utc') WHERE {col} IS NOT NULL")
-        c.execute("INSERT INTO system_state (key, value) VALUES ('ts_utc', '1')")
+        # Indexes for the per-device lookups (#18). (device, id) serves "latest row of a
+        # device"; (device, ts) serves time windows. No plain ts index: it made SQLite pick
+        # worse plans for several endpoints (measured on an 8-day, 276k-row database).
+        for sql in (
+            "CREATE INDEX IF NOT EXISTS ix_presence_device_id ON presence_readings(device, id)",
+            "CREATE INDEX IF NOT EXISTS ix_presence_device_ts ON presence_readings(device, ts)",
+            "CREATE INDEX IF NOT EXISTS ix_readings_device_id ON readings(device, id)",
+            "CREATE INDEX IF NOT EXISTS ix_readings_device_ts ON readings(device, ts)",
+            "CREATE INDEX IF NOT EXISTS ix_events_type_ts ON events(type, ts)",
+        ):
+            c.execute(sql)
         conn.commit()
-        print("[DB] timestamps converted to UTC")
-
-    # Indexes for the per-device lookups (#18). (device, id) serves "latest row of a
-    # device"; (device, ts) serves time windows. No plain ts index: it made SQLite pick
-    # worse plans for several endpoints (measured on an 8-day, 276k-row database).
-    for sql in (
-        "CREATE INDEX IF NOT EXISTS ix_presence_device_id ON presence_readings(device, id)",
-        "CREATE INDEX IF NOT EXISTS ix_presence_device_ts ON presence_readings(device, ts)",
-        "CREATE INDEX IF NOT EXISTS ix_readings_device_id ON readings(device, id)",
-        "CREATE INDEX IF NOT EXISTS ix_readings_device_ts ON readings(device, ts)",
-        "CREATE INDEX IF NOT EXISTS ix_events_type_ts ON events(type, ts)",
-    ):
-        c.execute(sql)
-    conn.commit()
-    # Without statistics SQLite picks the wrong index for several queries
-    c.execute("ANALYZE")
-    conn.commit()
-    conn.close()
-
-init_db()
+        # Without statistics SQLite picks the wrong index for several queries
+        c.execute("ANALYZE")
 
 # -------------------------
 # DATABASE HELPERS
 # -------------------------
 def touch_device(device):
     """Update device heartbeat"""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO devices (device, last_seen)
-        VALUES (?, datetime('now'))
-        ON CONFLICT(device)
-        DO UPDATE SET last_seen=datetime('now')
-    """, (device,))
-    # Forget nodes that have been gone for a long time (e.g. a retired node)
-    c.execute("DELETE FROM devices WHERE last_seen < datetime('now',?)",
-              (f"-{DEVICES_RETENTION_DAYS} days",))
-    conn.commit()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO devices (device, last_seen)
+            VALUES (?, datetime('now'))
+            ON CONFLICT(device)
+            DO UPDATE SET last_seen=datetime('now')
+        """, (device,))
+        # Forget nodes that have been gone for a long time (e.g. a retired node)
+        c.execute("DELETE FROM devices WHERE last_seen < datetime('now',?)",
+                  (f"-{DEVICES_RETENTION_DAYS} days",))
     if device in NODE_OFFLINE:
         node_back_online(device)
 
 def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None):
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
+    with db() as conn:
+        c = conn.cursor()
 
-    c.execute("""
-        INSERT INTO readings
-        (device, ts, temp, humidity, uptime, co2, pressure, co2_ok)
-        VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?)
-    """, (device, temp, hum, uptime, co2, pressure, co2_ok))
+        c.execute("""
+            INSERT INTO readings
+            (device, ts, temp, humidity, uptime, co2, pressure, co2_ok)
+            VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?)
+        """, (device, temp, hum, uptime, co2, pressure, co2_ok))
 
-    c.execute("""
-        DELETE FROM readings
-        WHERE ts < datetime('now','-8 days')
-    """)
+        c.execute("""
+            DELETE FROM readings
+            WHERE ts < datetime('now','-8 days')
+        """)
 
-    conn.commit()
-    conn.close()
 
 def log_presence(device, occupied, presence, stationary, moving,
                  distance, signal, rssi, uptime, radar_connected):
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO presence_readings
-        (device, ts, occupied, presence, stationary, moving,
-         distance, signal, rssi, uptime, radar_connected)
-        VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (device, occupied, presence, stationary, moving,
-          distance, signal, rssi, uptime, radar_connected))
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO presence_readings
+            (device, ts, occupied, presence, stationary, moving,
+             distance, signal, rssi, uptime, radar_connected)
+            VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (device, occupied, presence, stationary, moving,
+              distance, signal, rssi, uptime, radar_connected))
 
-    # Keep 8 days so the 24h queries always have full coverage
-    c.execute("""
-        DELETE FROM presence_readings
-        WHERE ts < datetime('now','-8 days')
-    """)
-    conn.commit()
-    conn.close()
+        # Keep 8 days so the 24h queries always have full coverage
+        c.execute("""
+            DELETE FROM presence_readings
+            WHERE ts < datetime('now','-8 days')
+        """)
 def occupancy_stats(hours=24):
     """Occupancy over a window, using each radar's real sample spacing."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT device,
-               COUNT(*),
-               SUM(occupied),
-               MIN(ts),
-               MAX(ts)
-        FROM presence_readings
-        WHERE ts >= datetime('now', ?)
-        GROUP BY device
-    """, (f"-{hours} hours",))
-    rows = c.fetchall()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT device,
+                   COUNT(*),
+                   SUM(occupied),
+                   MIN(ts),
+                   MAX(ts)
+            FROM presence_readings
+            WHERE ts >= datetime('now', ?)
+            GROUP BY device
+        """, (f"-{hours} hours",))
+        rows = c.fetchall()
 
     if not rows:
         return {"avg_occupancy": None, "occupied_hours": None, "coverage_hours": None}
@@ -337,21 +372,15 @@ def occupancy_stats(hours=24):
         "coverage_hours": round(coverage, 1),
     }
 
-# "confidence" everywhere in the API: % of a radar's rows in the last
-# CONFIDENCE_MINUTES that were occupied (0-100), or None without radar data.
-CONFIDENCE_MINUTES = 15
-
-
 def calculate_confidence(device, minutes=CONFIDENCE_MINUTES):
     """Occupancy confidence for one radar over a time window (0-100), None without data."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT occupied FROM presence_readings
-        WHERE device = ? AND ts >= datetime('now', ?)
-    """, (device, f"-{minutes} minutes"))
-    rows = c.fetchall()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT occupied FROM presence_readings
+            WHERE device = ? AND ts >= datetime('now', ?)
+        """, (device, f"-{minutes} minutes"))
+        rows = c.fetchall()
 
     if not rows:
         return None
@@ -361,39 +390,37 @@ def calculate_confidence(device, minutes=CONFIDENCE_MINUTES):
 def get_combined_occupancy():
     """1 if any radar has 2+ occupied rows in its last 3 reports (last 2 min), 0 if not,
     None if no radar reported in the last 2 minutes."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("SELECT DISTINCT device FROM presence_readings")
-    devices = [r[0] for r in c.fetchall()]
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT DISTINCT device FROM presence_readings")
+        devices = [r[0] for r in c.fetchall()]
 
-    result = None
-    for d in devices:
-        c.execute("""
-            SELECT occupied FROM presence_readings
-            WHERE device = ? AND ts >= datetime('now','-2 minutes')
-            ORDER BY id DESC LIMIT 3
-        """, (d,))
-        rows = [r[0] for r in c.fetchall()]
-        if rows and result is None:
-            result = 0
-        if sum(rows) >= 2:
-            result = 1
-    conn.close()
+        result = None
+        for d in devices:
+            c.execute("""
+                SELECT occupied FROM presence_readings
+                WHERE device = ? AND ts >= datetime('now','-2 minutes')
+                ORDER BY id DESC LIMIT 3
+            """, (d,))
+            rows = [r[0] for r in c.fetchall()]
+            if rows and result is None:
+                result = 0
+            if sum(rows) >= 2:
+                result = 1
     return result
 
 
 def calculate_combined_confidence(minutes=CONFIDENCE_MINUTES):
     """Per-radar confidence over the window, then the highest of them; None without data."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT device, AVG(occupied)
-        FROM presence_readings
-        WHERE ts >= datetime('now', ?)
-        GROUP BY device
-    """, (f"-{minutes} minutes",))
-    rows = c.fetchall()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT device, AVG(occupied)
+            FROM presence_readings
+            WHERE ts >= datetime('now', ?)
+            GROUP BY device
+        """, (f"-{minutes} minutes",))
+        rows = c.fetchall()
 
     if not rows:
         return None
@@ -401,48 +428,42 @@ def calculate_combined_confidence(minutes=CONFIDENCE_MINUTES):
 
 def get_last_occupancy(device):
     """Previous (second most recent) radar occupancy state."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT occupied FROM presence_readings
-        WHERE device = ?
-        ORDER BY id DESC LIMIT 1 OFFSET 1
-    """, (device,))
-    row = c.fetchone()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT occupied FROM presence_readings
+            WHERE device = ?
+            ORDER BY id DESC LIMIT 1 OFFSET 1
+        """, (device,))
+        row = c.fetchone()
     return row[0] if row else None
 
 def log_event(device, event_type, value):
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO events (device, ts, type, value)
-        VALUES (?, datetime('now'), ?, ?)
-    """, (device, event_type, value))
-    c.execute("DELETE FROM events WHERE ts < datetime('now',?)",
-              (f"-{EVENTS_RETENTION_DAYS} days",))
-    conn.commit()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO events (device, ts, type, value)
+            VALUES (?, datetime('now'), ?, ?)
+        """, (device, event_type, value))
+        c.execute("DELETE FROM events WHERE ts < datetime('now',?)",
+                  (f"-{EVENTS_RETENTION_DAYS} days",))
 
 def get_state(key, default="0"):
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("SELECT value FROM system_state WHERE key=?", (key,))
-    row = c.fetchone()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT value FROM system_state WHERE key=?", (key,))
+        row = c.fetchone()
     return row[0] if row else default
 
 def set_state(key, value):
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO system_state (key, value)
-        VALUES (?, ?)
-        ON CONFLICT(key)
-        DO UPDATE SET value=excluded.value
-    """, (key, value))
-    conn.commit()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO system_state (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key)
+            DO UPDATE SET value=excluded.value
+        """, (key, value))
 def note_uptime(device, uptime):
     """Log a restart when a device's uptime goes backwards."""
     if uptime is None:
@@ -515,9 +536,6 @@ def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind
 # system_state: notify:<kind> = '1'/'0' (missing = on), quiet_hours = '1'/'0',
 # quiet_start / quiet_end = "HH:MM" in the server's local time (Budapest).
 # Occupancy alerts have their own switch (occupancy_armed) and ignore quiet hours.
-NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes")
-QUIET_DEFAULTS = {"start": "22:00", "end": "07:00"}
-HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 def notification_settings():
@@ -552,21 +570,18 @@ def alert_muted(kind):
     if in_quiet_hours():
         return "quiet hours"
     return None
-QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
-ARRIVAL_CONFIRM_SECONDS = 120     # movement this soon after the quiet spell ends confirms the arrival
 
 
 def any_radar_quiet_minutes():
     """Minutes since ANY radar last reported occupancy (call before logging the current row)."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT ts FROM presence_readings
-        WHERE occupied = 1
-        ORDER BY id DESC LIMIT 1
-    """)
-    row = c.fetchone()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT ts FROM presence_readings
+            WHERE occupied = 1
+            ORDER BY id DESC LIMIT 1
+        """)
+        row = c.fetchone()
 
     if not row:
         return 9999
@@ -657,12 +672,11 @@ def handle_presence_data(data):
 #   cooldown:<key>       = unix time the cooldown for <key> started
 #   radar_alerted:<dev>  = '1' while that radar's current outage has been pushed
 def load_alert_state():
-    conn = sqlite3.connect(DB)
-    rows = conn.execute("""
-        SELECT key, value FROM system_state
-        WHERE key LIKE 'cooldown:%' OR key LIKE 'radar_alerted:%' OR key LIKE 'node_offline:%'
-    """).fetchall()
-    conn.close()
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT key, value FROM system_state
+            WHERE key LIKE 'cooldown:%' OR key LIKE 'radar_alerted:%' OR key LIKE 'node_offline:%'
+        """).fetchall()
     cooldowns = {k[len("cooldown:"):]: float(v) for k, v in rows if k.startswith("cooldown:")}
     alerted = {k[len("radar_alerted:"):] for k, v in rows if k.startswith("radar_alerted:") and v == "1"}
     # node_offline: '1' = offline push sent, 'm' = offline but muted (#82), '0' = online
@@ -684,11 +698,6 @@ def set_radar_alerted(device, alerted):
     set_state(f"radar_alerted:{device}", "1" if alerted else "0")
 
 
-LAST_NOTIFICATION, RADAR_ALERTED, NODE_OFFLINE = load_alert_state()
-NODE_LOCK = threading.Lock()  # offline checks (own thread) vs. messages (MQTT thread)
-STARTED_AT = time.time()
-
-
 # -------------------------
 # NODE OFFLINE / BACK ONLINE (#13)
 # -------------------------
@@ -702,9 +711,8 @@ def check_nodes():
     # Right after a backend restart every last_seen is old: give the nodes time to report
     if time.time() - STARTED_AT < NODE_OFFLINE_ALERT_SECONDS:
         return
-    conn = sqlite3.connect(DB)
-    rows = conn.execute("SELECT device, last_seen FROM devices").fetchall()
-    conn.close()
+    with db() as conn:
+        rows = conn.execute("SELECT device, last_seen FROM devices").fetchall()
     now = utcnow()
     for device, last_seen in rows:
         age = (now - datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")).total_seconds()
@@ -764,13 +772,6 @@ def handle_status(device, status):
     log_event(device, "STATUS", status)
     if status == "online":
         touch_device(device)   # a sign of life; "offline" (sent by the broker) is not
-LAST_MESSAGE_AT = None  # last live (non-retained) MQTT message, for /api/health (#77)
-RADAR_FAIL_COUNT = {}  # consecutive radar_connected=false messages (in memory; 12 needed to alert)
-NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
-PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
-TEMP_THRESHOLD = 18
-HUMIDITY_HIGH_THRESHOLD = 65
-HUMIDITY_LOW_THRESHOLD = 25
 
 def on_message(client, userdata, msg):
     # Nothing may escape this callback: paho re-raises callback exceptions, which
@@ -861,18 +862,17 @@ def on_message(client, userdata, msg):
 def hourly_occupancy_today(days=1):
     """{'YYYY-MM-DD HH:00': mean(occupied)*100} for PRESENCE_DEVICE since local midnight
     (days - 1) days ago; days=1 is today."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT
-            strftime('%Y-%m-%d %H:00', ts, 'localtime'),
-            AVG(occupied)*100
-        FROM presence_readings
-        WHERE device = ? AND ts >= datetime('now','localtime','start of day',?,'utc')
-        GROUP BY 1
-    """, (PRESENCE_DEVICE, f"-{days - 1} days"))
-    rows = {r[0]: r[1] for r in c.fetchall()}
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT
+                strftime('%Y-%m-%d %H:00', ts, 'localtime'),
+                AVG(occupied)*100
+            FROM presence_readings
+            WHERE device = ? AND ts >= datetime('now','localtime','start of day',?,'utc')
+            GROUP BY 1
+        """, (PRESENCE_DEVICE, f"-{days - 1} days"))
+        rows = {r[0]: r[1] for r in c.fetchall()}
     return rows
 
 def publish_hourly_occupancy():
@@ -907,20 +907,9 @@ def on_connect(client, userdata, flags, rc):
     except Exception as e:
         print("[MQTT] hourly occupancy publish failed:", e)
 
-mqttc = mqtt.Client()
-mqttc.username_pw_set(MQTT_USER, MQTT_PASS)
-mqttc.on_connect = on_connect
-mqttc.on_message = on_message
-mqttc.connect(MQTT_HOST, MQTT_PORT)
-mqttc.loop_start()
-
 def on_disconnect(client, userdata, rc):
     print(f"[MQTT] Disconnected, rc={rc}")
 
-mqttc.on_disconnect = on_disconnect
-
-threading.Thread(target=hourly_occupancy_loop, daemon=True).start()
-threading.Thread(target=node_check_loop, daemon=True).start()
 # -------------------------
 # API ROUTES
 # -------------------------
@@ -935,13 +924,12 @@ def health():
     now = time.time()
     last_age = int(now - LAST_MESSAGE_AT) if LAST_MESSAGE_AT else None
     try:
-        conn = sqlite3.connect(DB)
-        conn.execute("SELECT 1 FROM system_state LIMIT 1").fetchall()
-        conn.close()
+        with db() as conn:
+            conn.execute("SELECT 1 FROM system_state LIMIT 1").fetchall()
         db_ok = True
     except sqlite3.Error:
         db_ok = False
-    mqtt_ok = mqttc.is_connected()
+    mqtt_ok = mqttc is not None and mqttc.is_connected()
     fresh = now - (LAST_MESSAGE_AT or STARTED_AT) < HEALTH_MAX_MESSAGE_AGE
     ok = mqtt_ok and fresh and db_ok
     body = {"ok": ok, "mqtt_connected": mqtt_ok, "last_message_age_s": last_age, "db_ok": db_ok}
@@ -954,18 +942,17 @@ def latest():
     """Latest temp/humidity from the main node + combined radar occupancy (widget)."""
     device = "home_ping_esp32"
 
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT ts, temp, humidity, uptime
-        FROM readings
-        WHERE device = ?
-        ORDER BY id DESC LIMIT 1
-    """, (device,))
-    row = c.fetchone() or (None, None, None, None)
-    c.execute("SELECT last_seen FROM devices WHERE device = ?", (device,))
-    dev = c.fetchone()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT ts, temp, humidity, uptime
+            FROM readings
+            WHERE device = ?
+            ORDER BY id DESC LIMIT 1
+        """, (device,))
+        row = c.fetchone() or (None, None, None, None)
+        c.execute("SELECT last_seen FROM devices WHERE device = ?", (device,))
+        dev = c.fetchone()
 
     online = False
     if dev:
@@ -986,83 +973,81 @@ def latest():
 @require_auth
 def latest_all():
     """Latest readings from every device — env nodes and radar nodes."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
+    with db() as conn:
+        c = conn.cursor()
 
-    now = utcnow()
+        now = utcnow()
 
-    def is_online(device):
-        c.execute("SELECT last_seen FROM devices WHERE device = ?", (device,))
-        dev = c.fetchone()
-        if not dev:
-            return False
-        last_seen = datetime.strptime(dev[0], "%Y-%m-%d %H:%M:%S")
-        return (now - last_seen).total_seconds() < HEARTBEAT_TIMEOUT
+        def is_online(device):
+            c.execute("SELECT last_seen FROM devices WHERE device = ?", (device,))
+            dev = c.fetchone()
+            if not dev:
+                return False
+            last_seen = datetime.strptime(dev[0], "%Y-%m-%d %H:%M:%S")
+            return (now - last_seen).total_seconds() < HEARTBEAT_TIMEOUT
 
-    result = {}
+        result = {}
 
-    # ---- Environmental readings ----
-    c.execute("SELECT DISTINCT device FROM readings")
-    for device in [row[0] for row in c.fetchall()]:
-        c.execute("""
-            SELECT ts, temp, humidity, uptime, co2, pressure, co2_ok
-            FROM readings
-            WHERE device = ?
-            ORDER BY id DESC LIMIT 1
-        """, (device,))
-        row = c.fetchone()
-        if not row:
-            continue
+        # ---- Environmental readings ----
+        c.execute("SELECT DISTINCT device FROM readings")
+        for device in [row[0] for row in c.fetchall()]:
+            c.execute("""
+                SELECT ts, temp, humidity, uptime, co2, pressure, co2_ok
+                FROM readings
+                WHERE device = ?
+                ORDER BY id DESC LIMIT 1
+            """, (device,))
+            row = c.fetchone()
+            if not row:
+                continue
 
-        result[device] = {
-            "ts": iso(row[0]),
-            "temp": row[1],
-            "humidity": row[2],
-            "uptime": row[3],
-            "co2": row[4],
-            "pressure": row[5],
-            "online": is_online(device),
-            "co2_ok": None if row[6] is None else bool(row[6]),
-        }
+            result[device] = {
+                "ts": iso(row[0]),
+                "temp": row[1],
+                "humidity": row[2],
+                "uptime": row[3],
+                "co2": row[4],
+                "pressure": row[5],
+                "online": is_online(device),
+                "co2_ok": None if row[6] is None else bool(row[6]),
+            }
 
-    # ---- Radar nodes: merge in, or add if they have no env readings ----
-    c.execute("SELECT DISTINCT device FROM presence_readings")
-    for device in [row[0] for row in c.fetchall()]:
-        c.execute("""
-            SELECT ts, occupied, presence, stationary, moving,
-                   distance, signal, rssi, uptime, radar_connected
-            FROM presence_readings
-            WHERE device = ?
-            ORDER BY id DESC LIMIT 1
-        """, (device,))
-        p = c.fetchone()
-        if not p:
-            continue
+        # ---- Radar nodes: merge in, or add if they have no env readings ----
+        c.execute("SELECT DISTINCT device FROM presence_readings")
+        for device in [row[0] for row in c.fetchall()]:
+            c.execute("""
+                SELECT ts, occupied, presence, stationary, moving,
+                       distance, signal, rssi, uptime, radar_connected
+                FROM presence_readings
+                WHERE device = ?
+                ORDER BY id DESC LIMIT 1
+            """, (device,))
+            p = c.fetchone()
+            if not p:
+                continue
 
-        entry = result.get(device, {
-            "temp": None,
-            "humidity": None,
-            "co2": None,
-            "pressure": None,
-        })
+            entry = result.get(device, {
+                "temp": None,
+                "humidity": None,
+                "co2": None,
+                "pressure": None,
+            })
 
-        entry.update({
-            "ts": iso(p[0]),
-            "uptime": p[8],
-            "occupied": p[1],
-            "confidence": calculate_confidence(device),
-            "online": is_online(device),
-            "presence": p[2],
-            "stationary": p[3],
-            "moving": p[4],
-            "distance": p[5],
-            "signal": p[6],
-            "rssi": p[7],
-            "radar_connected": p[9],
-        })
-        result[device] = entry
-
-    conn.close()
+            entry.update({
+                "ts": iso(p[0]),
+                "uptime": p[8],
+                "occupied": p[1],
+                "confidence": calculate_confidence(device),
+                "online": is_online(device),
+                "presence": p[2],
+                "stationary": p[3],
+                "moving": p[4],
+                "distance": p[5],
+                "signal": p[6],
+                "rssi": p[7],
+                "radar_connected": p[9],
+            })
+            result[device] = entry
 
     result["combined"] = {
         "occupied": get_combined_occupancy(),
@@ -1074,35 +1059,34 @@ def latest_all():
 @require_auth
 def restarts():
     """Restart counts per device, last 24h and 7d, plus the most recent."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
+    with db() as conn:
+        c = conn.cursor()
 
-    c.execute("""
-        SELECT device, COUNT(*)
-        FROM events
-        WHERE type = 'RESTART'
-          AND ts >= datetime('now','-24 hours')
-        GROUP BY device
-    """)
-    day = dict(c.fetchall())
+        c.execute("""
+            SELECT device, COUNT(*)
+            FROM events
+            WHERE type = 'RESTART'
+              AND ts >= datetime('now','-24 hours')
+            GROUP BY device
+        """)
+        day = dict(c.fetchall())
 
-    c.execute("""
-        SELECT device, COUNT(*)
-        FROM events
-        WHERE type = 'RESTART'
-          AND ts >= datetime('now','-7 days')
-        GROUP BY device
-    """)
-    week = dict(c.fetchall())
+        c.execute("""
+            SELECT device, COUNT(*)
+            FROM events
+            WHERE type = 'RESTART'
+              AND ts >= datetime('now','-7 days')
+            GROUP BY device
+        """)
+        week = dict(c.fetchall())
 
-    c.execute("""
-        SELECT device, MAX(ts)
-        FROM events
-        WHERE type = 'RESTART'
-        GROUP BY device
-    """)
-    last = dict(c.fetchall())
-    conn.close()
+        c.execute("""
+            SELECT device, MAX(ts)
+            FROM events
+            WHERE type = 'RESTART'
+            GROUP BY device
+        """)
+        last = dict(c.fetchall())
 
     devices = set(day) | set(week) | set(last)
     return jsonify({
@@ -1125,31 +1109,30 @@ def hourly():
     days = int(days)
     since = f"-{days - 1} days"
 
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT
-            strftime('%Y-%m-%d %H:00', ts, 'localtime'),
-            AVG(temp),
-            AVG(humidity)
-        FROM readings
-        WHERE device = ? AND ts >= datetime('now','localtime','start of day',?,'utc')
-        GROUP BY 1
-    """, (device, since))
-    env_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
-    # CO2 and pressure from whichever device reports them (like /api/air)
-    c.execute("""
-        SELECT
-            strftime('%Y-%m-%d %H:00', ts, 'localtime'),
-            AVG(co2),
-            AVG(pressure)
-        FROM readings
-        WHERE (co2 IS NOT NULL OR pressure IS NOT NULL)
-          AND ts >= datetime('now','localtime','start of day',?,'utc')
-        GROUP BY 1
-    """, (since,))
-    air_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT
+                strftime('%Y-%m-%d %H:00', ts, 'localtime'),
+                AVG(temp),
+                AVG(humidity)
+            FROM readings
+            WHERE device = ? AND ts >= datetime('now','localtime','start of day',?,'utc')
+            GROUP BY 1
+        """, (device, since))
+        env_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
+        # CO2 and pressure from whichever device reports them (like /api/air)
+        c.execute("""
+            SELECT
+                strftime('%Y-%m-%d %H:00', ts, 'localtime'),
+                AVG(co2),
+                AVG(pressure)
+            FROM readings
+            WHERE (co2 IS NOT NULL OR pressure IS NOT NULL)
+              AND ts >= datetime('now','localtime','start of day',?,'utc')
+            GROUP BY 1
+        """, (since,))
+        air_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
     occ_rows = hourly_occupancy_today(days)
 
     hours = sorted(set(env_rows) | set(air_rows) | set(occ_rows), reverse=True)
@@ -1172,34 +1155,33 @@ def hourly():
 @require_auth
 def air():
     """Latest CO2 + pressure, with a simple quality band."""
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
+    with db() as conn:
+        c = conn.cursor()
 
-    # CO2 — whichever device reports it
-    c.execute("""
-        SELECT ts, co2 FROM readings
-        WHERE co2 IS NOT NULL
-        ORDER BY id DESC LIMIT 1
-    """)
-    co2_row = c.fetchone()
+        # CO2 — whichever device reports it
+        c.execute("""
+            SELECT ts, co2 FROM readings
+            WHERE co2 IS NOT NULL
+            ORDER BY id DESC LIMIT 1
+        """)
+        co2_row = c.fetchone()
 
-    # Pressure + env — whichever device reports it
-    c.execute("""
-        SELECT ts, pressure, temp, humidity FROM readings
-        WHERE pressure IS NOT NULL
-        ORDER BY id DESC LIMIT 1
-    """)
-    env_row = c.fetchone()
+        # Pressure + env — whichever device reports it
+        c.execute("""
+            SELECT ts, pressure, temp, humidity FROM readings
+            WHERE pressure IS NOT NULL
+            ORDER BY id DESC LIMIT 1
+        """)
+        env_row = c.fetchone()
 
-    # Pressure as it was 3 hours ago
-    c.execute("""
-        SELECT pressure FROM readings
-        WHERE pressure IS NOT NULL
-          AND ts <= datetime('now','-3 hours')
-        ORDER BY id DESC LIMIT 1
-    """)
-    old = c.fetchone()
-    conn.close()
+        # Pressure as it was 3 hours ago
+        c.execute("""
+            SELECT pressure FROM readings
+            WHERE pressure IS NOT NULL
+              AND ts <= datetime('now','-3 hours')
+            ORDER BY id DESC LIMIT 1
+        """)
+        old = c.fetchone()
 
     co2 = co2_row[1] if co2_row else None
     if co2 is None:        band = None
@@ -1227,11 +1209,10 @@ def air():
 @app.route("/api/devices")
 @require_auth
 def devices():
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("SELECT device, last_seen FROM devices")
-    rows = c.fetchall()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT device, last_seen FROM devices")
+        rows = c.fetchall()
 
     now = utcnow()
     out = []
@@ -1314,17 +1295,16 @@ def notification_settings_api():
 @require_auth
 def stats24h_combined():
     '''Combined 24h env stats from ALL devices + radar occupancy'''
-    conn = sqlite3.connect(DB)
-    c = conn.cursor()
-    c.execute("""
-        SELECT temp, humidity
-        FROM readings
-        WHERE ts >= datetime('now','-24 hours')
-          AND temp IS NOT NULL
-          AND humidity IS NOT NULL
-    """)
-    rows = c.fetchall()
-    conn.close()
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT temp, humidity
+            FROM readings
+            WHERE ts >= datetime('now','-24 hours')
+              AND temp IS NOT NULL
+              AND humidity IS NOT NULL
+        """)
+        rows = c.fetchall()
 
     occ = occupancy_stats(24)
     temps = [r[0] for r in rows]
@@ -1340,5 +1320,38 @@ def stats24h_combined():
 # -------------------------
 # RUN
 # -------------------------
-if __name__ == "__main__":
+# Importing this module does no work (#73): prepare() sets up the database, start()
+# also connects to Firebase and MQTT and starts the background threads.
+def prepare():
+    """Create/migrate the DB schema and load the alert state that survives restarts (#5)."""
+    init_db()
+    cooldowns, alerted, offline = load_alert_state()
+    LAST_NOTIFICATION.clear(); LAST_NOTIFICATION.update(cooldowns)
+    RADAR_ALERTED.clear(); RADAR_ALERTED.update(alerted)
+    NODE_OFFLINE.clear(); NODE_OFFLINE.update(offline)
+
+
+def start():
+    """Everything the running backend needs except the web server itself."""
+    global mqttc, STARTED_AT
+    prepare()
+    init_firebase()
+    STARTED_AT = time.time()
+    mqttc = mqtt.Client()
+    mqttc.username_pw_set(MQTT_USER, MQTT_PASS)
+    mqttc.on_connect = on_connect
+    mqttc.on_message = on_message
+    mqttc.on_disconnect = on_disconnect
+    mqttc.connect(MQTT_HOST, MQTT_PORT)
+    mqttc.loop_start()
+    threading.Thread(target=hourly_occupancy_loop, daemon=True).start()
+    threading.Thread(target=node_check_loop, daemon=True).start()
+
+
+def main():
+    start()
     app.run(host="0.0.0.0", port=5000)
+
+
+if __name__ == "__main__":
+    main()

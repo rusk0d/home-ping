@@ -12,6 +12,7 @@ for name in ["firebase_admin", "firebase_admin.credentials", "firebase_admin.mes
 sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
 import server
+server.prepare()   # importing does no work (#73)
 server.init_db()
 def check(label, cond): print(("PASS " if cond else "FAIL ") + label)
 c = server.app.test_client()
@@ -22,6 +23,8 @@ def msg(retain=False):
         payload=json.dumps({"device": "home_ping_esp32", "presence": False, "moving": False,
                             "stationary": False, "signal": 0, "distance": 0}).encode()))
 
+server.mqttc = mock.MagicMock()   # created by start()
+server.mqttc = mock.MagicMock()   # created by start()
 server.mqttc.is_connected = lambda: True
 s, b = get()
 check("just started, no message yet -> 200", s == 200 and b["ok"] and b["last_message_age_s"] is None)
