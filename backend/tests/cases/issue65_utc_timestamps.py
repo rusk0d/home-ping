@@ -24,26 +24,27 @@ sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 builtins.print = lambda *a, **k: None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[DB]", "[STATUS]")) else _p(*a, **k)
 import server
+import config, state, store, nodes, ingest, api
 server.prepare()   # importing does no work (#73)
-db = lambda: sqlite3.connect(server.DB)
+db = lambda: sqlite3.connect(config.DB)
 q = lambda sql: db().execute(sql).fetchall()
 
 check("migration: summer row -2 h (CEST)", q("SELECT ts FROM readings WHERE device='a'")[0][0] == "2026-10-15 18:00:00")
 check("migration: winter row -1 h (CET)", q("SELECT ts FROM readings WHERE device='b'")[0][0] == "2026-10-30 19:00:00")
 check("migration: devices + events converted", q("SELECT last_seen FROM devices")[0][0] == "2026-10-15 18:00:00" and q("SELECT ts FROM events")[0][0] == "2026-10-15 18:00:00")
-server.init_db()
+store.init_db()
 check("second start doesn't convert again", q("SELECT ts FROM readings WHERE device='a'")[0][0] == "2026-10-15 18:00:00")
-check("ts_utc marker set", server.get_state("ts_utc", None) == "1")
+check("ts_utc marker set", store.get_state("ts_utc", None) == "1")
 
 # New rows are UTC
-mqtt = lambda topic, p: server.on_message(None, None, types.SimpleNamespace(retain=False, topic=topic, payload=json.dumps(p).encode()))
+mqtt = lambda topic, p: ingest.on_message(None, None, types.SimpleNamespace(retain=False, topic=topic, payload=json.dumps(p).encode()))
 mqtt("home/esp32/bme280", {"device": "home_ping_esp32", "temp_c": 22.0, "humidity": 45.0, "pressure": 1013.0, "uptime": 5})
 stored = datetime.strptime(q("SELECT ts FROM readings WHERE device='home_ping_esp32'")[0][0], "%Y-%m-%d %H:%M:%S")
 utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
 check("new reading stored in UTC", abs((stored - utc_now).total_seconds()) < 5)
 
 # API: ISO 8601 UTC
-c = server.app.test_client(); A = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}
+c = api.app.test_client(); A = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}
 get = lambda path: c.get(path, headers=A).get_json()
 ISO = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 l = get("/api/latest")
@@ -54,7 +55,7 @@ check("/api/latest_all ts ISO", bool(ISO.match(get("/api/latest_all")["home_ping
 devs = {d["device"]: d for d in get("/api/devices")}
 check("/api/devices last_seen ISO, old device offline, new online", ISO.match(devs["a"]["last_seen"]) and devs["a"]["online"] is False and devs["home_ping_esp32"]["online"] is True)
 check("/api/air ts ISO", bool(ISO.match(get("/api/air")["ts"])))
-server.log_event("x", "RESTART", "uptime 100s -> 5s")
+store.log_event("x", "RESTART", "uptime 100s -> 5s")
 check("/api/restarts last_restart ISO", bool(ISO.match(get("/api/restarts")["x"]["last_restart"])))
 
 # "today" stays local
@@ -66,6 +67,6 @@ check("/api/hourly ignores readings from before local midnight", all(r["avg_temp
 
 # Offline check uses UTC
 con = db(); con.execute("INSERT OR REPLACE INTO devices VALUES ('quiet', datetime('now','-400 seconds'))"); con.execute("INSERT OR REPLACE INTO devices VALUES ('fresh', datetime('now','-60 seconds'))"); con.commit(); con.close()
-server.STARTED_AT = time.time() - 1000
-server.check_nodes()
-check("offline check: 400 s quiet -> offline, 60 s -> not", "quiet" in server.NODE_OFFLINE and "fresh" not in server.NODE_OFFLINE)
+state.STARTED_AT = time.time() - 1000
+nodes.check_nodes()
+check("offline check: 400 s quiet -> offline, 60 s -> not", "quiet" in state.NODE_OFFLINE and "fresh" not in state.NODE_OFFLINE)

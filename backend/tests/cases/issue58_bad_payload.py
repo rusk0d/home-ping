@@ -13,17 +13,18 @@ sys.path.insert(0, backend)
 import builtins; _p = builtins.print; logged = []
 builtins.print = lambda *a, **k: logged.append(" ".join(map(str, a)))
 import server
+import config, ingest
 server.prepare()   # importing does no work (#73)
 sys.modules.update(saved)
 def check(label, cond): _p(("PASS " if cond else "FAIL ") + label)
 
 client = real_paho.Client(real_paho.CallbackAPIVersion.VERSION1)   # same as the backend
 check("paho re-raises callback errors by default", client.suppress_exceptions is False)
-client.on_message = server.on_message
+client.on_message = ingest.on_message
 def deliver(topic, payload):
     m = real_paho.MQTTMessage(topic=topic.encode()); m.payload = payload
     client._handle_on_message(m)          # paho's own dispatch path
-rows = lambda: sqlite3.connect(server.DB).execute("SELECT COUNT(*) FROM readings").fetchone()[0]
+rows = lambda: sqlite3.connect(config.DB).execute("SELECT COUNT(*) FROM readings").fetchone()[0]
 
 for label, topic, payload in [
     ("invalid UTF-8 on a reading topic", "home/esp32/bme280", b"\xff\xfe"),

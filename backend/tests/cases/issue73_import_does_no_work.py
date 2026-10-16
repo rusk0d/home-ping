@@ -12,18 +12,19 @@ sys.path.insert(0, backend)
 def check(label, cond): print(("PASS " if cond else "FAIL ") + label)
 threads_before = threading.active_count()
 import server
+import state, store, ingest, api
 paho = server.mqtt   # the module object server.py imported
 fa = sys.modules["firebase_admin"]
 check("import: no database file", not os.path.exists("data.db"))
-check("import: no MQTT client", server.mqttc is None and not paho.Client.called)
+check("import: no MQTT client", state.mqttc is None and not paho.Client.called)
 check("import: no Firebase", not fa.initialize_app.called)
 check("import: no threads", threading.active_count() == threads_before)
-check("health before start: 503, not a crash", server.app.test_client().get("/api/health").status_code == 503)
+check("health before start: 503, not a crash", api.app.test_client().get("/api/health").status_code == 503)
 
 server.start()
-check("start: database created", os.path.exists("data.db") and server.get_state("occupancy_armed") == "0")
-check("start: MQTT connected and looping", paho.Client.called and server.mqttc.connect.called and server.mqttc.loop_start.called)
-check("start: callbacks set", server.mqttc.on_message is server.on_message and server.mqttc.on_connect is server.on_connect)
+check("start: database created", os.path.exists("data.db") and store.get_state("occupancy_armed") == "0")
+check("start: MQTT connected and looping", paho.Client.called and state.mqttc.connect.called and state.mqttc.loop_start.called)
+check("start: callbacks set", state.mqttc.on_message is ingest.on_message and state.mqttc.on_connect is ingest.on_connect)
 check("start: Firebase initialised", fa.initialize_app.call_count == 1)
 check("start: 2 background threads", threading.active_count() == threads_before + 2)
 
@@ -36,9 +37,9 @@ class Conn:
     def execute(self, *a): return self.c.execute(*a)
     def commit(self): self.c.commit()
     def close(self): closed.append(1); self.c.close()
-with mock.patch.object(server.sqlite3, "connect", Conn):
+with mock.patch.object(store.sqlite3, "connect", Conn):
     try:
-        with server.db() as conn:
+        with store.db() as conn:
             conn.execute("SELECT * FROM no_such_table")
     except sqlite3.OperationalError:
         pass

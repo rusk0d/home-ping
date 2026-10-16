@@ -13,23 +13,24 @@ for name in ["firebase_admin", "firebase_admin.credentials", "firebase_admin.mes
 sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
 import server
+import config, store, alerts, ingest
 server.prepare()   # importing does no work (#73)
-server.init_db()
+store.init_db()
 def check(label, cond): print(("PASS " if cond else "FAIL ") + label)
 
 pushes = []
-server.send_push = lambda title, body, data: pushes.append(body) or True
+alerts.send_push = lambda title, body, data: pushes.append(body) or True
 
 def reading(device, moving=False, stationary=False, signal=0, distance=100):
-    server.handle_presence_data({"device": device, "presence": moving or stationary,
+    ingest.handle_presence_data({"device": device, "presence": moving or stationary,
         "moving": moving, "stationary": stationary, "signal": signal, "distance": distance,
         "rssi": -60, "uptime": 1000, "radar_connected": True})
 
 def age_rows(minutes):
     """Pretend every logged reading happened [minutes] earlier."""
-    con = sqlite3.connect(server.DB)
+    con = sqlite3.connect(config.DB)
     for (i, ts) in con.execute("SELECT id, ts FROM presence_readings").fetchall():
-        old = server.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S") - timedelta(minutes=minutes)
+        old = store.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S") - timedelta(minutes=minutes)
         con.execute("UPDATE presence_readings SET ts=? WHERE id=?", (old.strftime("%Y-%m-%d %H:%M:%S"), i))
     con.commit(); con.close()
 
@@ -40,7 +41,7 @@ def leave_for(minutes):
     reading("home_ping_esp32")
     age_rows(minutes)
 
-server.set_state("occupancy_armed", "1")
+store.set_state("occupancy_armed", "1")
 
 # 1. The real case: 70 min away, the hallway first sees a still target, then movement
 leave_for(70)
@@ -66,7 +67,7 @@ pushes.clear()
 leave_for(90)
 reading("home_ping_esp32", stationary=True, signal=40, distance=370)
 check("ghost: no push yet", pushes == [])
-server.set_state("arrival_started", str(time.time() - 200))   # window expired
+store.set_state("arrival_started", str(time.time() - 200))   # window expired
 reading("home_ping_esp32", moving=True, signal=100, distance=200)
 check("movement after the window -> no push", pushes == [])
 
@@ -79,12 +80,12 @@ check("30 min quiet (< 60) -> no push", pushes == [])
 
 # 5. Disarmed: the arrival is consumed but nothing is pushed
 pushes.clear()
-server.set_state("occupancy_armed", "0")
+store.set_state("occupancy_armed", "0")
 leave_for(90)
 reading("hallway_presence_esp32", stationary=True, signal=100)
 reading("hallway_presence_esp32", moving=True, signal=100)
 check("disarmed -> no push", pushes == [])
-con = sqlite3.connect(server.DB)
+con = sqlite3.connect(config.DB)
 ev = con.execute("SELECT value FROM events WHERE type='OCCUPANCY_ALERT'").fetchall()
 con.close()
 check("events logged for the 3 pushes", len(ev) == 3 and all(v[0].startswith("sent, after") for v in ev))
