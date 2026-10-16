@@ -67,6 +67,12 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
   (`radar_alerted:<device>`).
 - Cooldown keys: `HUMIDITY_<device>` (shared by high and low), `TEMP_<device>`,
   `RADAR_<device>`. The occupancy alert has **no cooldown key**.
+- Humidity and temperature alert **once per excursion** (#117): the push (or a muted alert)
+  sets `system_state` `env_alerted:HUMIDITY_<device>` (`high`/`low`) or `env_alerted:TEMP_<device>`
+  (`low`). While it is set, no further push for that condition. It is cleared when the value is
+  back in range by the hysteresis margin (`HUMIDITY_HYSTERESIS` 2 %RH, `TEMP_HYSTERESIS` 0.5 °C):
+  humidity < 63 after high, > 27 after low, temperature > 18.5. The 15-min cooldown still applies
+  on top, against flapping around the threshold. A failed send sets nothing (retried after 60 s).
 
 ## Notifications
 
@@ -75,8 +81,9 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 ### 1. Humidity high: `HUMIDITY_HIGH`
 
 - Trigger: an env MQTT message (no `presence`) with `humidity`
-  present (`temp_c` not needed), `humidity > 65`, and no humidity push for this
-  device in the last 900 s. Currently only `home_ping_esp32` via `home/esp32/bme280`.
+  present (`temp_c` not needed), `humidity > 65`, not already alerted for this excursion
+  (`env_alerted:HUMIDITY_<device>` ≠ `high`, see "Cooldowns and state"), and no humidity push for
+  this device in the last 900 s. Currently only `home_ping_esp32` via `home/esp32/bme280`.
 - Notification: title `Humidity Alert`, body `Humidity is high: {hum:.1f}%`
 - Data: `{"event": "HUMIDITY_HIGH", "device": "<device>"}` (plus `title`, `body`)
 - Also logs event `HUMIDITY_HIGH_ALERT`.
@@ -89,14 +96,15 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 ### 2. Humidity low: `HUMIDITY_LOW`
 
-- Trigger: same as above but `humidity < 25`. Shares the cooldown with high.
+- Trigger: same as above but `humidity < 25` (excursion flag `low`). Shares the cooldown with high.
 - Notification: title `Humidity Alert`, body `Humidity is low: {hum:.1f}%`
 - Data: `{"event": "HUMIDITY_LOW", "device": "<device>"}`
 - Logs event `HUMIDITY_LOW_ALERT`.
 
 ### 3. Temperature low: `TEMP`
 
-- Trigger: env message with `temp_c` present (`humidity` not needed), `temp_c < 18`, cooldown 900 s per device.
+- Trigger: env message with `temp_c` present (`humidity` not needed), `temp_c < 18`, not already
+  alerted for this excursion (`env_alerted:TEMP_<device>`, cleared above 18.5 °C), cooldown 900 s per device.
 - Notification: title `Temperature Alert`, body `Temperature is low on {device}: {temp:.1f}°C`
 - Data: `{"event": "TEMP", "device": "<device>"}`
 - Logs event `TEMP_ALERT`.
@@ -164,11 +172,11 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 | `data.event` | Title | Condition | Cooldown | Source |
 |---|---|---|---|---|
-| `HUMIDITY_HIGH` | Humidity Alert | humidity > 65 %RH | 15 min/device (shared with LOW) | env msg |
-| `HUMIDITY_LOW` | Humidity Alert | humidity < 25 %RH | 15 min/device (shared with HIGH) | env msg |
-| `TEMP` | Temperature Alert | temp < 18 °C | 15 min/device | env msg |
+| `HUMIDITY_HIGH` | Humidity Alert | humidity > 65 %RH | once per excursion (until < 63), 15 min/device shared with LOW | env msg |
+| `HUMIDITY_LOW` | Humidity Alert | humidity < 25 %RH | once per excursion (until > 27), 15 min/device shared with HIGH | env msg |
+| `TEMP` | Temperature Alert | temp < 18 °C | once per excursion (until > 18.5), 15 min/device | env msg |
 | `RADAR_DISCONNECTED` | Radar Disconnected | ≥12 consecutive `radar_connected=false` | once per outage | presence msg |
-| `OCCUPIED` | Occupancy Alert | armed, moving, ≥60 min quiet | none | presence msg |
+| `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥60 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
 | `NODE_STATUS` | Node offline / Node back online | no data for 5 min / data again | once per outage | 30 s check |
 
 ## Mismatches and issues

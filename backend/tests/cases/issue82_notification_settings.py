@@ -24,7 +24,9 @@ get = lambda: c.get("/api/notification_settings", headers=A).get_json()
 post = lambda body: c.post("/api/notification_settings", headers=A, json=body)
 mqtt = lambda topic, p: ingest.on_message(None, None, types.SimpleNamespace(retain=False, topic=topic, payload=json.dumps(p).encode()))
 def reset():
+    """A fresh excursion: no pushes, no cooldowns, no humidity/temperature excursion flags (#117)."""
     pushes.clear(); state.LAST_NOTIFICATION.clear()
+    con = db(); con.execute("DELETE FROM system_state WHERE key LIKE 'env_alerted:%'"); con.commit(); con.close()
 
 # --- API
 d = get()
@@ -47,7 +49,10 @@ mqtt("home/esp32/bme280", {"device": "home_ping_esp32", "temp_c": 15.0, "humidit
 check("humidity off: no humidity push, temp push sent", pushes == ["TEMP"])
 check("muted alert logged", (last_event("HUMIDITY_HIGH_ALERT") or "").startswith("muted (off)"))
 check("muted alert sets cooldown", "HUMIDITY_home_ping_esp32" in state.LAST_NOTIFICATION)
-post({"humidity": True}); reset()
+post({"humidity": True}); pushes.clear(); state.LAST_NOTIFICATION.clear()
+mqtt("home/esp32/bme280", {"device": "home_ping_esp32", "temp_c": 15.0, "humidity": 80.0, "uptime": 6})
+check("humidity back on mid-excursion: the muted excursion stays handled (#117)", pushes == [])
+reset()
 mqtt("home/esp32/bme280", {"device": "home_ping_esp32", "temp_c": 15.0, "humidity": 80.0, "uptime": 6})
 check("humidity back on: both push", sorted(pushes) == ["HUMIDITY_HIGH", "TEMP"])
 
