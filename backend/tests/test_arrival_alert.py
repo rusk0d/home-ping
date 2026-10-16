@@ -5,9 +5,8 @@ from support import check
 
 
 def test_arrival_alert(env):
-    import os, sys, tempfile, sqlite3, time
+    import sqlite3, time
     from datetime import timedelta
-    from unittest import mock
     import server
     import config, store, alerts, ingest
     server.prepare()   # importing does no work (#73)

@@ -6,8 +6,7 @@ from support import check
 
 
 def test_issue12_push_alerts(env):
-    import os, sys, json, tempfile, sqlite3, types
-    from unittest import mock
+    import json, sqlite3, types
 
     import server
     import config, state, store, alerts, ingest
@@ -42,11 +41,6 @@ def test_issue12_push_alerts(env):
         rows = con.execute("SELECT type, value FROM events WHERE type = ? ORDER BY id", (t,)).fetchall()
         con.close()
         return rows
-
-
-        print(("PASS " if cond else "FAIL ") + label)
-
-
 
     # 1. Data-only format
     mqtt("home/esp32/bme280", {"device": "home_ping_esp32", "temp_c": 22.0, "humidity": 70.0, "uptime": 10})

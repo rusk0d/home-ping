@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 import config
 import state
-from config import CONFIDENCE_MINUTES, DB, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, UPTIME_DROP_TOLERANCE
+from config import CONFIDENCE_MINUTES, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, UPTIME_DROP_TOLERANCE
 
 log = logging.getLogger(__name__)
 

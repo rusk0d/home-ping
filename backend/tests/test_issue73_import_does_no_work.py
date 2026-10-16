@@ -5,7 +5,7 @@ from support import check
 
 
 def test_issue73_import_does_no_work(env):
-    import os, sys, tempfile, threading
+    import os, sys, threading
     from unittest import mock
     sys.modules["firebase_admin"].get_app.side_effect = ValueError("no app")
     threads_before = threading.active_count()
