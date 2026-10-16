@@ -68,7 +68,9 @@ inferred then and hasn't been confirmed since.
 
 ### GET `/api/latest`
 
-Latest env reading for `home_ping_esp32` plus combined radar occupancy (the widget's data).
+Latest temperature/humidity plus combined radar occupancy (the widget's data). Since the node
+merge (#57) the env values come from the newest `readings` row of **whichever device** has
+`temp` or `humidity` (the BME280 moved boards), like `/api/air`.
 Always 200; fields are null when there is no data.
 
 ```json
@@ -78,11 +80,11 @@ Always 200; fields are null when there is no data.
 
 | Field | Type | Source |
 |---|---|---|
-| `ts` | string/null | latest `readings` row for `home_ping_esp32` |
+| `ts` | string/null | that row (newest with temp or humidity, any device) |
 | `temp` | number/null | °C |
 | `humidity` | number/null | %RH |
 | `uptime` | integer/null | s |
-| `online` | bool | `home_ping_esp32` heartbeat |
+| `online` | bool | heartbeat of the device that row came from |
 | `occupied` | 0/1/null | `get_combined_occupancy()`: 1 if any radar has ≥2 of its last 3 rows (within 2 min) occupied, null if no radar reported in 2 min |
 | `confidence` | integer 0–100/null | `calculate_combined_confidence()` (see "confidence" above) |
 
@@ -95,12 +97,19 @@ Latest state of every device, keyed by device ID, plus a `combined` entry.
 For each device with `readings` rows:
 
 ```json
-{"ts": "...", "temp": 22.4, "humidity": 48.3, "uptime": 86400,
- "co2": null, "pressure": 1013.6, "online": true, "co2_ok": null}
+{"ts": "...", "uptime": 86400, "online": true,
+ "temp": 22.4, "humidity": 48.3, "pressure": 1013.6, "env_ts": "...",
+ "co2": null, "co2_ok": null, "co2_ts": null}
 ```
 
-`co2_ok` comes from the device's latest `readings` row (`readings.co2_ok`): bool if
-that message had `co2_ok`, otherwise `null`. It survives backend restarts.
+A node can send env and CO₂ in separate messages (since #57 the CO₂ board also has the
+BME280), so each group comes from its own newest row (#11):
+- `ts`, `uptime`: the device's newest `readings` row of any kind.
+- `temp`, `humidity`, `pressure`, `env_ts`: its newest row with any of the three.
+- `co2`, `co2_ok`, `co2_ts`: its newest row with `co2` or `co2_ok`. `co2_ok` is a bool if
+  that message had `co2_ok` (survives backend restarts), else null; `co2` is null while the
+  sensor warms up or reads invalid.
+- A group the device never sent is all null.
 
 For each device with `presence_readings` rows, the radar fields are merged in.
 If the device has no env rows, a stub with `temp`/`humidity`/`co2`/`pressure` = null is used.
@@ -134,9 +143,11 @@ Full example (abridged):
 }
 ```
 
-Client: Android Home reads
-`home_ping_esp32.{temp, humidity, uptime}`, `hallway_presence_esp32.uptime`,
-`co2_sensor_esp32.{co2, uptime, co2_ok}`, `combined.{occupied, confidence}`.
+Client: Android Home reads temperature/humidity (+ `env_ts`) from the entry with the newest
+`env_ts`, and `co2`, `co2_ok` (+ `co2_ts`) from the entry with the newest `co2_ts` (since #57/#11:
+the main node after the merge, `co2_sensor_esp32` before; falls back to those IDs if the backend
+has no `env_ts`/`co2_ts`). Plus `uptime` per device for the device list (the retired
+`co2_sensor_esp32` only while `/api/devices` lists it) and `combined.{occupied, confidence}`.
 
 ### GET `/api/stats24h_combined`
 
@@ -165,7 +176,8 @@ days before it (since #82). Readings are kept 8 days, so 7 is the maximum. Anyth
 else → 400 `{"error": "days must be 1-7"}`.
 `hour` is a local-time label (`"YYYY-MM-DD HH:00"`, no zone). On the autumn DST change the
 repeated hour 02:00–03:00 falls into one bucket.
-Temperature/humidity averages come from `readings` for `device` (default `home_ping_esp32`).
+Temperature/humidity averages come from `readings` of `device` if given, else of any device
+that reports them (since #57; before: default `home_ping_esp32`).
 CO2/pressure averages come from `readings` of any device (like `/api/air`).
 Occupancy comes from `presence_readings` for `home_ping_esp32` only (`PRESENCE_DEVICE`).
 An hour appears if any of these has data.

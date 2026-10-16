@@ -105,19 +105,21 @@ def health():
 @app.route("/api/latest")
 @require_auth
 def latest():
-    """Latest temp/humidity from the main node + combined radar occupancy (widget)."""
-    device = "home_ping_esp32"
+    """Latest temp/humidity + combined radar occupancy (widget).
 
+    Temperature and humidity come from the newest reading of whichever device has them,
+    like /api/air: during the node merge the BME280 moved boards (#57).
+    """
     with db() as conn:
         c = conn.cursor()
         c.execute("""
-            SELECT ts, temp, humidity, uptime
+            SELECT ts, temp, humidity, uptime, device
             FROM readings
-            WHERE device = ?
+            WHERE temp IS NOT NULL OR humidity IS NOT NULL
             ORDER BY id DESC LIMIT 1
-        """, (device,))
-        row = c.fetchone() or (None, None, None, None)
-        c.execute("SELECT last_seen FROM devices WHERE device = ?", (device,))
+        """)
+        row = c.fetchone() or (None, None, None, None, None)
+        c.execute("SELECT last_seen FROM devices WHERE device = ?", (row[4],))
         dev = c.fetchone()
 
     online = False
@@ -156,27 +158,33 @@ def latest_all():
         result = {}
 
         # ---- Environmental readings ----
+        # A node can send env and CO2 in separate messages (since #57 the CO2 board has
+        # the BME280 too), so each comes from its own newest row, with its own timestamp (#11)
+        def newest(device, cols, where):
+            c.execute(f"SELECT ts, {cols} FROM readings WHERE device = ? AND ({where}) "
+                      "ORDER BY id DESC LIMIT 1", (device,))
+            return c.fetchone()
+
         c.execute("SELECT DISTINCT device FROM readings")
         for device in [row[0] for row in c.fetchall()]:
-            c.execute("""
-                SELECT ts, temp, humidity, uptime, co2, pressure, co2_ok
-                FROM readings
-                WHERE device = ?
-                ORDER BY id DESC LIMIT 1
-            """, (device,))
-            row = c.fetchone()
-            if not row:
+            last = newest(device, "uptime", "1")
+            if not last:
                 continue
+            env = newest(device, "temp, humidity, pressure",
+                         "temp IS NOT NULL OR humidity IS NOT NULL OR pressure IS NOT NULL")
+            co2 = newest(device, "co2, co2_ok", "co2 IS NOT NULL OR co2_ok IS NOT NULL")
 
             result[device] = {
-                "ts": iso(row[0]),
-                "temp": row[1],
-                "humidity": row[2],
-                "uptime": row[3],
-                "co2": row[4],
-                "pressure": row[5],
+                "ts": iso(last[0]),
+                "uptime": last[1],
                 "online": is_online(device),
-                "co2_ok": None if row[6] is None else bool(row[6]),
+                "temp": env[1] if env else None,
+                "humidity": env[2] if env else None,
+                "pressure": env[3] if env else None,
+                "env_ts": iso(env[0]) if env else None,
+                "co2": co2[1] if co2 else None,
+                "co2_ok": None if not co2 or co2[2] is None else bool(co2[2]),
+                "co2_ts": iso(co2[0]) if co2 else None,
             }
 
         # ---- Radar nodes: merge in, or add if they have no env readings ----
@@ -270,7 +278,9 @@ def restarts():
 @app.route("/api/hourly")
 @require_auth
 def hourly():
-    device = request.args.get("device", "home_ping_esp32")
+    # Temperature/humidity from one device if ?device= is given, else from whichever
+    # device reports them (the BME280 moved boards in the node merge, #57)
+    device = request.args.get("device")
     # days=1: today; days=N: today and the N-1 days before it (history screen, #82).
     # Readings are kept for 8 days, so 7 full days is the most there is.
     days = request.args.get("days", "1")
@@ -287,9 +297,10 @@ def hourly():
                 AVG(temp),
                 AVG(humidity)
             FROM readings
-            WHERE device = ? AND ts >= datetime('now','localtime','start of day',?,'utc')
+            WHERE (? IS NULL OR device = ?) AND (temp IS NOT NULL OR humidity IS NOT NULL)
+              AND ts >= datetime('now','localtime','start of day',?,'utc')
             GROUP BY 1
-        """, (device, since))
+        """, (device, device, since))
         env_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
         # CO2 and pressure from whichever device reports them (like /api/air)
         c.execute("""

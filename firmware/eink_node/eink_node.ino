@@ -90,8 +90,13 @@ ld2410 radar;
 // ========================
 const unsigned long UPDATE_INTERVAL   = 60000;  // BKK refresh, 1 min
 const unsigned long PRESENCE_INTERVAL = 5000;   // radar publish, 5 s
+// Partial refresh every minute (no flashing, a fraction of a second instead of ~2-3 s),
+// a full refresh at boot and every 30 min against the ghosting partial updates leave (#133)
+const unsigned long FULL_REFRESH_INTERVAL = 30UL * 60 * 1000;
 unsigned long lastUpdate = 0;
 unsigned long lastPresencePublish = 0;
+unsigned long lastFullRefresh = 0;
+bool hadFullRefresh = false;
 
 // ========================
 // NTP CONFIG
@@ -201,7 +206,9 @@ bool routeWanted(const String &routeId) {
   return false;
 }
 
-void fetchAllDepartures(TramDeparture departures[], int &count) {
+// Returns false if the departures couldn't be loaded (request, JSON or format error),
+// so the display can tell that apart from "no trams" (#118)
+bool fetchAllDepartures(TramDeparture departures[], int &count) {
   count = 0;
 
   WiFiClientSecure tls;
@@ -214,7 +221,7 @@ void fetchAllDepartures(TramDeparture departures[], int &count) {
   if (httpCode != HTTP_CODE_OK) {
     Serial.printf("BKK API error: %d\n", httpCode);
     http.end();
-    return;
+    return false;
   }
 
   String payload = http.getString();
@@ -226,12 +233,12 @@ void fetchAllDepartures(TramDeparture departures[], int &count) {
   if (error) {
     Serial.print("JSON parse error: ");
     Serial.println(error.c_str());
-    return;
+    return false;
   }
 
   if (!doc["data"]["entry"]["stopTimes"].is<JsonArray>()) {
     Serial.println("No stopTimes array");
-    return;
+    return false;
   }
 
   long long currentTime = doc["currentTime"].as<long long>() / 1000;
@@ -255,8 +262,11 @@ void fetchAllDepartures(TramDeparture departures[], int &count) {
                                    ? stopTime["predictedDepartureTime"].as<long long>()
                                    : departureTime;
 
-    int diff = (int)((predictedDepartureTime - currentTime) / 60);
-    if (diff < 0) diff = 0;
+    // BKK_URL asks for a couple of minutes back: skip trams that have already left.
+    // Checked in seconds: integer division would turn -30 s into 0' (#118).
+    long long secondsLeft = predictedDepartureTime - currentTime;
+    if (secondsLeft < 0) continue;
+    int diff = (int)(secondsLeft / 60);
 
     String headsign = stopTime["stopHeadsign"].as<String>();
     String routeText = references["routes"][routeId]["shortName"].as<String>();
@@ -283,6 +293,7 @@ void fetchAllDepartures(TramDeparture departures[], int &count) {
       }
     }
   }
+  return true;
 }
 
 // ========================
@@ -364,14 +375,22 @@ void fetchAndRender() {
   // Fetch all departures and sort by time
   TramDeparture departures[10];
   int count = 0;
-  fetchAllDepartures(departures, count);
+  bool loaded = fetchAllDepartures(departures, count);
 
   // Get current time
   struct tm timeinfo;
   bool hasTime = getLocalTime(&timeinfo);
 
-  // Draw display
-  display.setFullWindow();
+  // Draw display: the whole screen, as a full or a partial update (#133)
+  unsigned long nowMs = millis();
+  bool full = !hadFullRefresh || nowMs - lastFullRefresh >= FULL_REFRESH_INTERVAL;
+  if (full) {
+    display.setFullWindow();
+    hadFullRefresh = true;
+    lastFullRefresh = nowMs;
+  } else {
+    display.setPartialWindow(0, 0, display.width(), display.height());
+  }
   display.firstPage();
   do {
     display.fillScreen(GxEPD_WHITE);
@@ -450,10 +469,11 @@ void fetchAndRender() {
       display.setFont(&FreeSans9pt7b);
       display.setTextColor(GxEPD_BLACK);
       display.setCursor(60, 70);
-      display.print("No departures");
+      display.print(loaded ? "No departures" : "BKK unavailable");
     }
 
   } while (display.nextPage());
 
-  Serial.printf("Display updated! Showing %d departures\n", count);
+  Serial.printf("Display updated (%s, %lu ms)! Showing %d departures\n",
+                full ? "full" : "partial", millis() - nowMs, count);
 }
