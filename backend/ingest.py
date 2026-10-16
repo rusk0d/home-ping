@@ -19,6 +19,7 @@ from store import (
 )
 from alerts import alert, set_radar_alerted
 from nodes import handle_status, touch_device
+from server_checks import check_watchdogs
 
 log = logging.getLogger(__name__)
 
@@ -311,6 +312,10 @@ def summaries_loop():
         except Exception as e:
             log.warning("hourly rollup failed: %s", e)
         publish_summaries()
+        try:
+            check_watchdogs()   # backup overdue, disk almost full (#176)
+        except Exception as e:
+            log.warning("watchdog check failed: %s", e)
 
 
 # paho callback API v2 (#66). A refused connect also arrives here, as a failure code;
