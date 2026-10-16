@@ -8,7 +8,7 @@ from datetime import datetime
 
 import state
 from config import (
-    ARRIVAL_CONFIRM_SECONDS, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
+    ARRIVAL_CONFIRM_SECONDS, ENV_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
     NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
     PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD,
     TOPIC,
@@ -164,6 +164,15 @@ def on_message(client, userdata, msg):
         uptime = data.get("uptime", 0)
         co2 = data.get("co2")
         pressure = data.get("pressure")
+
+        # A broken or disconnected sensor reports values outside its range (e.g. 178 °C,
+        # 100 %, -121 hPa): drop temperature, humidity and pressure together, since they
+        # come from the same chip (#57)
+        bad = {k: data[k] for k, (lo, hi) in ENV_VALID.items()
+               if isinstance(data.get(k), (int, float)) and not lo <= data[k] <= hi}
+        if bad:
+            log.warning("%s: implausible env reading %s, dropped", device, bad)
+            temp = hum = pressure = None
 
         # co2_ok is stored with the reading so it survives a backend restart
         co2_ok = (1 if data["co2_ok"] else 0) if "co2_ok" in data else None

@@ -4,7 +4,7 @@ A Flask backend subscribes, stores data in SQLite and sends push
 notifications via Firebase. A small web page and an Android app display the data.
 
 # Layout
-- /firmware  Arduino sketches: co2_node, eink_node, main_node; shared code in
+- /firmware  Arduino sketches: main_node (radar, BME280, CO2), eink_node; shared code in
              firmware/libraries/HomePing (an Arduino library)
 - /backend   Flask app: server.py (entry point), config, state, store (SQLite,
              creates the DB schema on start), alerts, nodes, ingest (MQTT), api
