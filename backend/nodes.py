@@ -1,6 +1,7 @@
 """Device heartbeat and node offline / back online alerts (#13).
 """
 
+import logging
 import time
 from datetime import datetime
 
@@ -11,6 +12,8 @@ from config import (
 )
 from store import db, log_event, set_state, utcnow
 from alerts import alert
+
+log = logging.getLogger(__name__)
 
 
 # -------------------------
@@ -98,12 +101,12 @@ def node_check_loop():
         try:
             check_nodes()
         except Exception as e:
-            print("[NODES] offline check failed:", e)
+            log.error("offline check failed: %s", e)
 
 
 def handle_status(device, status):
     """home/esp32/<device>/status: "online" on connect, "offline" as the node's last will."""
-    print(f"[STATUS] {device}: {status}")
+    log.info("status %s: %s", device, status)
     log_event(device, "STATUS", status)
     if status == "online":
         touch_device(device)   # a sign of life; "offline" (sent by the broker) is not

@@ -10,7 +10,10 @@ sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 errors = []
-builtins.print = lambda *a, **k: errors.append(a) if a and str(a[0]).startswith("MQTT error") else (None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[ERROR]", "[DB]", "[STATUS]")) else _p(*a, **k))
+import logging
+class _Errors(logging.Handler):   # MQTT handler errors are logged since #66
+    def emit(self, r): errors.append(r.getMessage())
+logging.getLogger("ingest").addHandler(_Errors(level=logging.ERROR))
 import server
 import config, state, store, alerts, nodes, ingest
 server.prepare()   # importing does no work (#73)

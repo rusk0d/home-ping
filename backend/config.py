@@ -6,6 +6,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Logging (#66): DEBUG also logs every MQTT message (topic, payload, presence line);
+# INFO logs alerts, connects and state changes; WARNING/ERROR only problems.
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+
 # -------------------------
 # AUTH (HTTP Basic for the REST API)
 # -------------------------

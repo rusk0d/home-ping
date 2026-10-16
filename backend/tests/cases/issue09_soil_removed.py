@@ -30,10 +30,11 @@ auth = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}
 for path in ["/api/soil/latest", "/api/soil/history", "/api/soil/stats24h"]:
     check(f"{path} -> 404", c.get(path, headers=auth).status_code == 404)
 check("/api/latest_all still 200", c.get("/api/latest_all", headers=auth).status_code == 200)
-import builtins; _p = builtins.print
 errors = []
-builtins.print = lambda *a, **k: errors.append(a) if a and str(a[0]).startswith("MQTT error") else None
+import logging
+class _Errors(logging.Handler):   # MQTT handler errors are logged since #66
+    def emit(self, r): errors.append(r.getMessage())
+logging.getLogger("ingest").addHandler(_Errors(level=logging.ERROR))
 ingest.on_message(None, None, types.SimpleNamespace(retain=False, topic="home/esp32/soil", payload=json.dumps({"device": "soil_sensor_01", "moisture": 10, "raw": 3000}).encode()))
-builtins.print = _p
 check("stray soil message: no handler error", not errors)
 check("no soil push sent", not any("SOIL" in str(cl) for cl in alerts.messaging.send.call_args_list))
