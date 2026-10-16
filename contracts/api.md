@@ -143,9 +143,11 @@ Full example (abridged):
 }
 ```
 
-Client: Android Home reads
-`home_ping_esp32.{temp, humidity, uptime}`, `hallway_presence_esp32.uptime`,
-`co2_sensor_esp32.{co2, uptime, co2_ok}`, `combined.{occupied, confidence}`.
+Client: Android Home reads temperature/humidity (+ `env_ts`) from the entry with the newest
+`env_ts`, and `co2`, `co2_ok` (+ `co2_ts`) from the entry with the newest `co2_ts` (since #57/#11:
+the main node after the merge, `co2_sensor_esp32` before; falls back to those IDs if the backend
+has no `env_ts`/`co2_ts`). Plus `uptime` per device for the device list (the retired
+`co2_sensor_esp32` only while `/api/devices` lists it) and `combined.{occupied, confidence}`.
 
 ### GET `/api/stats24h_combined`
 
