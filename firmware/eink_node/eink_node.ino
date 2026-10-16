@@ -9,6 +9,7 @@
 #include <PubSubClient.h>
 #include <time.h>
 #include <ld2410.h>
+#include <esp_timer.h>
 #include "secrets.h"
 
 // ========================
@@ -16,7 +17,6 @@
 // ========================
 const char* ssid     = WIFI_SSID;
 const char* password = WIFI_PASS;
-const unsigned long REBOOT_INTERVAL = 43200000UL; // 12 hours
 
 // ========================
 // BKK API CONFIG
@@ -193,7 +193,9 @@ void publishPresence() {
   doc["distance"]        = distance;
   doc["signal"]          = signal;
   doc["rssi"]            = WiFi.RSSI();
-  doc["uptime"]          = millis() / 1000;
+  // 64-bit timer: millis() wraps after ~49.7 days, which the backend would log
+  // as a restart. Since #50 there is no scheduled reboot, so it can run that long.
+  doc["uptime"]          = (uint32_t)(esp_timer_get_time() / 1000000ULL);
 
   char payload[256];
   serializeJson(doc, payload);
@@ -400,12 +402,6 @@ void setup() {
 // ========================
 void loop() {
   unsigned long now = millis();
-
-  if (now >= REBOOT_INTERVAL) {
-    Serial.println("Scheduled reboot...");
-    delay(100); // let serial flush
-    ESP.restart();
-  }
 
   // WiFi watchdog
   if (WiFi.status() != WL_CONNECTED) {
