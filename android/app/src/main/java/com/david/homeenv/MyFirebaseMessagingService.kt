@@ -71,12 +71,12 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         manager.notify(id, notification)
     }
 
-    // Deprecated since Cloud Messaging 25.1 in favour of onRegistered (FID); see #153
-    @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
-    override fun onNewToken(token: String) {
-        super.onNewToken(token)
-        Log.i(TAG, "FCM token rotated")
-        // Token rotated: register the new one (this callback already runs off the main thread)
-        PushRegistration.register(this, token)
+    /**
+     * The installation is registered with FCM (replaces onNewToken, #153). Nothing to send
+     * to the backend: pushes go to topic "env", which the app subscribes to itself.
+     */
+    override fun onRegistered(installationId: String) {
+        super.onRegistered(installationId)
+        Log.i(TAG, "FCM registration changed")
     }
 }
