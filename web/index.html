@@ -367,6 +367,7 @@
   }
 
   // ---------- levels ----------
+  // Bands defined in contracts/api.md ("Level bands"); keep in sync with android ui/Levels.kt
   function co2Level(ppm) {
     if (ppm < 800)  return ['Fresh', 'good'];
     if (ppm < 1200) return ['OK', 'ok'];
