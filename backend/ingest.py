@@ -1,0 +1,256 @@
+"""MQTT ingestion: message callbacks, presence + arrival alert, hourly occupancy publish.
+"""
+
+import json
+import time
+from datetime import datetime
+
+import state
+from config import (
+    ARRIVAL_CONFIRM_SECONDS, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_LOW_THRESHOLD,
+    NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
+    PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, QUIET_MINUTES_BEFORE_ALERT, TEMP_THRESHOLD,
+    TOPIC,
+)
+from store import (
+    db, get_last_occupancy, get_state, log_event, log_presence, log_to_db, note_uptime,
+    set_state, utcnow,
+)
+from alerts import alert, set_radar_alerted
+from nodes import handle_status, touch_device
+
+
+def any_radar_quiet_minutes():
+    """Minutes since ANY radar last reported occupancy (call before logging the current row)."""
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT ts FROM presence_readings
+            WHERE occupied = 1
+            ORDER BY id DESC LIMIT 1
+        """)
+        row = c.fetchone()
+
+    if not row:
+        return 9999
+    last_occ = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+    return (utcnow() - last_occ).total_seconds() / 60
+
+
+def handle_presence_data(data):
+    """Handle LD2410C radar presence data — the only occupancy source."""
+    device = data.get("device", PRESENCE_DEVICE)
+    presence = 1 if data.get("presence", False) else 0
+    stationary = 1 if data.get("stationary", False) else 0
+    moving = 1 if data.get("moving", False) else 0
+    distance = int(data.get("distance", 0) or 0)
+    signal = int(data.get("signal", 0) or 0)
+    rssi = int(data.get("rssi", 0) or 0)
+    uptime = int(data.get("uptime", 0) or 0)
+    radar_connected = 1 if data.get("radar_connected", True) else 0
+
+    # Filter noise: moving always counts, stationary only with a decent signal
+    occupied = 1 if (moving or (stationary and signal >= PRESENCE_SIGNAL_THRESHOLD)) else 0
+
+    # How long has the whole flat been quiet? Read BEFORE logging this row.
+    quiet_minutes = any_radar_quiet_minutes()
+
+    log_presence(device, occupied, presence, stationary, moving,
+                 distance, signal, rssi, uptime, radar_connected)
+    touch_device(device)
+    note_uptime(device, uptime)
+
+    prev_occ = get_last_occupancy(device)
+    if prev_occ is not None and prev_occ != occupied:
+        log_event(device, "OCCUPANCY_CHANGE", "occupied" if occupied else "vacant")
+
+    now = time.time()
+
+    # -------------------------
+    # RADAR OFFLINE — only after it has been gone for a while,
+    # so a single eink-refresh blip does not notify
+    # -------------------------
+    if not radar_connected:
+        state.RADAR_FAIL_COUNT[device] = state.RADAR_FAIL_COUNT.get(device, 0) + 1
+    else:
+        state.RADAR_FAIL_COUNT[device] = 0
+        if device in state.RADAR_ALERTED:  # back: the next outage alerts again
+            set_radar_alerted(device, False)
+
+    # Once per outage (not every cooldown while it stays down)
+    last_radar_alert = state.LAST_NOTIFICATION.get(f"RADAR_{device}", 0)
+    if (state.RADAR_FAIL_COUNT.get(device, 0) >= 12
+            and device not in state.RADAR_ALERTED
+            and now - last_radar_alert > NOTIFICATION_COOLDOWN):
+        if alert(device, "RADAR_DISCONNECTED", "no frames from LD2410C",
+                 title="Radar Disconnected",
+                 body=f"{device}: LD2410C not responding",
+                 data={"event": "RADAR_DISCONNECTED", "device": device},
+                 cooldown_key=f"RADAR_{device}", kind="radar"):
+            set_radar_alerted(device, True)
+
+    # -------------------------
+    # OCCUPANCY ALERT — fires once per arrival, after a long quiet spell
+    # -------------------------
+    # The first occupied reading after the quiet spell starts an arrival; it is often
+    # stationary-only (the LD2410 sees a still target first), and it already ends the
+    # quiet spell. So movement from any radar within ARRIVAL_CONFIRM_SECONDS confirms it.
+    # A stationary ghost reading never moves and lets the window expire.
+    if occupied and quiet_minutes >= QUIET_MINUTES_BEFORE_ALERT:
+        set_state("arrival_started", str(now))
+        set_state("arrival_quiet", str(int(quiet_minutes)))
+    if occupied and moving and now - float(get_state("arrival_started")) <= ARRIVAL_CONFIRM_SECONDS:
+        set_state("arrival_started", "0")   # once per arrival
+        if get_state("occupancy_armed") == "1":
+            quiet = get_state("arrival_quiet")
+            where = "hallway" if "hallway" in device else "main room"
+            alert(device, "OCCUPANCY_ALERT", f"after {quiet} min quiet",
+                  title="Occupancy Alert",
+                  body=f"Movement in the {where} after {quiet} min of quiet ({distance}cm)",
+                  data={"event": "OCCUPIED", "device": device, "distance": str(distance)})
+
+    print(f"[PRESENCE] {device}: occupied={occupied} moving={moving} "
+          f"stationary={stationary} dist={distance}cm signal={signal} "
+          f"rssi={rssi} quiet={int(quiet_minutes)}min")
+
+
+def on_message(client, userdata, msg):
+    # Nothing may escape this callback: paho re-raises callback exceptions, which
+    # ends its network thread and silently stops all ingestion (#58). So the whole
+    # body is in the try, and the payload is decoded leniently (bad bytes -> U+FFFD).
+    try:
+        payload = msg.payload.decode("utf-8", errors="replace")
+        print(f"[MQTT] Received message on topic: {msg.topic}")
+        print(f"[MQTT] Payload: {payload}")
+        # The broker replays the last retained message of each topic when we
+        # (re)subscribe, with the retain flag set. That's an old reading: storing it
+        # would add a duplicate row with a fresh ts and could re-send alerts (#5).
+        # Live messages arrive without the flag. The firmware keeps retaining for
+        # the web page, which wants the last value immediately.
+        if msg.retain:
+            print(f"[MQTT] Skipping retained message on {msg.topic}")
+            return
+        state.LAST_MESSAGE_AT = time.time()
+
+        # home/esp32/<device>/status carries plain "online"/"offline" (#13)
+        parts = msg.topic.split("/")
+        if len(parts) == 4 and parts[3] == "status":
+            handle_status(parts[2], payload.strip())
+            return
+
+        data = json.loads(payload)
+
+        if "presence" in data:
+            handle_presence_data(data)
+            return
+
+        # ---- Everything else: environmental sensors. PIR fields are ignored. ----
+        device = data.get("device", "esp32")
+        temp = data.get("temp_c")
+        hum = data.get("humidity")
+        uptime = data.get("uptime", 0)
+        co2 = data.get("co2")
+        pressure = data.get("pressure")
+
+        # co2_ok is stored with the reading so it survives a backend restart
+        co2_ok = (1 if data["co2_ok"] else 0) if "co2_ok" in data else None
+
+        log_to_db(device, temp, hum, uptime, co2, pressure, co2_ok)
+        touch_device(device)
+        note_uptime(device, uptime)
+
+        now = time.time()
+
+        # Each alert only needs its own value (a node may send just one of them)
+
+        # -------------------------
+        # HUMIDITY ALERT
+        # -------------------------
+        last_hum_sent = state.LAST_NOTIFICATION.get(f"HUMIDITY_{device}", 0)
+        if hum is not None and now - last_hum_sent > NOTIFICATION_COOLDOWN:
+            if hum > HUMIDITY_HIGH_THRESHOLD:
+                alert(device, "HUMIDITY_HIGH_ALERT", f"humidity={hum}",
+                      title="Humidity Alert",
+                      body=f"Humidity is high: {hum:.1f}%",
+                      data={"event": "HUMIDITY_HIGH", "device": device},
+                      cooldown_key=f"HUMIDITY_{device}", kind="humidity")
+
+            elif hum < HUMIDITY_LOW_THRESHOLD:
+                alert(device, "HUMIDITY_LOW_ALERT", f"humidity={hum}",
+                      title="Humidity Alert",
+                      body=f"Humidity is low: {hum:.1f}%",
+                      data={"event": "HUMIDITY_LOW", "device": device},
+                      cooldown_key=f"HUMIDITY_{device}", kind="humidity")
+
+        # -------------------------
+        # TEMPERATURE ALERT
+        # -------------------------
+        last_temp_sent = state.LAST_NOTIFICATION.get(f"TEMP_{device}", 0)
+        if temp is not None and temp < TEMP_THRESHOLD and (now - last_temp_sent > NOTIFICATION_COOLDOWN):
+            alert(device, "TEMP_ALERT", f"temp={temp}",
+                  title="Temperature Alert",
+                  body=f"Temperature is low on {device}: {temp:.1f}°C",
+                  data={"event": "TEMP", "device": device},
+                  cooldown_key=f"TEMP_{device}", kind="temperature")
+
+    except Exception as e:
+        print("MQTT error:", repr(e), "on", getattr(msg, "topic", "?"))
+
+
+# -------------------------
+# MQTT SETUP
+# -------------------------
+def hourly_occupancy_today(days=1):
+    """{'YYYY-MM-DD HH:00': mean(occupied)*100} for PRESENCE_DEVICE since local midnight
+    (days - 1) days ago; days=1 is today."""
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT
+                strftime('%Y-%m-%d %H:00', ts, 'localtime'),
+                AVG(occupied)*100
+            FROM presence_readings
+            WHERE device = ? AND ts >= datetime('now','localtime','start of day',?,'utc')
+            GROUP BY 1
+        """, (PRESENCE_DEVICE, f"-{days - 1} days"))
+        rows = {r[0]: r[1] for r in c.fetchall()}
+    return rows
+
+
+def publish_hourly_occupancy():
+    occ = hourly_occupancy_today()
+    now = datetime.now()
+    day = now.strftime("%Y-%m-%d")
+    hours = []
+    for h in range(now.hour + 1):
+        v = occ.get(f"{day} {h:02d}:00")
+        hours.append({"hour": f"{h:02d}:00", "occupancy": round(v) if v is not None else None})
+    payload = {
+        "device": PRESENCE_DEVICE,
+        "date": day,
+        "updated": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "hours": hours,
+    }
+    state.mqttc.publish(OCCUPANCY_HOURLY_TOPIC, json.dumps(payload), qos=0, retain=True)
+
+
+def hourly_occupancy_loop():
+    while True:
+        time.sleep(OCCUPANCY_HOURLY_INTERVAL)
+        try:
+            publish_hourly_occupancy()
+        except Exception as e:
+            print("[MQTT] hourly occupancy publish failed:", e)
+
+
+def on_connect(client, userdata, flags, rc):
+    print(f"[MQTT] Connected, rc={rc}")
+    client.subscribe(TOPIC)
+    try:
+        publish_hourly_occupancy()
+    except Exception as e:
+        print("[MQTT] hourly occupancy publish failed:", e)
+
+
+def on_disconnect(client, userdata, rc):
+    print(f"[MQTT] Disconnected, rc={rc}")

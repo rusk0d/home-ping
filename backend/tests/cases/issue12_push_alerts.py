@@ -14,9 +14,10 @@ for name in ["firebase_admin", "firebase_admin.credentials", "firebase_admin.mes
 sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
 import server
+import config, state, store, alerts, ingest
 server.prepare()   # importing does no work (#73)
 
-m = server.messaging
+m = alerts.messaging
 sent = []        # (kwargs of each Message) for accepted sends
 
 
@@ -37,11 +38,11 @@ m.send.side_effect = ok_send
 
 
 def mqtt(topic, payload):
-    server.on_message(None, None, types.SimpleNamespace(retain=False, topic=topic, payload=json.dumps(payload).encode()))
+    ingest.on_message(None, None, types.SimpleNamespace(retain=False, topic=topic, payload=json.dumps(payload).encode()))
 
 
 def events(t):
-    con = sqlite3.connect(server.DB)
+    con = sqlite3.connect(config.DB)
     rows = con.execute("SELECT type, value FROM events WHERE type = ? ORDER BY id", (t,)).fetchall()
     con.close()
     return rows
@@ -72,15 +73,15 @@ mqtt("home/esp32/bme280", {"device": "hum_only_node", "humidity": 20.0, "uptime"
 check("humidity-only message sends HUMIDITY_LOW", sent[-1]["data"]["event"] == "HUMIDITY_LOW")
 
 # 3. Cooldown 15 min, and a failed send retries after 60 s instead of 15 min
-check("NOTIFICATION_COOLDOWN is 900 s", server.NOTIFICATION_COOLDOWN == 900)
+check("NOTIFICATION_COOLDOWN is 900 s", config.NOTIFICATION_COOLDOWN == 900)
 m.send.side_effect = Exception("FCM down")
 mqtt("home/esp32/bme280", {"device": "fail_node", "temp_c": 15.0, "uptime": 10})
 check("failed send logged as failed", events("TEMP_ALERT")[-1] == ("TEMP_ALERT", "failed, temp=15.0"))
 import time
-left = server.LAST_NOTIFICATION["TEMP_fail_node"] + server.NOTIFICATION_COOLDOWN - time.time()
+left = state.LAST_NOTIFICATION["TEMP_fail_node"] + config.NOTIFICATION_COOLDOWN - time.time()
 check(f"retry scheduled in ~60 s (got {left:.0f} s)", 55 <= left <= 61)
 m.send.side_effect = ok_send
-server.LAST_NOTIFICATION["TEMP_fail_node"] -= 61   # 61 s later
+state.LAST_NOTIFICATION["TEMP_fail_node"] -= 61   # 61 s later
 n = len(sent)
 mqtt("home/esp32/bme280", {"device": "fail_node", "temp_c": 15.0, "uptime": 20})
 check("retried after 60 s and sent", len(sent) == n + 1 and events("TEMP_ALERT")[-1][1].startswith("sent, "))
@@ -97,7 +98,7 @@ def radar_pushes():
 for _ in range(30):
     radar(False)
 check("one push after 30 disconnected messages", radar_pushes() == 1)
-server.LAST_NOTIFICATION["RADAR_hallway_presence_esp32"] = 0   # cooldown long over
+state.LAST_NOTIFICATION["RADAR_hallway_presence_esp32"] = 0   # cooldown long over
 for _ in range(5):
     radar(False)
 check("no repeat while still down, even after the cooldown", radar_pushes() == 1)
@@ -107,8 +108,8 @@ for _ in range(12):
 check("new outage after reconnect alerts again", radar_pushes() == 2)
 
 # 5. Occupancy arrival goes through alert() too
-server.set_state("occupancy_armed", "1") if hasattr(server, "set_state") else None
-con = sqlite3.connect(server.DB); con.execute("UPDATE system_state SET value='1' WHERE key='occupancy_armed'"); con.commit(); con.close()
+store.set_state("occupancy_armed", "1") if hasattr(server, "set_state") else None
+con = sqlite3.connect(config.DB); con.execute("UPDATE system_state SET value='1' WHERE key='occupancy_armed'"); con.commit(); con.close()
 mqtt("home/esp32/presence", {"device": "home_ping_esp32", "radar_connected": True, "presence": True,
                              "stationary": False, "moving": True, "distance": 150, "signal": 60, "rssi": -60, "uptime": 100})
 occ = [s for s in sent if s["data"].get("event") == "OCCUPIED"]

@@ -6,7 +6,7 @@ Status: draft, reverse-engineered from `backend/server.py` on branch `contracts-
 ## General
 
 - Engine: SQLite, file `data.db` in the backend's working directory (`DB = "data.db"`, relative path).
-- Schema owner: **`server.py` `init_db()`**, which runs on every start (`prepare()`, called by `start()`; since #73 importing the module does nothing).
+- Schema owner: **`store.py` `init_db()`** (backend), which runs on every start (`server.prepare()`, called by `start()`; since #73 importing the modules does nothing). "`server.py`" below means the backend as a whole.
   It uses `CREATE TABLE IF NOT EXISTS`, plus `ALTER TABLE readings ADD COLUMN`
   for every `readings` column except `id`/`ts`/`temp`/`humidity` (errors ignored
   if they already exist), so older databases are upgraded on start.
