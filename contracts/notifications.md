@@ -115,18 +115,27 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 ### 5. Occupancy arrival: `OCCUPIED`
 
-- Trigger: presence message where all of these hold:
-  - `system_state.occupancy_armed == '1'` (set by the Android switch via `POST /api/occupancy_arm`)
-  - derived `occupied == 1` **and** `moving == 1`
-  - `any_radar_quiet_minutes() >= 60` (`QUIET_MINUTES_BEFORE_ALERT`): no
-    `occupied=1` row from any radar in the last 60 min (see `db-schema.md` for the quirk)
-- No cooldown. It's naturally limited because the quiet window resets once occupancy is logged.
+- Trigger, in two steps:
+  1. An arrival starts with the first derived `occupied == 1` presence message (moving or
+     stationary) after `any_radar_quiet_minutes() >= 60` (`QUIET_MINUTES_BEFORE_ALERT`): no
+     `occupied=1` row from any radar in the last 60 min. The start time and quiet minutes are
+     kept in `system_state` (`arrival_started`, `arrival_quiet`).
+  2. The first presence message from any radar with `occupied == 1` **and** `moving == 1`
+     within `ARRIVAL_CONFIRM_SECONDS` (**120 s**) of that start confirms it, and the push is sent
+     if `system_state.occupancy_armed == '1'` (set by the Android switch via
+     `POST /api/occupancy_arm`). A start without movement in time (e.g. a stationary ghost
+     reading) expires without a push.
+- No cooldown. Once per arrival: confirming clears `arrival_started`, and the quiet window
+  resets once occupancy is logged.
+- Before this, movement was required on the very first reading after the quiet spell, so an
+  arrival first seen as a stationary target never alerted.
 - Notification: title `Occupancy Alert`,
   body `Movement in the {where} after {N} min of quiet ({distance}cm)`. `where` is
   `hallway` if the device ID contains `"hallway"`, else `main room`.
 - Data: `{"event": "OCCUPIED", "device": "<device>", "distance": "<int as string>"}`
 - Logs event `OCCUPANCY_ALERT`.
 - With no `occupied=1` row in the table at all, quiet = 9999, so the body reads "after 9999 min of quiet".
+- `N` is the quiet spell that ended when the arrival started, not the time since the moving reading.
 
 ### 6. Node offline / back online: `NODE_STATUS` (since #13)
 
