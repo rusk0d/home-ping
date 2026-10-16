@@ -97,8 +97,11 @@ unsigned long lastPresencePublish = 0;
 // NTP CONFIG
 // ========================
 const char* NTP_SERVER = "pool.ntp.org";
-const long GMT_OFFSET_SEC = 3600;      // GMT+1 (Budapest)
-const int DAYLIGHT_OFFSET_SEC = 0;     // No DST - adjust manually when needed
+// Budapest with automatic daylight saving time (#53): CET (UTC+1), CEST (UTC+2) from
+// the last Sunday of March 02:00 to the last Sunday of October 03:00. Same rule as
+// the tz database's Europe/Budapest.
+const char* TIME_ZONE = "CET-1CEST,M3.5.0,M10.5.0/3";
+const uint32_t NTP_FIRST_SYNC_MS = 10000;  // wait this long at boot for the first sync
 
 // ========================
 // MQTT CLIENT
@@ -367,8 +370,15 @@ void setup() {
   }
   Serial.println("\nWiFi connected");
 
-  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
-  Serial.println("Time sync started");
+  configTzTime(TIME_ZONE, NTP_SERVER);
+  // Wait for the first sync so the first screen already has the time (and the BKK
+  // certificate check sees a real date). Without it, the next refresh fills it in.
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo, NTP_FIRST_SYNC_MS)) {
+    Serial.println(&timeinfo, "Time synced: %Y-%m-%d %H:%M:%S %Z");
+  } else {
+    Serial.println("Time not synced yet, continuing");
+  }
 
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
