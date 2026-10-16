@@ -19,7 +19,7 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 |---|---|
 | `firmware/` | Arduino sketches: `main_node` (radar, BME280, MH-Z19 CO₂; merged with the former CO₂ node in #57), `eink_node` (hallway radar + e-ink display) |
 | `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `ingest` (MQTT) and `api` modules; `test_push.py`, nightly `backup_db.py` |
-| `web/` | Single-file dashboard (`index.html`), connects to MQTT directly from the browser |
+| `web/` | Dashboard (`index.html` + `app.js`), connects to MQTT directly from the browser; `nginx/` has its security headers |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
 | `contracts/` | MQTT topics/payloads, REST API, push notifications, DB schema: the source of truth |
 | `audit/` | Audit and code-review reports |
@@ -59,7 +59,8 @@ in its working directory.
   the Android preview APK on every PR (`.github/workflows/ci.yml`).
 - **Web:** serve `web/` (with `config.js`, which holds only the broker URL) from any static
   web server. Each person signs in with their own read-only MQTT account; see
-  `contracts/mqtt.md` → "Web users" for adding one.
+  `contracts/mqtt.md` → "Web users" for adding one. Deploy `index.html` and `app.js`
+  together, and set up the security headers once (see "Web security headers").
 - **Android:** `./gradlew assembleDebug` in `android/`. The `preview` build type
   (`./gradlew assemblePreview`) runs without Firebase.
 
@@ -118,6 +119,29 @@ MQTT, gets live readings and can read the database, and 503 otherwise (see
 `contracts/api.md`). Point a free external monitor at `https://<your domain>/api/health`,
 e.g. UptimeRobot (HTTP(s) monitor, 5 min interval, alert by email or its phone app).
 Because it runs off the server, it also notices when nginx or the whole VPS is down.
+
+## Web security headers
+
+`web/nginx/security-headers.conf` adds HSTS, `nosniff`, `Referrer-Policy`, a
+Content-Security-Policy and hides the nginx version. The CSP allows scripts only from the
+site itself and unpkg (mqtt.js, pinned with SRI), and connections only to the broker. That
+matters because "remember me" keeps the MQTT password in the browser's `localStorage`.
+Install once (the `sed` fills in the broker host from the deployed `config.js`):
+
+```
+scp web/nginx/security-headers.conf root@<server>:/etc/nginx/snippets/home-ping-headers.conf
+# on the server:
+host=$(grep -o "wss://[^/']*" /var/www/<site>/config.js | cut -c7-); echo "$host"
+sed -i "s/BROKER_HOST/$host/" /etc/nginx/snippets/home-ping-headers.conf
+# add this line to the site's HTTPS server block (next to "root"):
+#     include snippets/home-ping-headers.conf;
+nginx -t && systemctl reload nginx
+curl -sI https://<your domain>/ | grep -iE "^(server|content-security|strict)"
+```
+
+After changing the broker URL in `config.js`, run the `sed` step again on a fresh copy.
+Then open the page with the browser's console open: it should connect, with no
+"Refused to …" (CSP) messages.
 
 ## API brute-force protection
 
