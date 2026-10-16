@@ -30,9 +30,9 @@ const unsigned long ENV_INTERVAL     = 30000;   // temp/hum/pressure: every 30s
 const unsigned long WARMUP_MS = 180000;
 
 // BME280 (I2C), moved here from the old main node (node merge step 1, #57).
-// GPIO 16/17 were the old main node's radar UART; the radar needs other pins here.
-#define I2C_SDA 16
-#define I2C_SCL 17
+// The ESP32's default I2C pins, as on the old main node.
+#define I2C_SDA 21
+#define I2C_SCL 22
 // The module is at 0x76 or 0x77 depending on its SDO pin; both are tried
 const uint8_t BME_ADDRESSES[] = {0x76, 0x77};
 // Next to the MH-Z19 (heated lamp) the sensor reads high; set after comparing with a
