@@ -84,6 +84,29 @@
   }
   .banner code { font-size: 0.9em; }
 
+  /* Login (#99): each person signs in with their own read-only MQTT account */
+  .login {
+    max-width: 360px; margin: 0 auto 28px; padding: 20px;
+    background: var(--card); border: 1px solid var(--card-edge); border-radius: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .login[hidden] { display: none; }
+  .login h2 { margin: 0; font-size: 1.1rem; }
+  .login label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+  .login input[type=text], .login input[type=password] {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--card-edge); border-radius: 8px; padding: 8px 10px;
+  }
+  .login .remember { flex-direction: row; align-items: center; gap: 8px; }
+  .login button {
+    font: inherit; font-weight: 600; padding: 9px; border: 0; border-radius: 8px;
+    background: var(--good); color: #0f1218; cursor: pointer;
+  }
+  .login .error { color: var(--bad); font-size: 0.85rem; margin: 0; }
+  .login .error:empty { display: none; }
+  .who { font-size: 0.85rem; color: var(--muted); }
+  .who a { color: inherit; margin-left: 6px; }
+
   .grid {
     display: grid; gap: 16px;
     grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -181,12 +204,24 @@
 <div class="wrap">
   <header>
     <h1>Home Ping<small>Live readings over MQTT</small></h1>
-    <span class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></span>
+    <span>
+      <span class="who" id="who" hidden><span id="whoName"></span><a href="#" id="logout">Log out</a></span>
+      <span class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></span>
+    </span>
   </header>
+
+  <form class="login" id="login" hidden autocomplete="on">
+    <h2>Sign in</h2>
+    <label>User <input type="text" id="loginUser" name="username" autocomplete="username" required></label>
+    <label>Password <input type="password" id="loginPass" name="password" autocomplete="current-password" required></label>
+    <label class="remember"><input type="checkbox" id="loginRemember"> Remember me on this device</label>
+    <p class="error" id="loginError"></p>
+    <button type="submit">Sign in</button>
+  </form>
 
   <div class="banner" id="configError" hidden>
     <strong>No MQTT config.</strong> Create <code>web/config.js</code> defining
-    <code>MQTT_CONFIG = { url, username, password }</code> (see <code>config.example.js</code>).
+    <code>MQTT_CONFIG = { url }</code> (see <code>config.example.js</code>).
   </div>
 
   <section class="grid">
@@ -612,37 +647,94 @@
     $('statusText').textContent = text;
   }
 
-  if (typeof MQTT_CONFIG === 'undefined') {
-    $('configError').hidden = false;
-    setStatus('down', 'Not configured');
-  } else {
-    // Back off between reconnects (5 s doubling to 30 s). mqtt.js retries every 1 s by
-    // default, which floods nginx with errors while the broker is down and can get the
-    // viewer's IP banned by fail2ban.
-    const RECONNECT_MIN = 5000, RECONNECT_MAX = 30000;
-    const client = mqtt.connect(MQTT_CONFIG.url, {
-      username: MQTT_CONFIG.username,
-      password: MQTT_CONFIG.password,
+  // ---------- login (#99) ----------
+  // Each person has their own read-only MQTT account. The login is kept only after the
+  // broker accepted it: in sessionStorage (this tab) or, with "remember me", localStorage.
+  const LOGIN_KEY = 'homeping.login';
+  function store(remember) {
+    try { return remember ? localStorage : sessionStorage; } catch (e) { return null; }
+  }
+  function loadLogin() {
+    for (const remember of [true, false]) {
+      try {
+        const saved = JSON.parse(store(remember)?.getItem(LOGIN_KEY) || 'null');
+        if (saved && saved.username) return { ...saved, remember };
+      } catch (e) { /* storage blocked or corrupt: ask again */ }
+    }
+    return null;
+  }
+  function saveLogin(login) {
+    clearLogin();
+    try { store(login.remember)?.setItem(LOGIN_KEY, JSON.stringify({ username: login.username, password: login.password })); } catch (e) {}
+  }
+  function clearLogin() {
+    for (const remember of [true, false]) { try { store(remember)?.removeItem(LOGIN_KEY); } catch (e) {} }
+  }
+
+  function showLogin(message) {
+    $('login').hidden = false;
+    $('who').hidden = true;
+    $('loginError').textContent = message || '';
+    setStatus('down', 'Signed out');
+    $(message ? 'loginPass' : 'loginUser').focus();
+  }
+
+  // ---------- connection ----------
+  function setStatus(state, text) {
+    $('status').className = 'status ' + state;
+    $('statusText').textContent = text;
+  }
+
+  // Back off between reconnects (5 s doubling to 30 s). mqtt.js retries every 1 s by
+  // default, which floods nginx with errors while the broker is down and can get the
+  // viewer's IP banned by fail2ban.
+  const RECONNECT_MIN = 5000, RECONNECT_MAX = 30000;
+  let client = null;
+
+  function connect(login) {
+    $('login').hidden = true;
+    setStatus('', 'Connecting…');
+    let accepted = false;
+    const c = client = mqtt.connect(MQTT_CONFIG.url, {
+      username: login.username,
+      password: login.password,
       reconnectPeriod: RECONNECT_MIN
     });
 
-    client.on('connect', () => {
-      client.options.reconnectPeriod = RECONNECT_MIN;
+    c.on('connect', () => {
+      if (!accepted) {
+        accepted = true;
+        saveLogin(login);
+        $('whoName').textContent = login.username;
+        $('who').hidden = false;
+      }
+      c.options.reconnectPeriod = RECONNECT_MIN;
       setStatus('live', 'Live');
-      client.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC, TOPIC_PRESENCE, TOPIC_STATUS], (err, granted) => {
+      c.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC, TOPIC_PRESENCE, TOPIC_STATUS], (err, granted) => {
         if (err) console.error('MQTT subscribe failed', err);
-        // QoS 128 = refused, e.g. the read-only user's ACL doesn't cover the topic
+        // QoS 128 = refused, e.g. the user's ACL doesn't cover the topic
         (granted || []).filter(g => g.qos === 128).forEach(g => console.warn('Subscription refused by the broker:', g.topic));
       });
     });
-    client.on('reconnect', () => {
-      client.options.reconnectPeriod = Math.min(client.options.reconnectPeriod * 2, RECONNECT_MAX);
+    c.on('reconnect', () => {
+      c.options.reconnectPeriod = Math.min(c.options.reconnectPeriod * 2, RECONNECT_MAX);
       setStatus('', 'Reconnecting…');
     });
-    client.on('offline', () => setStatus('down', 'Offline'));
-    client.on('error', err => { console.error('MQTT error', err); setStatus('down', 'Connection error'); });
+    c.on('offline', () => { if (client === c) setStatus('down', 'Offline'); });
+    c.on('error', err => {
+      console.error('MQTT error', err);
+      // CONNACK 4 = bad user name or password, 5 = not authorized: don't retry, ask again
+      if (err && (err.code === 4 || err.code === 5)) {
+        c.end(true);
+        client = null;
+        clearLogin();
+        showLogin('Wrong user name or password.');
+        return;
+      }
+      setStatus('down', 'Connection error');
+    });
 
-    client.on('message', (topic, message, packet) => {
+    c.on('message', (topic, message, packet) => {
       const status = topic.match(STATUS_RE);
       if (status) { onStatus(status[1], message.toString()); return; }
       let data;
@@ -653,6 +745,31 @@
       else if (topic === TOPIC_OCC) onOcc(data);
       else if (topic === TOPIC_PRESENCE && data.device) noteNode(data.device, data, packet.retain);
     });
+  }
+
+  $('login').addEventListener('submit', e => {
+    e.preventDefault();
+    connect({
+      username: $('loginUser').value.trim(),
+      password: $('loginPass').value,
+      remember: $('loginRemember').checked
+    });
+    $('loginPass').value = '';
+  });
+  $('logout').addEventListener('click', e => {
+    e.preventDefault();
+    if (client) client.end(true);
+    client = null;
+    clearLogin();
+    showLogin();
+  });
+
+  if (typeof MQTT_CONFIG === 'undefined') {
+    $('configError').hidden = false;
+    setStatus('down', 'Not configured');
+  } else {
+    const saved = loadLogin();
+    if (saved) connect(saved); else showLogin();
   }
 </script>
 </body>
