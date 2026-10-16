@@ -2,6 +2,8 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <MHZ19.h>
+#include <Wire.h>
+#include <Adafruit_BME280.h>
 #include "esp_system.h"
 #include <HomePing.h>   // firmware/libraries/HomePing (#75)
 #include "secrets.h"
@@ -12,10 +14,12 @@
 
 // WIFI_SSID, WIFI_PASS, MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASS come from secrets.h
 
-const char* MQTT_TOPIC  = "home/esp32/co2";
-const char* DEVICE_NAME = "co2_sensor_esp32";
+const char* MQTT_TOPIC     = "home/esp32/co2";
+const char* MQTT_TOPIC_ENV = "home/esp32/bme280";   // same topic and payload as the old main node
+const char* DEVICE_NAME    = "co2_sensor_esp32";
 
 const unsigned long PUBLISH_INTERVAL = 60000;   // every minute is plenty for CO2
+const unsigned long ENV_INTERVAL     = 30000;   // temp/hum/pressure: every 30s
 
 // MH-Z19C on UART1
 #define CO2_RX   25     // <- sensor Tx
@@ -25,14 +29,27 @@ const unsigned long PUBLISH_INTERVAL = 60000;   // every minute is plenty for CO
 // The sensor needs ~3 min after power-up before readings mean anything
 const unsigned long WARMUP_MS = 180000;
 
+// BME280 (I2C), moved here from the old main node (node merge step 1, #57).
+// The ESP32's default I2C pins, as on the old main node.
+#define I2C_SDA 21
+#define I2C_SCL 22
+// The module is at 0x76 or 0x77 depending on its SDO pin; both are tried
+const uint8_t BME_ADDRESSES[] = {0x76, 0x77};
+// Next to the MH-Z19 (heated lamp) the sensor reads high; set after comparing with a
+// reference thermometer
+const float TEMP_OFFSET = 0.0;
+
 /* =======================
    GLOBALS
    ======================= */
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 MHZ19 mhz;
+Adafruit_BME280 bme;
 
+bool bmeReady = false;
 unsigned long lastPublish = 0;
+unsigned long lastEnvPublish = 0;
 StaticJsonDocument<256> doc;
 
 /* =======================
@@ -72,6 +89,51 @@ void publishCO2() {
   }
 }
 
+// Same payload as the old main node (contracts/mqtt.md, home/esp32/bme280)
+void publishEnv() {
+  if (!bmeReady) return;   // reported once at boot
+  float tempC    = bme.readTemperature() + TEMP_OFFSET;
+  float humidity = bme.readHumidity();
+  float pressure = bme.readPressure() / 100.0F;
+
+  if (isnan(tempC) || isnan(humidity) || isnan(pressure)) {
+    Serial.println("BME280 read failed, skipping env publish");
+    return;
+  }
+
+  doc.clear();
+  doc["device"]   = DEVICE_NAME;
+  doc["temp_c"]   = tempC;
+  doc["humidity"] = humidity;
+  doc["pressure"] = pressure;
+  doc["uptime"]   = hpUptimeSeconds();
+
+  char payload[256];
+  serializeJson(doc, payload);
+
+  if (mqttClient.publish(MQTT_TOPIC_ENV, payload, true)) {
+    Serial.print("Env: ");
+    Serial.println(payload);
+  } else {
+    Serial.println("Env publish failed");
+  }
+}
+
+// Tries both addresses, twice: the sensor sometimes misses the very first attempt
+bool initBme() {
+  for (int attempt = 0; attempt < 2; attempt++) {
+    for (uint8_t addr : BME_ADDRESSES) {
+      if (bme.begin(addr, &Wire)) {
+        Serial.printf("BME280 initialized at 0x%02X\n", addr);
+        return true;
+      }
+    }
+    delay(1000);
+  }
+  Serial.println("BME280 NOT found (check SDA/SCL wiring), continuing without it");
+  return false;
+}
+
 /* =======================
    SETUP
    ======================= */
@@ -81,6 +143,10 @@ void setup() {
   Serial.printf("Boot reason: %d\n", esp_reset_reason());
   Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
   Serial.println("Booting...");
+
+  Wire.begin(I2C_SDA, I2C_SCL);
+  delay(100);
+  bmeReady = initBme();
 
   Serial1.begin(CO2_BAUD, SERIAL_8N1, CO2_RX, CO2_TX);
   mhz.begin(Serial1);
@@ -110,6 +176,11 @@ void loop() {
     lastPublish = now;
     Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
     publishCO2();
+  }
+
+  if (now - lastEnvPublish >= ENV_INTERVAL) {
+    lastEnvPublish = now;
+    publishEnv();
   }
 
   delay(100);
