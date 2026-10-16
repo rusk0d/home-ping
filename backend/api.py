@@ -12,7 +12,7 @@ from firebase_admin import messaging
 
 import state
 from config import (
-    AUTH_PASS, AUTH_USER, HEALTH_MAX_MESSAGE_AGE, HEARTBEAT_TIMEOUT, HHMM, HOURLY_MAX_DAYS,
+    AUTH_PASS, AUTH_USER, DAILY_MAX_DAYS, HEALTH_MAX_MESSAGE_AGE, HEARTBEAT_TIMEOUT, HHMM, HOURLY_MAX_DAYS,
     NOTIFY_KINDS,
 )
 from store import (
@@ -332,6 +332,39 @@ def hourly():
             "avg_occupancy": round(o, 0) if o is not None else None,
         })
     return jsonify(out)
+
+
+@app.route("/api/daily")
+@require_auth
+def daily():
+    """One entry per local day from the hourly table (#129), newest first: long ranges
+    beyond the 8 days of raw readings. Today has only its complete hours."""
+    days = request.args.get("days", "30")
+    if not days.isdigit() or not 1 <= int(days) <= DAILY_MAX_DAYS:
+        return jsonify({"error": f"days must be 1-{DAILY_MAX_DAYS}"}), 400
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT date(hour, 'localtime'),
+                   AVG(temp_avg), MIN(temp_min), MAX(temp_max),
+                   AVG(humidity_avg), MIN(humidity_min), MAX(humidity_max),
+                   AVG(co2_avg), MAX(co2_max), AVG(pressure_avg),
+                   SUM(occupancy) / 100, COUNT(*)
+            FROM hourly
+            WHERE hour >= datetime('now','localtime','start of day',?,'utc')
+            GROUP BY 1 ORDER BY 1 DESC
+        """, (f"-{int(days) - 1} days",)).fetchall()
+
+    def r(v, digits=1):
+        return None if v is None else round(v, digits)
+    return jsonify([{
+        "date": d,
+        "avg_temp": r(t), "min_temp": r(tmin), "max_temp": r(tmax),
+        "avg_humidity": r(hu), "min_humidity": r(humin), "max_humidity": r(humax),
+        "avg_co2": None if co2 is None else round(co2), "max_co2": co2max,
+        "avg_pressure": r(pr),
+        "occupied_hours": r(occ),
+        "hours": n,
+    } for d, t, tmin, tmax, hu, humin, humax, co2, co2max, pr, occ, n in rows])
 
 
 @app.route("/api/air")

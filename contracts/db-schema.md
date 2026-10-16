@@ -120,6 +120,27 @@ Known keys:
 | `notify:<kind>` | `'1'` / `'0'` per alert type (`humidity`, `temperature`, `radar`, `nodes`); missing = `'1'` | no | `POST /api/notification_settings` (#82) | `alert()` via `alert_muted()`, `GET /api/notification_settings` |
 | `quiet_hours` | `'1'` / `'0'`; missing = `'0'` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 | `quiet_start` / `quiet_end` | `"HH:MM"`, server local time; missing = `22:00` / `07:00` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
+| `hourly_until` | `"YYYY-MM-DD HH:00:00"` UTC: the hour `rollup_hourly()` last stopped at (the then-current, incomplete hour); missing = never ran | no | `rollup_hourly()` (#129) | `rollup_hourly()` |
+
+### `hourly` (long-term history, since #129)
+
+One row per **complete** hour, all devices combined (like `/api/hourly` without `?device=`).
+Filled by `store.rollup_hourly()` from `readings` and `presence_readings`, which are only kept
+8 days: at startup (`server.prepare()`, catches up after downtime; the first run backfills
+whatever raw rows exist) and in the 300 s summaries loop, where it only does work once
+another hour has completed. Each run redoes the hour before `hourly_until` (late rows) and
+adds every completed hour since; an hour without any rows gets no row.
+
+| Column | Type | Null? | Meaning |
+|---|---|---|---|
+| `hour` | TEXT PK | no | start of the hour, UTC, `"YYYY-MM-DD HH:00:00"` |
+| `temp_avg` / `temp_min` / `temp_max` | REAL | yes | from `readings.temp`, °C |
+| `humidity_avg` / `humidity_min` / `humidity_max` | REAL | yes | from `readings.humidity`, % |
+| `co2_avg` (REAL) / `co2_min` / `co2_max` (INTEGER) | | yes | from `readings.co2` (valid readings only; invalid ones are stored as null), ppm |
+| `pressure_avg` / `pressure_min` / `pressure_max` | REAL | yes | from `readings.pressure`, hPa |
+| `occupancy` | REAL | yes | mean(`occupied`)×100 of `PRESENCE_DEVICE`'s radar rows, %; null = no radar rows |
+
+Retention: none (about 24 rows, ~2.4 KB, a day). Read by `GET /api/daily`.
 
 ### `events` (audit / event log)
 
@@ -164,6 +185,7 @@ Read by: `/api/restarts` (`RESTART` only).
 | `devices` | `touch_device` | `/api/latest`, `/api/latest_all`, `/api/devices` |
 | `system_state` | `init_db` seed, `set_state` | `get_state` |
 | `events` | `log_event` | `/api/restarts` |
+| `hourly` | `rollup_hourly` (#129) | `/api/daily` |
 
 Notable derived values:
 
@@ -190,3 +212,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #14: legacy always-0 occupancy columns dropped from `readings`.
 - #18: 30-day retention for `events` and `devices`; indexes added (see Conventions).
 - Arrival alert fix (#101): `any_radar_quiet_minutes` no longer skips the newest row in the table.
+- #129: `hourly` table (long-term hourly aggregates, kept for good) and `system_state.hourly_until`.

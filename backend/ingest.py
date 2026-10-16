@@ -15,7 +15,7 @@ from config import (
 )
 from store import (
     db, get_last_occupancy, get_state, log_event, log_presence, log_to_db, note_uptime,
-    parse_ts, set_state, utcnow,
+    parse_ts, rollup_hourly, set_state, utcnow,
 )
 from alerts import alert, set_radar_alerted
 from nodes import handle_status, touch_device
@@ -306,6 +306,10 @@ def publish_summaries():
 def summaries_loop():
     while True:
         time.sleep(OCCUPANCY_HOURLY_INTERVAL)
+        try:
+            rollup_hourly()   # only does work once another hour has completed (#129)
+        except Exception as e:
+            log.warning("hourly rollup failed: %s", e)
         publish_summaries()
 
 

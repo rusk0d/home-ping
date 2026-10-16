@@ -14,10 +14,12 @@ from firebase_admin import credentials
 
 import state
 from config import BIND_HOST, PORT, LOG_LEVEL, FIREBASE_CRED, MQTT_HOST, MQTT_PASS, MQTT_PORT, MQTT_USER
-from store import init_db, load_alert_state
+from store import init_db, load_alert_state, rollup_hourly
 from nodes import node_check_loop
 from ingest import summaries_loop, on_connect, on_disconnect, on_message
 from api import app
+
+log = logging.getLogger(__name__)
 
 
 def init_firebase():
@@ -30,6 +32,9 @@ def init_firebase():
 def prepare():
     """Create/migrate the DB schema and load the alert state that survives restarts (#5)."""
     init_db()
+    n = rollup_hourly()   # catches up after downtime; the first run backfills the raw 8 days
+    if n:
+        log.info("hourly rollup: %d hours", n)
     state.reset()
     cooldowns, alerted, offline = load_alert_state()
     state.LAST_NOTIFICATION.update(cooldowns)
