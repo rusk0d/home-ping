@@ -26,7 +26,7 @@ topic read home/backend/#
 ```
 
 Then `sudo systemctl restart mosquitto`. `home/esp32/#` covers the env, CO2, presence
-and status topics the page subscribes to; `home/backend/#` covers `occupancy_hourly`.
+and status topics the page subscribes to; `home/backend/#` covers `occupancy_hourly` and `history_24h`.
 
 ## Broker accounts (since #31)
 
@@ -57,7 +57,7 @@ reconnect within a keep-alive interval, the backend at once.
 | Keep-alive | 60 s (`setKeepAlive(60)`) | paho default (60 s) | mqtt.js default (60 s) |
 | Clean session | PubSubClient default (true) | paho default (true) | mqtt.js default (true) |
 | Last will (LWT) | `offline`, retained, QoS 1 on `home/esp32/<device>/status`; `online` published on connect (#13) | none | none |
-| Publish QoS | 0 (PubSubClient can only publish at QoS 0) | 0, only `home/backend/occupancy_hourly` | does not publish |
+| Publish QoS | 0 (PubSubClient can only publish at QoS 0) | 0, only `home/backend/occupancy_hourly` and `home/backend/history_24h` | does not publish |
 | Subscribe QoS | n/a | 0 (`client.subscribe(TOPIC)`, default) | 0 (default) |
 
 The nodes announce themselves on `home/esp32/<device>/status` (see below), but the backend
@@ -72,6 +72,7 @@ still decides whether a device is online from the `devices.last_seen` timestamp 
 | `home/esp32/presence` | main_node (`home_ping_esp32`) **and** eink_node (`hallway_presence_esp32`) | backend (via `home/esp32/#`), web page (node list only) | 5 s per node | yes | 0 |
 | `home/esp32/co2` | main_node (`home_ping_esp32`) since the node merge (#57); before: co2_node (`co2_sensor_esp32`) | backend (via `home/esp32/#`), web page | 60 s | yes | 0 |
 | `home/backend/occupancy_hourly` | backend | web page | 300 s + on every (re)connect | yes | 0 |
+| `home/backend/history_24h` (#132) | backend | web page | 300 s + on every (re)connect | yes | 0 |
 | `home/esp32/<device>/status` | every node (`online`); the broker (`offline`, last will) | backend (via `home/esp32/#`), web page (`home/esp32/+/status`) | on connect / on drop-off | yes | 1 (will) / 0 |
 
 ### How the backend routes messages
@@ -268,6 +269,38 @@ Example:
 
 ---
 
+## `home/backend/history_24h` (since #132)
+
+So the web page's sparklines start with the last day instead of empty.
+
+- Publisher: the backend (`ingest.publish_history_24h()`), as account `backend`; the web
+  users read it via `home/backend/#` (no ACL change).
+- Interval and retain: like `occupancy_hourly` (both from `ingest.publish_summaries()`):
+  every 300 s and on every (re)connect, retained, QoS 0. A failure of one doesn't stop the other.
+- Data: hourly averages from `readings`, all devices (like `/api/hourly` without `?device=`),
+  for the **last 24 complete hours** (UTC hour boundaries). The current, unfinished hour is
+  not included: the page has the live values for it.
+
+| Field | Type | Unit | Notes |
+|---|---|---|---|
+| `updated` | string | n/a | `YYYY-MM-DDTHH:MM:SSZ`, UTC time of this publish |
+| `hours` | array | n/a | only hours with data, oldest first, at most 24 |
+| `hours[].start` | string | n/a | start of the hour, `YYYY-MM-DDTHH:00:00Z` (UTC) |
+| `hours[].temp` | number or null | °C | mean, 1 dp |
+| `hours[].humidity` | number or null | % | mean, 1 dp |
+| `hours[].pressure` | number or null | hPa | mean, 1 dp |
+| `hours[].co2` | integer or null | ppm | mean, rounded |
+
+`null` = no device reported that value in that hour.
+
+```json
+{"updated":"2026-10-16T19:05:00Z",
+ "hours":[{"start":"2026-10-15T19:00:00Z","temp":22.4,"humidity":41.2,"pressure":1011.3,"co2":702},
+          {"start":"2026-10-16T18:00:00Z","temp":22.9,"humidity":38.0,"pressure":1010.1,"co2":735}]}
+```
+
+---
+
 ## Web page (`web/index.html`) as a subscriber
 
 - Subscribes to `home/esp32/bme280`, `home/esp32/co2`, `home/backend/occupancy_hourly`,
@@ -336,3 +369,4 @@ Fixed mismatches, oldest first (issue number: what changed).
   against `secrets.example.h`).
 - #50, #75 (and #8): `uptime` comes from the 64-bit `esp_timer_get_time()` on all nodes, so it no
   longer wraps after ~49.7 days (needs the nodes reflashed); eink_node no longer reboots every 12 h.
+- #132: retained `home/backend/history_24h` (hourly averages of the last 24 complete hours) for the web sparklines.

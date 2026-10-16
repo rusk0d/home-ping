@@ -16,7 +16,7 @@ import state
 from config import BIND_HOST, PORT, LOG_LEVEL, FIREBASE_CRED, MQTT_HOST, MQTT_PASS, MQTT_PORT, MQTT_USER
 from store import init_db, load_alert_state
 from nodes import node_check_loop
-from ingest import hourly_occupancy_loop, on_connect, on_disconnect, on_message
+from ingest import summaries_loop, on_connect, on_disconnect, on_message
 from api import app
 
 
@@ -51,7 +51,7 @@ def start():
     state.mqttc.on_disconnect = on_disconnect
     state.mqttc.connect(MQTT_HOST, MQTT_PORT)
     state.mqttc.loop_start()
-    threading.Thread(target=hourly_occupancy_loop, daemon=True).start()
+    threading.Thread(target=summaries_loop, daemon=True).start()
     threading.Thread(target=node_check_loop, daemon=True).start()
 
 
