@@ -90,8 +90,13 @@ ld2410 radar;
 // ========================
 const unsigned long UPDATE_INTERVAL   = 60000;  // BKK refresh, 1 min
 const unsigned long PRESENCE_INTERVAL = 5000;   // radar publish, 5 s
+// Partial refresh every minute (no flashing, a fraction of a second instead of ~2-3 s),
+// a full refresh at boot and every 30 min against the ghosting partial updates leave (#133)
+const unsigned long FULL_REFRESH_INTERVAL = 30UL * 60 * 1000;
 unsigned long lastUpdate = 0;
 unsigned long lastPresencePublish = 0;
+unsigned long lastFullRefresh = 0;
+bool hadFullRefresh = false;
 
 // ========================
 // NTP CONFIG
@@ -376,8 +381,16 @@ void fetchAndRender() {
   struct tm timeinfo;
   bool hasTime = getLocalTime(&timeinfo);
 
-  // Draw display
-  display.setFullWindow();
+  // Draw display: the whole screen, as a full or a partial update (#133)
+  unsigned long nowMs = millis();
+  bool full = !hadFullRefresh || nowMs - lastFullRefresh >= FULL_REFRESH_INTERVAL;
+  if (full) {
+    display.setFullWindow();
+    hadFullRefresh = true;
+    lastFullRefresh = nowMs;
+  } else {
+    display.setPartialWindow(0, 0, display.width(), display.height());
+  }
   display.firstPage();
   do {
     display.fillScreen(GxEPD_WHITE);
@@ -461,5 +474,6 @@ void fetchAndRender() {
 
   } while (display.nextPage());
 
-  Serial.printf("Display updated! Showing %d departures\n", count);
+  Serial.printf("Display updated (%s, %lu ms)! Showing %d departures\n",
+                full ? "full" : "partial", millis() - nowMs, count);
 }
