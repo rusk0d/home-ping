@@ -11,8 +11,9 @@ import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.google.firebase.Firebase
 import com.google.firebase.FirebaseApp
-import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.messaging.messaging
 import com.david.homeenv.BuildConfig
 class MainActivity : AppCompatActivity() {
 
@@ -60,49 +61,28 @@ class MainActivity : AppCompatActivity() {
             FirebaseApp.initializeApp(this)
         }
 
-        // Subscribe to topic for notifications
-        FirebaseMessaging.getInstance().subscribeToTopic("env")
+        // FID-based registration (#153; replaces the deprecated registration tokens). The
+        // backend only sends to topic "env", so the app needs no token or ID of its own:
+        // it registers and subscribes itself. Both are cheap when already done.
+        Firebase.messaging.register()
+            .addOnSuccessListener { Log.i(TAG, "FCM registration OK") }
+            .addOnFailureListener { Log.w(TAG, "FCM registration failed: $it") }
+        Firebase.messaging.subscribeToTopic("env")
             .addOnCompleteListener { task ->
                 Log.i(TAG, "Subscribed to topic 'env': ${task.isSuccessful}")
             }
 
-        // Request notification permission on Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            when {
-                ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED -> getAndRegisterToken()
-                else -> requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        } else {
-            getAndRegisterToken()
+        // Android 13+: notifications are only shown with this permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) getAndRegisterToken()
+            Log.i(TAG, "Notification permission granted: $granted")
         }
-
-    // Token-based registration is deprecated since Cloud Messaging 25.1; the move to FID
-    // registration (register/onRegistered) is #153. Tokens still work until then.
-    @Suppress("DEPRECATION")
-    private fun getAndRegisterToken() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) return
-
-        FirebaseMessaging.getInstance().token
-            .addOnSuccessListener { token ->
-                // The token itself isn't logged: it is this device's push credential
-                Log.i(TAG, "FCM token received")
-                // A plain thread: the registration shouldn't depend on this screen's lifecycle
-                Thread { PushRegistration.register(applicationContext, token) }.start()
-            }
-            .addOnFailureListener {
-                Log.w(TAG, "Couldn't get the FCM token: $it")
-            }
-    }
 }
