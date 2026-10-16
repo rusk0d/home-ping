@@ -9,7 +9,7 @@ from datetime import datetime
 import state
 from config import (
     ARRIVAL_CONFIRM_SECONDS, ENV_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
-    NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
+    HISTORY_24H_TOPIC, NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
     PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD,
     TOPIC,
 )
@@ -269,13 +269,44 @@ def publish_hourly_occupancy():
     state.mqttc.publish(OCCUPANCY_HOURLY_TOPIC, json.dumps(payload), qos=0, retain=True)
 
 
-def hourly_occupancy_loop():
+def history_24h():
+    """Hourly averages of the last 24 complete hours, oldest first (#132). Only hours
+    with data; a value is null when no device reported it that hour."""
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT strftime('%Y-%m-%dT%H:00:00Z', ts), AVG(temp), AVG(humidity), AVG(pressure), AVG(co2)
+            FROM readings
+            WHERE ts >= datetime(strftime('%Y-%m-%d %H:00:00', 'now'), '-24 hours')
+              AND ts < strftime('%Y-%m-%d %H:00:00', 'now')
+            GROUP BY 1 ORDER BY 1
+        """).fetchall()
+
+    def r(v, digits):
+        return None if v is None else round(v, digits)
+    return {
+        "updated": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "hours": [{"start": h, "temp": r(t, 1), "humidity": r(hu, 1), "pressure": r(p, 1),
+                   "co2": None if c is None else round(c)} for h, t, hu, p, c in rows],
+    }
+
+
+def publish_history_24h():
+    state.mqttc.publish(HISTORY_24H_TOPIC, json.dumps(history_24h()), qos=0, retain=True)
+
+
+def publish_summaries():
+    """The backend's retained topics, each on its own so one failing doesn't stop the other."""
+    for name, publish in (("hourly occupancy", publish_hourly_occupancy), ("24 h history", publish_history_24h)):
+        try:
+            publish()
+        except Exception as e:
+            log.warning("%s publish failed: %s", name, e)
+
+
+def summaries_loop():
     while True:
         time.sleep(OCCUPANCY_HOURLY_INTERVAL)
-        try:
-            publish_hourly_occupancy()
-        except Exception as e:
-            log.warning("hourly occupancy publish failed: %s", e)
+        publish_summaries()
 
 
 # paho callback API v2 (#66). A refused connect also arrives here, as a failure code;
@@ -286,10 +317,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
         return
     log.info("MQTT connected")
     client.subscribe(TOPIC)
-    try:
-        publish_hourly_occupancy()
-    except Exception as e:
-        log.warning("hourly occupancy publish failed: %s", e)
+    publish_summaries()
 
 
 def on_disconnect(client, userdata, flags, reason_code, properties):
