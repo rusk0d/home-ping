@@ -1,8 +1,9 @@
-# REST API contract (DRAFT)
+# REST API contract
 
-Status: draft, reverse-engineered from `backend/server.py` and the Android app
-(`android/app/src/main/java/com/david/homeenv/*.kt`) on branch
-`contracts-draft` (2026-10-13). Anything marked **UNCERTAIN** is inferred.
+The REST API between the backend (`backend/api.py`) and the Android app.
+It is the source of truth: update it in the same change as the code (see CLAUDE.md).
+First written on 2026-10-13 by reading the code; anything still marked **UNCERTAIN** was
+inferred then and hasn't been confirmed since.
 
 ## General
 
@@ -309,39 +310,33 @@ Client: an external monitor (UptimeRobot or similar) checking the status code.
 
 ## Mismatches and issues between components
 
-1. ~~**`/api/occupancy_status` doesn't exist.**~~ Fixed in #3: the backend now
-   implements `GET /api/occupancy_status` → `{"armed": bool}`, which Android reads on startup.
-2. **Android crashes if `home_ping_esp32.temp` is null.** In `/api/latest_all`
-   the main node's `temp`/`humidity` can be null (BME280 missing or no env rows yet, radar
-   stub). Android calls `getDouble("temp")`/`getInt("humidity")` inside
-   `runOnUiThread`. A `JSONException` there isn't caught by the
-   surrounding `try`, which is on the background thread (**UNCERTAIN**: crash vs. caught,
-   needs a device test). The same applies to `co2Data.getInt("uptime")` if it were ever null.
-3. **`ts`/`uptime` in `/api/latest_all` are silently overwritten** for devices that send both env
+1. **`ts`/`uptime` in `/api/latest_all` are silently overwritten** for devices that send both env
    and radar data (`home_ping_esp32`). The `ts` shown is the radar's, not the
-   temperature reading's.
-4. ~~Soil timestamp field name~~, 5. ~~soil threshold~~, 6. ~~soil endpoints without a
-   data source~~: the soil feature (`/api/soil/*`, Android Plants tab) was removed in #9.
-7. ~~**`register_token` pollutes `devices`.**~~ Fixed in #15: `register_token` no
-   longer calls `touch_device`, and the old `"unknown"` row is deleted on start.
-8. **Duplicate FCM topic subscription.** Android subscribes itself to topic `env`
+   temperature reading's (#11).
+2. **Duplicate FCM topic subscription.** Android subscribes itself to topic `env`
    client-side *and* the backend subscribes the token server-side. This is harmless but redundant.
-9. ~~**Positional array responses**~~ Fixed in #14: `/api/latest` is an object,
-   `/api/history_combined` was removed.
-10. ~~**Always-0 `readings.occupied`/`occupancy_confidence`**~~ and
-11. ~~**always-0 `dark`**~~: dropped from the responses and the `readings` table in #14.
-12. ~~**`avg_confidence` doesn't mean the same thing everywhere.**~~ Fixed in #14: "confidence"
-    is the 15-min definition everywhere; the 60-min and hourly duplicates were removed.
-13. **Hallway radar is invisible to the occupancy column of `/api/hourly`**, which only
-    uses `home_ping_esp32`.
-14. ~~**Empty-state values don't match.**~~ Fixed in #14: null with status 200 everywhere.
-15. **Android config.** The server base URL and Basic-auth credentials come from the
-    gitignored `android/local.properties` (`API_BASE_URL`, `API_USER`, `API_PASS`)
-    via `BuildConfig`. `API_BASE_URL` has no trailing slash and falls back to
-    `https://www.example.com` if unset. Note that `BuildConfig` values are compiled
-    into the APK and can be extracted from it.
-16. ~~**Unused endpoints**~~ removed in #14: `/api/latest2`, `/api/history`,
-    `/api/stats24h`, `/api/occupancy_rolling`, `/api/presence/latest`,
-    `/api/presence/history`, `/api/widget`, `/api/next-events` (and the broken Google
-    OAuth helper `get_access_token`).
-17. ~~**`HEARTBEAT_TIMEOUT` defined twice**~~ Fixed in #14: one definition, 120 s.
+3. **Hallway radar is invisible to the occupancy column of `/api/hourly`**, which only
+   uses `home_ping_esp32` (#10).
+4. **Android config.** The server base URL and Basic-auth credentials come from the
+   gitignored `android/local.properties` (`API_BASE_URL`, `API_USER`, `API_PASS`)
+   via `BuildConfig`. `API_BASE_URL` has no trailing slash and falls back to
+   `https://www.example.com` if unset. Note that `BuildConfig` values are compiled
+   into the APK and can be extracted from it (#60).
+
+## Changelog
+
+Fixed mismatches, oldest first (issue number: what changed).
+
+- #3: `GET /api/occupancy_status` → `{"armed": bool}` added; Android reads it on startup.
+- #9: soil feature removed (`/api/soil/*`, Android Plants tab), with its field-name,
+  threshold and missing-data-source issues.
+- #14: positional array responses replaced by objects (`/api/latest`); `/api/history_combined` removed.
+- #14: always-0 `readings.occupied`/`occupancy_confidence` and `dark` dropped from responses and the table.
+- #14: "confidence" means the 15-min value everywhere; the 60-min and hourly variants removed.
+- #14: empty state is null with status 200 everywhere.
+- #14: unused endpoints removed (`/api/latest2`, `/api/history`, `/api/stats24h`,
+  `/api/occupancy_rolling`, `/api/presence/*`, `/api/widget`, `/api/next-events`, Google OAuth helper).
+- #14: `HEARTBEAT_TIMEOUT` defined once (120 s).
+- #15: `register_token` no longer adds the phone to `devices`; the old `"unknown"` row is deleted on start.
+- Android no longer crashes on a null `temp`/`humidity` in `/api/latest_all`: it reads them
+  null-safely (`optNum`) instead of `getDouble`/`getInt`.

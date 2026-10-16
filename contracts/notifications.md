@@ -1,8 +1,10 @@
-# Push notifications contract (DRAFT)
+# Push notifications contract
 
-Status: draft, reverse-engineered from `backend/server.py` and
-`android/.../MyFirebaseMessagingService.kt`, `MainActivity.kt` on branch
-`contracts-draft` (2026-10-13). Anything marked **UNCERTAIN** is inferred.
+Push notifications from the backend (`backend/alerts.py`, `nodes.py`, `ingest.py`) to the
+Android app (`MyFirebaseMessagingService.kt`, `MainActivity.kt`) via Firebase Cloud Messaging.
+It is the source of truth: update it in the same change as the code (see CLAUDE.md).
+First written on 2026-10-13 by reading the code; anything still marked **UNCERTAIN** was
+inferred then and hasn't been confirmed since.
 
 ## Transport
 
@@ -171,15 +173,18 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 ## Mismatches and issues
 
-1. ~~**The `data` payload is unused.**~~ Fixed in #12: data-only messages, the app reads `data`.
-2. ~~**Cooldowns reset on backend restart, and retained MQTT messages are replayed.**~~
-   Fixed in #5: cooldowns are persisted and retained messages are skipped.
-3. ~~**Failed sends still start the cooldown and log "sent".**~~ Fixed in #12: logged as
-   `failed, ...`, retried after 60 s.
-4. ~~Soil threshold differs~~, 5. ~~missing `moisture` crashes the soil handler~~: soil feature removed in #9.
-6. ~~**The `NOTIFICATION_COOLDOWN` expression is misleading.**~~ Fixed in #12: `15 * 60`.
-7. ~~**The temperature/humidity alerts gate on both values.**~~ Fixed in #12: each needs only its own value.
-8. ~~**There's no device-offline push.**~~ Fixed in #13 (`NODE_STATUS`).
-9. ~~**Notification ID 0 is reused.**~~ Fixed in #12: one ID per `event/device`.
-10. **Duplicate topic subscription.** The client-side and server-side subscriptions to `env` are redundant. If the backend
-    `register_token` call fails, the client-side subscription still works.
+1. **Duplicate topic subscription.** The client-side and server-side subscriptions to `env` are
+   redundant. If the backend `register_token` call fails, the client-side subscription still works.
+
+## Changelog
+
+Fixed mismatches, oldest first (issue number: what changed).
+
+- #5: cooldowns persist across backend restarts; retained MQTT messages are skipped.
+- #9: soil alerts removed (threshold mismatch, crash on a missing `moisture`).
+- #12: data-only messages, the app reads `data`.
+- #12: failed sends are logged as `failed, ...` and retried after 60 s instead of starting the cooldown.
+- #12: `NOTIFICATION_COOLDOWN` written as `15 * 60`.
+- #12: temperature and humidity alerts each need only their own value.
+- #12: one notification ID per `event/device` instead of always 0.
+- #13: device-offline push (`NODE_STATUS`).
