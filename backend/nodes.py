@@ -3,14 +3,13 @@
 
 import logging
 import time
-from datetime import datetime
 
 import state
 from config import (
     DEVICES_RETENTION_DAYS, NODE_CHECK_INTERVAL, NODE_OFFLINE_ALERT_SECONDS,
     NOTIFICATION_COOLDOWN,
 )
-from store import db, log_event, set_state, utcnow
+from store import db, log_event, parse_ts, set_state, utcnow
 from alerts import alert
 
 log = logging.getLogger(__name__)
@@ -53,7 +52,7 @@ def check_nodes():
         rows = conn.execute("SELECT device, last_seen FROM devices").fetchall()
     now = utcnow()
     for device, last_seen in rows:
-        age = (now - datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")).total_seconds()
+        age = (now - parse_ts(last_seen)).total_seconds()
         if age < NODE_OFFLINE_ALERT_SECONDS:
             continue
         with state.NODE_LOCK:
