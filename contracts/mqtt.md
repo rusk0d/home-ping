@@ -91,7 +91,7 @@ ingestion (#58).
 ## `home/esp32/bme280`
 
 - Publisher: `firmware/co2_node` (`DEVICE_NAME = "co2_sensor_esp32"`) since node merge step 1 (#57): the
-  BME280 moved to the CO₂ board (I2C on GPIO 16/17, address 0x76 or 0x77). Until then
+  BME280 moved to the CO₂ board (I2C on GPIO 21/22, address 0x76 or 0x77). Until then
   `firmware/main_node` (`home_ping_esp32`); its code still publishes if a BME280 is attached.
   After the merge the merged node publishes it as `home_ping_esp32` again. Same payload either way.
 - Interval: every 30 s (`ENV_INTERVAL = 30000`).
