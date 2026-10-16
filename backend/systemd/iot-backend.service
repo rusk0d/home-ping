@@ -1,0 +1,30 @@
+# Backend service (#59): runs as the unprivileged user "iot" from /opt/iot with its own
+# venv, served by waitress on 127.0.0.1:5000 behind nginx. Install: README "Production setup".
+[Unit]
+Description=Home Ping backend (MQTT ingest, alerts, REST API)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+User=iot
+Group=iot
+WorkingDirectory=/opt/iot
+ExecStart=/opt/iot/venv/bin/python server.py
+Restart=on-failure
+RestartSec=5
+
+# Hardening: the process can only write to its own directory
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/iot
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

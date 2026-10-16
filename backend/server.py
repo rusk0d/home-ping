@@ -8,11 +8,12 @@ import logging
 import time
 import threading
 import paho.mqtt.client as mqtt
+from waitress import serve
 import firebase_admin
 from firebase_admin import credentials
 
 import state
-from config import LOG_LEVEL, FIREBASE_CRED, MQTT_HOST, MQTT_PASS, MQTT_PORT, MQTT_USER
+from config import BIND_HOST, PORT, LOG_LEVEL, FIREBASE_CRED, MQTT_HOST, MQTT_PASS, MQTT_PORT, MQTT_USER
 from store import init_db, load_alert_state
 from nodes import node_check_loop
 from ingest import hourly_occupancy_loop, on_connect, on_disconnect, on_message
@@ -56,7 +57,10 @@ def start():
 
 def main():
     start()
-    app.run(host="0.0.0.0", port=5000)
+    # waitress, not Flask's development server (#59): one process with a thread pool,
+    # so the MQTT client and the background threads above live next to the API.
+    # Bound to localhost by default; nginx is the only public entry point.
+    serve(app, host=BIND_HOST, port=PORT, threads=4)
 
 
 if __name__ == "__main__":
