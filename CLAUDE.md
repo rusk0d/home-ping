@@ -13,7 +13,7 @@ notifications via Firebase. A small web page and an Android app display the data
 
 # How the pieces connect
 ESP32 -> MQTT broker -> Flask (SQLite) -> REST API -> Android app
-Web page <- MQTT broker (WebSockets, read-only user)
+Web page <- MQTT broker (WebSockets, one read-only user per person)
 Backend -> Firebase Cloud Messaging -> Android push notifications
 
 # Secrets and local-only files (never commit, never ask for the real values)
