@@ -1,7 +1,7 @@
 # MQTT contract
 
 Topics and payloads between the ESP32 nodes (`firmware/`), the backend (`backend/ingest.py`)
-and the web page (`web/index.html`).
+and the web page (`web/index.html` + `app.js`).
 It is the source of truth: update it in the same change as the code (see CLAUDE.md).
 First written on 2026-10-13 by reading the code; anything still marked **UNCERTAIN** was
 inferred then and hasn't been confirmed since.
@@ -48,7 +48,7 @@ reconnect within a keep-alive interval, the backend at once.
 
 ## Broker and connection settings
 
-| Setting | Firmware (main_node, eink_node) | Backend (`ingest.py`, `server.py`) | Web (`index.html`) |
+| Setting | Firmware (main_node, eink_node) | Backend (`ingest.py`, `server.py`) | Web (`app.js`) |
 |---|---|---|---|
 | Library | PubSubClient, via the HomePing library (#75) | paho-mqtt 2.1.0, callback API v2 (#66) | mqtt.js 5.16.0 from unpkg (pinned, with SRI, #62) |
 | Host / port | `MQTT_BROKER` / `MQTT_PORT` from `secrets.h` (template: 1883, plain TCP) | `localhost:1883`, hard-coded | `MQTT_CONFIG.url` from `web/config.js` (WebSockets) |
@@ -301,7 +301,7 @@ So the web page's sparklines start with the last day instead of empty.
 
 ---
 
-## Web page (`web/index.html`) as a subscriber
+## Web page (`web/app.js`) as a subscriber
 
 - Subscribes to `home/esp32/bme280`, `home/esp32/co2`, `home/backend/occupancy_hourly`,
   `home/backend/history_24h` (since #132),

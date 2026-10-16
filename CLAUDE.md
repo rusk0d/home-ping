@@ -8,7 +8,8 @@ notifications via Firebase. A small web page and an Android app display the data
              firmware/libraries/HomePing (an Arduino library)
 - /backend   Flask app: server.py (entry point), config, state, store (SQLite,
              creates the DB schema on start), alerts, nodes, ingest (MQTT), api
-- /web       single-file HTML page, connects to MQTT directly from the browser
+- /web       HTML page (index.html + app.js, no inline scripts: CSP), connects to MQTT
+             directly from the browser; nginx/ has the site's security headers
 - /android   Kotlin app, talks only to the backend's REST API
 - /contracts MQTT topics/payloads, REST API, DB schema (source of truth)
 - /audit     read-only audit reports
