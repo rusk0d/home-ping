@@ -50,7 +50,7 @@ whether a device is online from the `devices.last_seen` timestamp in the DB
 
 | Topic | Publisher(s) | Subscriber(s) | Interval | Retained | QoS |
 |---|---|---|---|---|---|
-| `home/esp32/bme280` | main_node (`home_ping_esp32`) | backend (via `home/esp32/#`), web page | 30 s | yes | 0 |
+| `home/esp32/bme280` | co2_node (`co2_sensor_esp32`) during the node merge (#57); main_node (`home_ping_esp32`) before | backend (via `home/esp32/#`), web page | 30 s | yes | 0 |
 | `home/esp32/presence` | main_node (`home_ping_esp32`) **and** eink_node (`hallway_presence_esp32`) | backend (via `home/esp32/#`), web page (node list only) | 5 s per node | yes | 0 |
 | `home/esp32/co2` | co2_node (`co2_sensor_esp32`) | backend (via `home/esp32/#`), web page | 60 s | yes | 0 |
 | `home/backend/occupancy_hourly` | backend | web page | 300 s + on every (re)connect | yes | 0 |
@@ -90,7 +90,10 @@ ingestion (#58).
 
 ## `home/esp32/bme280`
 
-- Publisher: `firmware/main_node` (`DEVICE_NAME = "home_ping_esp32"`), BME280 on I2C.
+- Publisher: `firmware/co2_node` (`DEVICE_NAME = "co2_sensor_esp32"`) since node merge step 1 (#57): the
+  BME280 moved to the CO₂ board (I2C on GPIO 21/22, address 0x76 or 0x77). Until then
+  `firmware/main_node` (`home_ping_esp32`); its code still publishes if a BME280 is attached.
+  After the merge the merged node publishes it as `home_ping_esp32` again. Same payload either way.
 - Interval: every 30 s (`ENV_INTERVAL = 30000`).
 - Retained: yes (`publish(..., true)`). QoS 0.
 - Not published at all if the BME280 failed to initialise or a read returned NaN.
