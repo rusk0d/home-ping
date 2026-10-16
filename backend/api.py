@@ -8,7 +8,6 @@ import time
 from werkzeug.exceptions import HTTPException
 from functools import wraps
 from flask import Flask, jsonify, request, Response, abort
-from datetime import datetime
 from firebase_admin import messaging
 
 import state
@@ -18,7 +17,7 @@ from config import (
 )
 from store import (
     calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
-    get_state, log_event, occupancy_stats, set_state, utcnow,
+    get_state, log_event, occupancy_stats, parse_ts, set_state, utcnow,
 )
 from alerts import notification_settings
 from ingest import hourly_occupancy_today
@@ -49,6 +48,9 @@ def require_auth(f):
 
 
 app = Flask(__name__)
+# The JSON bodies are a few hundred bytes; waitress alone would accept up to 1 GB (#123).
+# Larger requests get a JSON 413 (http_error below).
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 
 
 @app.errorhandler(HTTPException)
@@ -61,6 +63,11 @@ def http_error(e):
 def server_error(e):
     log.exception("%s: %r", request.path, e)
     return jsonify({"error": "internal error"}), 500
+
+
+def is_online(last_seen, now=None):
+    """A device with this devices.last_seen counts as online (#123: was three copies)."""
+    return last_seen is not None and ((now or utcnow()) - parse_ts(last_seen)).total_seconds() < HEARTBEAT_TIMEOUT
 
 
 def iso(ts):
@@ -122,10 +129,7 @@ def latest():
         c.execute("SELECT last_seen FROM devices WHERE device = ?", (row[4],))
         dev = c.fetchone()
 
-    online = False
-    if dev:
-        last_seen = datetime.strptime(dev[0], "%Y-%m-%d %H:%M:%S")
-        online = (utcnow() - last_seen).total_seconds() < HEARTBEAT_TIMEOUT
+    online = bool(dev) and is_online(dev[0])
 
     return jsonify({
         "ts": iso(row[0]),
@@ -147,13 +151,10 @@ def latest_all():
 
         now = utcnow()
 
-        def is_online(device):
+        def device_online(device):
             c.execute("SELECT last_seen FROM devices WHERE device = ?", (device,))
             dev = c.fetchone()
-            if not dev:
-                return False
-            last_seen = datetime.strptime(dev[0], "%Y-%m-%d %H:%M:%S")
-            return (now - last_seen).total_seconds() < HEARTBEAT_TIMEOUT
+            return bool(dev) and is_online(dev[0], now)
 
         result = {}
 
@@ -177,7 +178,7 @@ def latest_all():
             result[device] = {
                 "ts": iso(last[0]),
                 "uptime": last[1],
-                "online": is_online(device),
+                "online": device_online(device),
                 "temp": env[1] if env else None,
                 "humidity": env[2] if env else None,
                 "pressure": env[3] if env else None,
@@ -213,7 +214,7 @@ def latest_all():
                 "uptime": p[8],
                 "occupied": p[1],
                 "confidence": calculate_confidence(device),
-                "online": is_online(device),
+                "online": device_online(device),
                 "presence": p[2],
                 "stationary": p[3],
                 "moving": p[4],
@@ -400,11 +401,10 @@ def devices():
     out = []
 
     for dev, ts in rows:
-        last = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
         out.append({
             "device": dev,
             "last_seen": iso(ts),
-            "online": (now - last).total_seconds() < HEARTBEAT_TIMEOUT
+            "online": is_online(ts, now)
         })
 
     return jsonify(out)
@@ -484,22 +484,20 @@ def stats24h_combined():
     '''Combined 24h env stats from ALL devices + radar occupancy'''
     with db() as conn:
         c = conn.cursor()
-        c.execute("""
-            SELECT temp, humidity
+        # Averaged in SQL (#123); AVG is NULL when there are no rows
+        avg_temp, avg_hum = c.execute("""
+            SELECT AVG(temp), AVG(humidity)
             FROM readings
             WHERE ts >= datetime('now','-24 hours')
               AND temp IS NOT NULL
               AND humidity IS NOT NULL
-        """)
-        rows = c.fetchall()
+        """).fetchone()
 
     occ = occupancy_stats(24)
-    temps = [r[0] for r in rows]
-    hums = [r[1] for r in rows]
 
     return jsonify({
-        "avg_temp": round(sum(temps)/len(temps), 1) if rows else None,
-        "avg_humidity": round(sum(hums)/len(hums), 1) if rows else None,
+        "avg_temp": None if avg_temp is None else round(avg_temp, 1),
+        "avg_humidity": None if avg_hum is None else round(avg_hum, 1),
         "avg_occupancy": occ["avg_occupancy"],
         "occupied_hours": occ["occupied_hours"],
         "coverage_hours": occ["coverage_hours"]
