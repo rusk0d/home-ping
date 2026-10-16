@@ -2,8 +2,13 @@
 <!-- Widget, 4x2: temperature, humidity and occupancy with a gauge each, a CO2 row
      with one full-width gauge, and an online line. Filled in by HomeEnvWidget
      (gauges are bitmaps from WidgetGauge). -->
+<!-- Lint (#121): a widget is RemoteViews, where AppCompat's app:tint doesn't work, so
+     android:tint is right (UseAppTint); the empty FrameLayouts are the weighted spacers
+     (UselessLeaf). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/widget_root"
+    tools:ignore="UseAppTint,UselessLeaf"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_card"
