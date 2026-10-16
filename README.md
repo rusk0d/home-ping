@@ -42,6 +42,11 @@ in its working directory.
 ## Build and run
 
 - **Firmware:** open the sketch in the Arduino IDE (board: ESP32 Dev Module) and upload.
+  The sketches share code from `firmware/libraries/HomePing` (WiFi, MQTT with the status
+  last will, uptime, radar presence). Make it visible to the IDE once by linking it into
+  your Arduino libraries folder, e.g. on Windows (PowerShell):
+  `New-Item -ItemType Junction -Path "$HOME\Documents\Arduino\libraries\HomePing" -Target "<repo>\firmware\libraries\HomePing"`.
+  The link follows the repo, so a `git pull` updates it too.
 - **Backend:** `pip install -r backend/requirements.txt`, then `python server.py` in
   `backend/` with a `.env` next to it. In production it runs as the systemd unit
   `iot-backend` (`sudo systemctl restart iot-backend`, logs: `journalctl -u iot-backend -f`).
