@@ -42,3 +42,5 @@ backend/client_secret*.json
 backend/token.json
 
 web/config.js
+# Test runs
+.pytest_cache/
