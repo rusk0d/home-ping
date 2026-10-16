@@ -1,6 +1,7 @@
 """SQLite: the db() helper, schema/migrations and the read/write helpers.
 """
 
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -8,6 +9,8 @@ from datetime import datetime, timezone
 import config
 import state
 from config import CONFIDENCE_MINUTES, DB, EVENTS_RETENTION_DAYS, UPTIME_DROP_TOLERANCE
+
+log = logging.getLogger(__name__)
 
 
 def utcnow():
@@ -74,7 +77,7 @@ def init_db():
                 ALTER TABLE readings_new RENAME TO readings;
                 COMMIT;
             """)
-            print("[DB] readings: dropped occupied, occupancy_confidence, dark")
+            log.info("readings: dropped occupied, occupancy_confidence, dark")
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS devices (
@@ -135,7 +138,7 @@ def init_db():
                 c.execute(f"UPDATE {table} SET {col} = datetime({col}, 'utc') WHERE {col} IS NOT NULL")
             c.execute("INSERT INTO system_state (key, value) VALUES ('ts_utc', '1')")
             conn.commit()
-            print("[DB] timestamps converted to UTC")
+            log.info("timestamps converted to UTC")
 
         # Indexes for the per-device lookups (#18). (device, id) serves "latest row of a
         # device"; (device, ts) serves time windows. No plain ts index: it made SQLite pick
@@ -348,7 +351,7 @@ def note_uptime(device, uptime):
     # send them slightly out of order, so its uptime may briefly go back a little.
     if uptime < prev - UPTIME_DROP_TOLERANCE:
         log_event(device, "RESTART", f"uptime {prev}s -> {uptime}s")
-        print(f"[RESTART] {device}: was up {prev}s, now {uptime}s")
+        log.info("restart %s: was up %ss, now %ss", device, prev, uptime)
 
 
 # -------------------------

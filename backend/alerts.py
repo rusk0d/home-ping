@@ -1,6 +1,7 @@
 """Push notifications (FCM), cooldowns and the notification settings (#82).
 """
 
+import logging
 import time
 from datetime import datetime
 from firebase_admin import messaging
@@ -8,6 +9,8 @@ from firebase_admin import messaging
 import state
 from config import NOTIFICATION_COOLDOWN, NOTIFY_KINDS, PUSH_RETRY_SECONDS, QUIET_DEFAULTS
 from store import get_state, log_event, set_state
+
+log = logging.getLogger(__name__)
 
 
 # -------------------------
@@ -20,7 +23,7 @@ def send_push(title, body, data=None):
     channels and IDs), also in the background; title/body travel in the data map.
     High priority so it is delivered while the phone is in Doze.
     """
-    print(f"[DEBUG] Preparing to send push: title={title}, body={body}, data={data}")
+    log.debug("Sending push: title=%s, body=%s, data=%s", title, body, data)
     try:
         message = messaging.Message(
             data={"title": title, "body": body, **(data or {})},
@@ -28,10 +31,10 @@ def send_push(title, body, data=None):
             topic="env"
         )
         response = messaging.send(message)
-        print(f"[DEBUG] Push sent! Response: {response}")
+        log.info("Push sent: %s: %s (%s)", title, body, response)
         return True
     except Exception as e:
-        print(f"[ERROR] Failed to send push: {e}")
+        log.error("Push failed: %s: %s", title, e)
         return False
 
 
@@ -46,6 +49,7 @@ def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind
     """
     muted = alert_muted(kind)
     if muted:
+        log.info("%s %s muted (%s): %s", device, event_type, muted, detail)
         log_event(device, event_type, f"muted ({muted}), {detail}")
         if cooldown_key:
             set_cooldown(cooldown_key, time.time())
