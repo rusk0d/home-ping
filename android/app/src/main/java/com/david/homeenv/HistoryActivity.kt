@@ -51,6 +51,10 @@ class HistoryActivity : AppCompatActivity() {
         setContentView(b.root)
         b.back.setOnClickListener { finish() }
         b.swipeRefresh.setOnRefreshListener { load() }
+        // Level bands behind the lines (#178); pressure has none
+        b.tempChart.bands = Levels.TEMPERATURE
+        b.humidityChart.bands = Levels.HUMIDITY
+        b.co2Chart.bands = Levels.CO2
         range = savedInstanceState?.getString(KEY_RANGE)
             ?.let { runCatching { Range.valueOf(it) }.getOrNull() } ?: Range.WEEK
         for ((view, r) in rangeViews()) view.setOnClickListener { if (range != r) { range = r; clear(); load() } }

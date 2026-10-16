@@ -16,7 +16,8 @@ import java.util.Locale
  * month in the 12-month view) with the labels underneath; columns with a blank label
  * (the 30-day view labels every 7th day) get no separator. Two modes:
  * - [setLine]: hourly averages as a line with a soft fill, scaled to their own
- *   min/max (shown on the left); the line breaks where hours have no data.
+ *   min/max (shown on the left); the line breaks where hours have no data. With
+ *   [bands] set, the level bands are tinted faintly behind it (#178).
  * - [setBars]: one value per day as a bar from zero, with the value above it.
  */
 class HistoryChartView @JvmOverloads constructor(
@@ -40,6 +41,10 @@ class HistoryChartView @JvmOverloads constructor(
     }
     private val areaPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val bandPaint = Paint().apply { style = Paint.Style.FILL }
+    private val labelBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Levels.withAlpha(Levels.color(context, R.color.card), 0.85f)
+    }
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Levels.withAlpha(faint, 0.6f)
         strokeWidth = 1 * d
@@ -66,6 +71,16 @@ class HistoryChartView @JvmOverloads constructor(
             linePaint.color = value
             areaPaint.color = Levels.withAlpha(value, 0.16f)
             barPaint.color = Levels.withAlpha(value, 0.85f)
+            invalidate()
+        }
+
+    /**
+     * Level bands for line mode (#178), e.g. [Levels.CO2]: each band is tinted in its colour
+     * where it falls inside the chart's range, with the band stops marked on the left.
+     */
+    var bands: Scale? = null
+        set(value) {
+            field = value
             invalidate()
         }
 
@@ -150,6 +165,8 @@ class HistoryChartView @JvmOverloads constructor(
         fun x(i: Int) = width * (i + 0.5f) / slots.size
         fun y(v: Double) = pad + h * (1 - ((v - min) / (max - min))).toFloat()
 
+        bands?.let { drawBands(canvas, it, pad, ::y) }
+
         // One segment per run of consecutive hours with data
         line.reset()
         area.reset()
@@ -187,5 +204,34 @@ class HistoryChartView @JvmOverloads constructor(
         textPaint.textAlign = Paint.Align.LEFT
         canvas.drawText(fmt.format(Locale.US, values.max()), 2 * d, pad - 4 * d, textPaint)
         canvas.drawText(fmt.format(Locale.US, values.min()), 2 * d, plotHeight - 4 * d, textPaint)
+    }
+
+    /**
+     * [y] maps a value to its height in the plot; bands outside the plot are clipped away.
+     * [pad] is the room the min/max labels take at the top and bottom.
+     */
+    private fun drawBands(canvas: Canvas, scale: Scale, pad: Float, y: (Double) -> Float) {
+        val edges = listOf(Double.NEGATIVE_INFINITY) + scale.stops + Double.POSITIVE_INFINITY
+        scale.colors.forEachIndexed { i, res ->
+            val top = y(edges[i + 1]).coerceIn(0f, plotHeight)
+            val bottom = y(edges[i]).coerceIn(0f, plotHeight)
+            if (bottom - top < 1f) return@forEachIndexed
+            bandPaint.color = Levels.withAlpha(Levels.color(context, res), 0.08f)
+            canvas.drawRect(0f, top, width.toFloat(), bottom, bandPaint)
+        }
+        // Stop lines, with the value on the left on a small backdrop (the line may pass
+        // behind it); left out where the label would hit the min/max labels
+        textPaint.textAlign = Paint.Align.LEFT
+        for (stop in scale.stops) {
+            val ys = y(stop)
+            if (ys < 0f || ys > plotHeight) continue
+            canvas.drawLine(0f, ys, width.toFloat(), ys, gridPaint)
+            if (ys < pad + textPaint.textSize || ys > plotHeight - pad - 2 * d) continue
+            val label = "%.0f".format(Locale.US, stop)
+            val base = ys - 3 * d
+            rect.set(0f, base + textPaint.ascent() - d, 4 * d + textPaint.measureText(label), base + 2 * d)
+            canvas.drawRoundRect(rect, radius, radius, labelBgPaint)
+            canvas.drawText(label, 2 * d, base, textPaint)
+        }
     }
 }
