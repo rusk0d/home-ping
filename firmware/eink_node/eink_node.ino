@@ -201,7 +201,9 @@ bool routeWanted(const String &routeId) {
   return false;
 }
 
-void fetchAllDepartures(TramDeparture departures[], int &count) {
+// Returns false if the departures couldn't be loaded (request, JSON or format error),
+// so the display can tell that apart from "no trams" (#118)
+bool fetchAllDepartures(TramDeparture departures[], int &count) {
   count = 0;
 
   WiFiClientSecure tls;
@@ -214,7 +216,7 @@ void fetchAllDepartures(TramDeparture departures[], int &count) {
   if (httpCode != HTTP_CODE_OK) {
     Serial.printf("BKK API error: %d\n", httpCode);
     http.end();
-    return;
+    return false;
   }
 
   String payload = http.getString();
@@ -226,12 +228,12 @@ void fetchAllDepartures(TramDeparture departures[], int &count) {
   if (error) {
     Serial.print("JSON parse error: ");
     Serial.println(error.c_str());
-    return;
+    return false;
   }
 
   if (!doc["data"]["entry"]["stopTimes"].is<JsonArray>()) {
     Serial.println("No stopTimes array");
-    return;
+    return false;
   }
 
   long long currentTime = doc["currentTime"].as<long long>() / 1000;
@@ -255,8 +257,11 @@ void fetchAllDepartures(TramDeparture departures[], int &count) {
                                    ? stopTime["predictedDepartureTime"].as<long long>()
                                    : departureTime;
 
-    int diff = (int)((predictedDepartureTime - currentTime) / 60);
-    if (diff < 0) diff = 0;
+    // BKK_URL asks for a couple of minutes back: skip trams that have already left.
+    // Checked in seconds: integer division would turn -30 s into 0' (#118).
+    long long secondsLeft = predictedDepartureTime - currentTime;
+    if (secondsLeft < 0) continue;
+    int diff = (int)(secondsLeft / 60);
 
     String headsign = stopTime["stopHeadsign"].as<String>();
     String routeText = references["routes"][routeId]["shortName"].as<String>();
@@ -283,6 +288,7 @@ void fetchAllDepartures(TramDeparture departures[], int &count) {
       }
     }
   }
+  return true;
 }
 
 // ========================
@@ -364,7 +370,7 @@ void fetchAndRender() {
   // Fetch all departures and sort by time
   TramDeparture departures[10];
   int count = 0;
-  fetchAllDepartures(departures, count);
+  bool loaded = fetchAllDepartures(departures, count);
 
   // Get current time
   struct tm timeinfo;
@@ -450,7 +456,7 @@ void fetchAndRender() {
       display.setFont(&FreeSans9pt7b);
       display.setTextColor(GxEPD_BLACK);
       display.setCursor(60, 70);
-      display.print("No departures");
+      display.print(loaded ? "No departures" : "BKK unavailable");
     }
 
   } while (display.nextPage());
