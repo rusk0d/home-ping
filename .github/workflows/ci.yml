@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sketch: [co2_node, eink_node, main_node]
+        sketch: [eink_node, main_node]
     env:
       ESP32_INDEX: https://espressif.github.io/arduino-esp32/package_esp32_index.json
     steps:

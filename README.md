@@ -17,7 +17,7 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 
 | Folder | What |
 |---|---|
-| `firmware/` | Arduino sketches: `co2_node`, `eink_node` (hallway radar + e-ink display), `main_node` |
+| `firmware/` | Arduino sketches: `main_node` (radar, BME280, MH-Z19 CO₂; merged with the former CO₂ node in #57), `eink_node` (hallway radar + e-ink display) |
 | `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `ingest` (MQTT) and `api` modules; `test_push.py`, nightly `backup_db.py` |
 | `web/` | Single-file dashboard (`index.html`), connects to MQTT directly from the browser |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
