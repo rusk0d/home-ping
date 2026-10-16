@@ -28,8 +28,14 @@ def parse_ts(ts):
 # -------------------------
 @contextmanager
 def db():
-    """A connection that is committed on success and always closed (#73)."""
+    """A connection that is committed on success and always closed (#73).
+
+    The database is in WAL mode (#174, set in init_db): readers (API) and the writer
+    (MQTT) don't block each other. synchronous=NORMAL is per connection; with WAL it is
+    still safe against corruption, a power cut can only lose the last commits.
+    """
     conn = sqlite3.connect(config.DB)
+    conn.execute("PRAGMA synchronous=NORMAL")
     try:
         yield conn
         conn.commit()
@@ -55,6 +61,16 @@ READINGS_COLUMNS = """
 
 def init_db():
     with db() as conn:
+        # Persistent in the file: once set, every connection uses WAL (#174). Next to
+        # data.db, SQLite keeps data.db-wal and data.db-shm while connections are open.
+        # Switching needs a moment without other connections (e.g. a backup running):
+        # if that fails, the backend runs on in the old mode and tries again next start.
+        try:
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            if mode != "wal":
+                log.warning("journal_mode is %s, not wal", mode)
+        except sqlite3.OperationalError as e:
+            log.warning("couldn't switch to WAL: %s", e)
         c = conn.cursor()
 
         c.execute(f"CREATE TABLE IF NOT EXISTS readings ({READINGS_COLUMNS})")
