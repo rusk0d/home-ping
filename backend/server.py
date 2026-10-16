@@ -552,15 +552,16 @@ def alert_muted(kind):
         return "quiet hours"
     return None
 QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
+ARRIVAL_CONFIRM_SECONDS = 120     # movement this soon after the quiet spell ends confirms the arrival
 
 
 def any_radar_quiet_minutes():
-    """Minutes since ANY radar last reported occupancy, excluding the newest row."""
+    """Minutes since ANY radar last reported occupancy (call before logging the current row)."""
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute("""
         SELECT ts FROM presence_readings
-        WHERE occupied = 1 AND id < (SELECT MAX(id) FROM presence_readings)
+        WHERE occupied = 1
         ORDER BY id DESC LIMIT 1
     """)
     row = c.fetchone()
@@ -627,15 +628,22 @@ def handle_presence_data(data):
     # -------------------------
     # OCCUPANCY ALERT — fires once per arrival, after a long quiet spell
     # -------------------------
-    if (get_state("occupancy_armed") == "1"
-            and occupied
-            and moving
-            and quiet_minutes >= QUIET_MINUTES_BEFORE_ALERT):
-        where = "hallway" if "hallway" in device else "main room"
-        alert(device, "OCCUPANCY_ALERT", f"after {int(quiet_minutes)} min quiet",
-              title="Occupancy Alert",
-              body=f"Movement in the {where} after {int(quiet_minutes)} min of quiet ({distance}cm)",
-              data={"event": "OCCUPIED", "device": device, "distance": str(distance)})
+    # The first occupied reading after the quiet spell starts an arrival; it is often
+    # stationary-only (the LD2410 sees a still target first), and it already ends the
+    # quiet spell. So movement from any radar within ARRIVAL_CONFIRM_SECONDS confirms it.
+    # A stationary ghost reading never moves and lets the window expire.
+    if occupied and quiet_minutes >= QUIET_MINUTES_BEFORE_ALERT:
+        set_state("arrival_started", str(now))
+        set_state("arrival_quiet", str(int(quiet_minutes)))
+    if occupied and moving and now - float(get_state("arrival_started")) <= ARRIVAL_CONFIRM_SECONDS:
+        set_state("arrival_started", "0")   # once per arrival
+        if get_state("occupancy_armed") == "1":
+            quiet = get_state("arrival_quiet")
+            where = "hallway" if "hallway" in device else "main room"
+            alert(device, "OCCUPANCY_ALERT", f"after {quiet} min quiet",
+                  title="Occupancy Alert",
+                  body=f"Movement in the {where} after {quiet} min of quiet ({distance}cm)",
+                  data={"event": "OCCUPIED", "device": device, "distance": str(distance)})
 
     print(f"[PRESENCE] {device}: occupied={occupied} moving={moving} "
           f"stationary={stationary} dist={distance}cm signal={signal} "
