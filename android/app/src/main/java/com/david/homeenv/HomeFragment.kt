@@ -33,6 +33,7 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -135,18 +136,33 @@ class HomeFragment : Fragment() {
         val hourly: JSONArray?,
     )
 
+    /**
+     * One request to /api/dashboard (#128). If that fails (e.g. a backend without it), the
+     * six single endpoints in parallel, as before. Blocking: call it on Dispatchers.IO.
+     */
+    private suspend fun loadSnapshot(): Snapshot = coroutineScope {
+        Api.getObject("/api/dashboard")?.let { d ->
+            return@coroutineScope Snapshot(
+                latest = d.optJSONObject("latest_all"),
+                devices = d.optJSONArray("devices"),
+                stats = d.optJSONObject("stats24h_combined"),
+                restarts = d.optJSONObject("restarts"),
+                air = d.optJSONObject("air"),
+                hourly = d.optJSONArray("hourly"),
+            )
+        }
+        val latest = async { Api.getObject("/api/latest_all") }
+        val devices = async { Api.getArray("/api/devices") }
+        val stats = async { Api.getObject("/api/stats24h_combined") }
+        val restarts = async { Api.getObject("/api/restarts") }
+        val air = async { Api.getObject("/api/air") }
+        val hourly = async { Api.getArray("/api/hourly") }
+        Snapshot(latest.await(), devices.await(), stats.await(), restarts.await(), air.await(), hourly.await())
+    }
+
     private fun loadDashboardData() {
         viewLifecycleOwner.lifecycleScope.launch {
-            // The six requests in parallel (they used to run one after another)
-            val snap = withContext(Dispatchers.IO) {
-                val latest = async { Api.getObject("/api/latest_all") }
-                val devices = async { Api.getArray("/api/devices") }
-                val stats = async { Api.getObject("/api/stats24h_combined") }
-                val restarts = async { Api.getObject("/api/restarts") }
-                val air = async { Api.getObject("/api/air") }
-                val hourly = async { Api.getArray("/api/hourly") }
-                Snapshot(latest.await(), devices.await(), stats.await(), restarts.await(), air.await(), hourly.await())
-            }
+            val snap = withContext(Dispatchers.IO) { loadSnapshot() }
             serverDown = snap.latest == null
             if (!serverDown) lastOkAt = System.currentTimeMillis()
             try {
