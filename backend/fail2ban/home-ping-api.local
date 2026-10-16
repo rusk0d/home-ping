@@ -1,0 +1,12 @@
+# fail2ban jail (#61), goes into /etc/fail2ban/jail.d/. Bans an IP after 10 wrong
+# API logins within 10 minutes, for 1 hour. The app and widget send the right
+# login, so only a wrong password (e.g. an outdated APK) would trigger it.
+[home-ping-api]
+enabled  = true
+filter   = home-ping-api
+port     = http,https
+# The access log nginx writes for the site (check: grep access_log /etc/nginx/sites-enabled/*)
+logpath  = /var/log/nginx/access.log
+maxretry = 10
+findtime = 10m
+bantime  = 1h
