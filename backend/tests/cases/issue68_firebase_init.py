@@ -1,4 +1,4 @@
-# #68: Firebase is initialised once, also when server.py is imported again.
+# #68/#73: Firebase is initialised once, by start()/init_firebase(), not at import.
 import os, sys, types, tempfile
 from unittest import mock
 backend = sys.argv[1]; os.chdir(tempfile.mkdtemp())
@@ -12,7 +12,10 @@ fa.get_app = get_app; fa.initialize_app = lambda cred: apps.append(cred)
 fa.credentials = mock.MagicMock(); fa.messaging = mock.MagicMock()
 sys.modules.update({"firebase_admin": fa, "firebase_admin.credentials": fa.credentials, "firebase_admin.messaging": fa.messaging})
 sys.path.insert(0, backend)
-import importlib, server
-print(("PASS " if len(apps) == 1 else "FAIL ") + "no app yet -> initialised once")
-importlib.reload(server)
-print(("PASS " if len(apps) == 1 else "FAIL ") + "app exists -> not initialised again")
+def check(label, cond): print(("PASS " if cond else "FAIL ") + label)
+import server
+check("import: Firebase not initialised", apps == [])
+server.init_firebase()
+check("no app yet -> initialised once", len(apps) == 1)
+server.init_firebase()
+check("app exists -> not initialised again", len(apps) == 1)

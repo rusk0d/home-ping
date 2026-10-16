@@ -12,6 +12,7 @@ for name in ["firebase_admin", "firebase_admin.credentials", "firebase_admin.mes
 sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
 import server
+server.prepare()   # importing does no work (#73)
 def check(label, cond): print(("PASS " if cond else "FAIL ") + label)
 def tables():
     con = sqlite3.connect(server.DB); t = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}; con.close(); return t
