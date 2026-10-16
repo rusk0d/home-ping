@@ -8,7 +8,8 @@ from datetime import datetime, timedelta, timezone
 
 import config
 import state
-from config import CONFIDENCE_MINUTES, DB, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, UPTIME_DROP_TOLERANCE
+from config import (CONFIDENCE_MINUTES, DB, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, RAW_RETENTION_DAYS,
+                    UPTIME_DROP_TOLERANCE)
 
 log = logging.getLogger(__name__)
 
@@ -137,7 +138,7 @@ def init_db():
 
         # Long-term history (#129): one row per complete hour, all devices combined (like
         # the app's charts), filled by rollup_hourly() from the raw tables, which are only
-        # kept 8 days. Kept for good: ~2.4 KB a day.
+        # kept RAW_RETENTION_DAYS (2, #173). Kept for good: ~2.4 KB a day.
         c.execute("""
             CREATE TABLE IF NOT EXISTS hourly (
                 hour TEXT PRIMARY KEY,   -- start of the hour, UTC, "YYYY-MM-DD HH:00:00"
@@ -185,10 +186,8 @@ def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None):
             VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?)
         """, (device, temp, hum, uptime, co2, pressure, co2_ok))
 
-        c.execute("""
-            DELETE FROM readings
-            WHERE ts < datetime('now','-8 days')
-        """)
+        c.execute("DELETE FROM readings WHERE ts < datetime('now',?)",
+                  (f"-{RAW_RETENTION_DAYS} days",))
 
 
 def log_presence(device, occupied, presence, stationary, moving,
@@ -203,11 +202,9 @@ def log_presence(device, occupied, presence, stationary, moving,
         """, (device, occupied, presence, stationary, moving,
               distance, signal, rssi, uptime, radar_connected))
 
-        # Keep 8 days so the 24h queries always have full coverage
-        c.execute("""
-            DELETE FROM presence_readings
-            WHERE ts < datetime('now','-8 days')
-        """)
+        # RAW_RETENTION_DAYS, so the 24h queries always have full coverage (#173)
+        c.execute("DELETE FROM presence_readings WHERE ts < datetime('now',?)",
+                  (f"-{RAW_RETENTION_DAYS} days",))
 
 
 HOURLY_COLUMNS = ("hour", "temp_avg", "temp_min", "temp_max", "humidity_avg", "humidity_min",

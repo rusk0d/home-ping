@@ -35,6 +35,8 @@ OCCUPANCY_HOURLY_INTERVAL = 300  # seconds; also the interval of HISTORY_24H_TOP
 HISTORY_24H_TOPIC = "home/backend/history_24h"   # web sparklines on page load (#132)
 
 # Retention
+RAW_RETENTION_DAYS = 2        # readings / presence_readings (#173): the 24 h queries need just
+                              # over a day; longer history comes from the hourly table (#129)
 EVENTS_RETENTION_DAYS = 30    # events older than this are deleted
 DEVICES_RETENTION_DAYS = 30   # devices not seen for this long are removed from the list
 
@@ -53,7 +55,7 @@ PRESENCE_SIGNAL_THRESHOLD = 15   # stationary readings below this energy are tre
 # "confidence" everywhere in the API: % of a radar's rows in the last
 # CONFIDENCE_MINUTES that were occupied (0-100), or None without radar data.
 CONFIDENCE_MINUTES = 15
-HOURLY_MAX_DAYS = 7            # /api/hourly?days= limit (readings are kept 8 days)
+HOURLY_MAX_DAYS = 7            # /api/hourly?days= limit (past days from the hourly table, #173)
 DAILY_MAX_DAYS = 400           # /api/daily?days= limit (the hourly table is kept for good, #129)
 
 # Alerts
