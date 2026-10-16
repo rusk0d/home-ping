@@ -31,7 +31,8 @@ MQTT_PASS = os.environ["MQTT_PASS"]
 TOPIC = "home/esp32/#"  # Subscribe to all topics under home/esp32/
 # Hourly occupancy for the web page (outside home/esp32/# so we don't receive our own messages)
 OCCUPANCY_HOURLY_TOPIC = "home/backend/occupancy_hourly"
-OCCUPANCY_HOURLY_INTERVAL = 300  # seconds
+OCCUPANCY_HOURLY_INTERVAL = 300  # seconds; also the interval of HISTORY_24H_TOPIC
+HISTORY_24H_TOPIC = "home/backend/history_24h"   # web sparklines on page load (#132)
 
 # Retention
 EVENTS_RETENTION_DAYS = 30    # events older than this are deleted
