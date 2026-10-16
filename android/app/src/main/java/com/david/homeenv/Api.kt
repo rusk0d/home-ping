@@ -1,6 +1,7 @@
 package com.david.homeenv
 
 import android.util.Base64
+import android.util.Log
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -16,6 +17,7 @@ import java.util.concurrent.TimeUnit
  * off the main thread. Failures are logged and returned as null, never thrown.
  */
 object Api {
+    private const val TAG = "Api"
     private val client = OkHttpClient()
     private val authHeader = "Basic " + Base64.encodeToString(
         "${BuildConfig.API_USER}:${BuildConfig.API_PASS}".toByteArray(), Base64.NO_WRAP
@@ -28,7 +30,7 @@ object Api {
     fun get(path: String, timeoutS: Long? = null): String? = try {
         execute(Request.Builder().url(url(path)).get(), timeoutS).use { if (it.isSuccessful) it.body?.string() else null }
     } catch (e: Exception) {
-        e.printStackTrace()
+        Log.w(TAG, "GET $path failed: $e")
         null
     }
 
@@ -43,7 +45,7 @@ object Api {
     fun post(path: String, body: JSONObject): Int? = try {
         execute(Request.Builder().url(url(path)).post(body.toString().toRequestBody(JSON)), null).use { it.code }
     } catch (e: Exception) {
-        e.printStackTrace()
+        Log.w(TAG, "POST $path failed: $e")
         null
     }
 
@@ -53,7 +55,7 @@ object Api {
             if (it.isSuccessful) it.body?.string()?.let { s -> runCatching { JSONObject(s) }.getOrNull() } else null
         }
     } catch (e: Exception) {
-        e.printStackTrace()
+        Log.w(TAG, "POST $path failed: $e")
         null
     }
 

@@ -5,6 +5,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -16,6 +17,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.david.homeenv.databinding.FragmentHomeBinding
 import com.david.homeenv.ui.AccentCard
 import com.david.homeenv.ui.Level
@@ -29,12 +31,16 @@ import java.time.Instant
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // Home screen, styled after the web dashboard (#30). Endpoints: contracts/api.md
 class HomeFragment : Fragment() {
 
     companion object {
+        private const val TAG = "HomeFragment"
         private const val REFRESH_MS = 60_000L
         private const val AGE_TICK_MS = 10_000L
         // Seconds without a new reading before a card is dimmed (~3 missed publishes, as on the web)
@@ -117,11 +123,8 @@ class HomeFragment : Fragment() {
     }
 
     // ---------- networking (Api: blocking, null on failure) ----------
-
-    /** Runs [block] on the UI thread only while the view still exists. */
-    private fun ui(block: () -> Unit) {
-        activity?.runOnUiThread { if (view != null) block() }
-    }
+    // Coroutines in the view's lifecycle scope: the blocking calls run on Dispatchers.IO,
+    // and the results are dropped if the view is gone by then (#125).
 
     private class Snapshot(
         val latest: JSONObject?,
@@ -133,53 +136,53 @@ class HomeFragment : Fragment() {
     )
 
     private fun loadDashboardData() {
-        thread {
-            val snap = Snapshot(
-                latest = Api.getObject("/api/latest_all"),
-                devices = Api.getArray("/api/devices"),
-                stats = Api.getObject("/api/stats24h_combined"),
-                restarts = Api.getObject("/api/restarts"),
-                air = Api.getObject("/api/air"),
-                hourly = Api.getArray("/api/hourly"),
-            )
-            ui {
-                serverDown = snap.latest == null
-                if (!serverDown) lastOkAt = System.currentTimeMillis()
-                try {
-                    render(snap)
-                } catch (e: Exception) {
-                    // Never crash the screen on an unexpected payload
-                    e.printStackTrace()
-                }
-                b.swipeRefresh.isRefreshing = false
+        viewLifecycleOwner.lifecycleScope.launch {
+            // The six requests in parallel (they used to run one after another)
+            val snap = withContext(Dispatchers.IO) {
+                val latest = async { Api.getObject("/api/latest_all") }
+                val devices = async { Api.getArray("/api/devices") }
+                val stats = async { Api.getObject("/api/stats24h_combined") }
+                val restarts = async { Api.getObject("/api/restarts") }
+                val air = async { Api.getObject("/api/air") }
+                val hourly = async { Api.getArray("/api/hourly") }
+                Snapshot(latest.await(), devices.await(), stats.await(), restarts.await(), air.await(), hourly.await())
             }
+            serverDown = snap.latest == null
+            if (!serverDown) lastOkAt = System.currentTimeMillis()
+            try {
+                render(snap)
+            } catch (e: Exception) {
+                // Never crash the screen on an unexpected payload
+                Log.w(TAG, "render failed", e)
+            }
+            b.swipeRefresh.isRefreshing = false
         }
     }
 
     private fun setOccupancyArmed(armed: Boolean) {
-        thread {
-            val ok = Api.post("/api/occupancy_arm", JSONObject().put("armed", armed)) in 200..299
-            ui {
-                if (ok) {
-                    showArmed(armed)
-                } else {
-                    setSwitchSilently(!armed)
-                    Snackbar.make(requireView(), "Couldn't change occupancy alerts. Check the connection.", Snackbar.LENGTH_LONG).show()
-                }
+        viewLifecycleOwner.lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                Api.post("/api/occupancy_arm", JSONObject().put("armed", armed)) in 200..299
+            }
+            if (ok) {
+                showArmed(armed)
+            } else {
+                setSwitchSilently(!armed)
+                Snackbar.make(requireView(), "Couldn't change occupancy alerts. Check the connection.", Snackbar.LENGTH_LONG).show()
             }
         }
     }
 
     private fun loadOccupancyArmedState() {
-        thread {
-            val armed = Api.getObject("/api/occupancy_status")?.takeIf { it.has("armed") }?.optBoolean("armed")
-            ui {
-                if (armed == null) {
-                    b.occupancyStatus.text = "Unknown (offline?)"
-                } else {
-                    setSwitchSilently(armed)
-                    showArmed(armed)
-                }
+        viewLifecycleOwner.lifecycleScope.launch {
+            val armed = withContext(Dispatchers.IO) {
+                Api.getObject("/api/occupancy_status")?.takeIf { it.has("armed") }?.optBoolean("armed")
+            }
+            if (armed == null) {
+                b.occupancyStatus.text = "Unknown (offline?)"
+            } else {
+                setSwitchSilently(armed)
+                showArmed(armed)
             }
         }
     }

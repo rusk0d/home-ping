@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.util.Log
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -12,6 +13,7 @@ import com.google.firebase.messaging.RemoteMessage
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     companion object {
+        private const val TAG = "FcmService"
         /** Sensor alerts (humidity, temperature, radar). Also the FCM default channel (manifest). */
         const val CHANNEL_SENSORS = "homeenv_channel"
         /** Arrival alerts, separate so they can stay on when sensor alerts are muted. */
@@ -73,7 +75,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        println("FCM new token: $token")
+        Log.i(TAG, "FCM token rotated")
         // Token rotated: register the new one (this callback already runs off the main thread)
         PushRegistration.register(this, token)
     }
