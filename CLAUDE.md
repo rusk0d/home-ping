@@ -38,8 +38,9 @@ When a build or test needs these, use the example files with fake values.
 # Commands
 - Backend (production): runs as a systemd service on the server
   unit `iot-backend` (`sudo systemctl status|restart iot-backend`, logs via
-  `journalctl -u iot-backend -f`).
+  `journalctl -u iot-backend -f`), as user `iot` from `/opt/iot` with its own venv,
+  served by waitress on 127.0.0.1:5000 behind nginx (backend/systemd/).
 - Backend (local dev/tests): `python server.py` with a local .env and a temp SQLite file
-- Test push (on the server, in the backend directory): `python3 test_push.py ["Title" "Text"]`
+- Test push (on the server, in /opt/iot): `sudo -u iot venv/bin/python test_push.py ["Title" "Text"]`
 - Android: `./gradlew assembleDebug` in /android
 - Firmware: compiled in the Arduino IDE (arduino-cli in CI later)

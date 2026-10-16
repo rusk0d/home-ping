@@ -21,6 +21,8 @@ AUTH_PASS = os.environ["DASH_PASS"]
 # -------------------------
 # Files and broker
 DB = "data.db"
+BIND_HOST = os.environ.get("BIND_HOST", "127.0.0.1")   # API listen address (#59); nginx proxies to it
+PORT = int(os.environ.get("PORT", "5000"))
 FIREBASE_CRED = "firebase_service_account.json"
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
