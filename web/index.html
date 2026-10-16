@@ -314,6 +314,7 @@
   const TOPIC_ENV = 'home/esp32/bme280';  // main_node, every 30 s, retained
   const TOPIC_CO2 = 'home/esp32/co2';     // main_node (since the node merge, #57), every 60 s, retained
   const TOPIC_OCC = 'home/backend/occupancy_hourly'; // backend, every 5 min, retained
+  const TOPIC_HIST = 'home/backend/history_24h';     // backend, every 5 min, retained (#132)
   const TOPIC_PRESENCE = 'home/esp32/presence';  // both radar nodes, every 5 s, retained
   const TOPIC_STATUS = 'home/esp32/+/status';    // "online" / last will "offline", retained (#81)
   const STATUS_RE = /^home\/esp32\/([^/]+)\/status$/;
@@ -324,11 +325,15 @@
     hallway_presence_esp32: { name: 'Hallway radar', staleAfter: 30 },   // radar every 5 s
   };
   const STALE_AFTER = { env: 90, co2: 180, occ: 900 }; // seconds, ~3 missed publishes
-  const MAX_POINTS = 120;   // sparkline points kept per metric (browser memory only)
+  const DAY_MS = 24 * 3600e3;
+  const MAX_POINTS = 3000;  // live sparkline points kept per metric (~24 h of 30 s readings)
   const MAX_HISTORY = 20;   // rows in the recent readings table
 
   const $ = id => document.getElementById(id);
-  const series = { temp: [], hum: [], pres: [], co2: [] };
+  // Sparklines: hourly averages from history_24h (plotted mid-hour) followed by the live
+  // readings since; both as { t: ms, v }
+  const series = { temp: [], hum: [], pres: [], co2: [] };       // live
+  const hourly = { temp: [], hum: [], pres: [], co2: [] };       // from history_24h
   const lastSeen = { env: null, co2: null, occ: null };   // { at: ms, retained: bool }
   const history = [];
 
@@ -392,19 +397,38 @@
   // ---------- sparklines ----------
   function push(key, v) {
     if (typeof v !== 'number' || !isFinite(v)) return;
-    series[key].push(v);
-    if (series[key].length > MAX_POINTS) series[key].shift();
+    const s = series[key], now = Date.now();
+    s.push({ t: now, v });
+    while (s.length && (s.length > MAX_POINTS || s[0].t < now - DAY_MS)) s.shift();
+  }
+
+  // history_24h (#132): replaces the hourly points; live points from before the end of
+  // its last hour are dropped, the hourly average covers them
+  const SPARKS = { temp: ['temp', 1], hum: ['humidity', 0], pres: ['pressure', 0], co2: ['co2', 0] };
+  function onHistory(d) {
+    if (!Array.isArray(d.hours)) return;
+    const hours = d.hours.map(h => ({ ...h, t: Date.parse(h.start) })).filter(h => isFinite(h.t));
+    const end = hours.length ? hours[hours.length - 1].t + 3600e3 : -Infinity;
+    for (const [key, [field, digits]] of Object.entries(SPARKS)) {
+      hourly[key] = hours.filter(h => typeof h[field] === 'number')
+                         .map(h => ({ t: h.t + 1800e3, v: h[field] }));
+      series[key] = series[key].filter(p => p.t >= end);
+      drawSpark(key, digits);
+    }
   }
 
   function drawSpark(key, digits) {
-    const pts = series[key];
+    const pts = hourly[key].concat(series[key]);
     const svg = $(`${key}-spark`);
     if (pts.length < 2) { svg.replaceChildren(); return; }
-    let min = Math.min(...pts), max = Math.max(...pts);
+    const vs = pts.map(p => p.v);
+    let min = Math.min(...vs), max = Math.max(...vs);
     if (max - min < 1e-9) { min -= 1; max += 1; }
-    const xy = pts.map((v, i) => [
-      (i / (pts.length - 1)) * 100,
-      28 - ((v - min) / (max - min)) * 26
+    // x by time, from the oldest point to the newest
+    const t0 = pts[0].t, span = Math.max(pts[pts.length - 1].t - t0, 1);
+    const xy = pts.map(p => [
+      ((p.t - t0) / span) * 100,
+      28 - ((p.v - min) / (max - min)) * 26
     ]);
     const line = 'M' + xy.map(p => p.map(n => n.toFixed(2)).join(',')).join('L');
     const ns = 'http://www.w3.org/2000/svg';
@@ -415,7 +439,7 @@
     path.setAttribute('class', 'line');
     path.setAttribute('d', line);
     svg.replaceChildren(area, path);
-    $(`${key}-range`).textContent = `${fmt(Math.min(...pts), digits)} – ${fmt(Math.max(...pts), digits)}`;
+    $(`${key}-range`).textContent = `${fmt(Math.min(...vs), digits)} – ${fmt(Math.max(...vs), digits)}`;
   }
 
   // ---------- message handlers ----------
@@ -714,7 +738,7 @@
       }
       c.options.reconnectPeriod = RECONNECT_MIN;
       setStatus('live', 'Live');
-      c.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC, TOPIC_PRESENCE, TOPIC_STATUS], (err, granted) => {
+      c.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC, TOPIC_HIST, TOPIC_PRESENCE, TOPIC_STATUS], (err, granted) => {
         if (err) console.error('MQTT subscribe failed', err);
         // QoS 128 = refused, e.g. the user's ACL doesn't cover the topic
         (granted || []).filter(g => g.qos === 128).forEach(g => console.warn('Subscription refused by the broker:', g.topic));
@@ -747,6 +771,7 @@
       if (topic === TOPIC_ENV) onEnv(data, packet.retain);
       else if (topic === TOPIC_CO2) onCo2(data, packet.retain);
       else if (topic === TOPIC_OCC) onOcc(data);
+      else if (topic === TOPIC_HIST) onHistory(data);
       else if (topic === TOPIC_PRESENCE && data.device) noteNode(data.device, data, packet.retain);
     });
   }
