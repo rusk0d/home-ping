@@ -31,15 +31,14 @@ and status topics the page subscribes to; `home/backend/#` covers `occupancy_hou
 ## Broker accounts (since #31)
 
 Every client has its own Mosquitto account with only the access it needs. The shared
-`esp32` account (read/write on `home/#`, leaked through the old `config.js`) was deleted
-on 2026-10-16.
+`esp32` account (read/write on `home/#`, leaked through the old `config.js`) and the old shared
+read-only `web` account (from before #99) were deleted on 2026-10-16.
 
 | Account | Used by | ACL (`/etc/mosquitto/acl`) |
 |---|---|---|
 | `sensor` | both nodes (`MQTT_USER` in `secrets.h`) | `topic write home/esp32/#` (publish only, also covers the last will) |
 | `backend` | the backend (`MQTT_USER` in `/opt/iot/.env`) | `topic read home/esp32/#`, `topic write home/backend/#` |
 | one per person (e.g. `david`) | the web page's login form (#99) | `topic read home/esp32/#`, `topic read home/backend/#` (see "Web users") |
-| `web` | old shared read-only web login (before #99) | `topic read` on bme280, co2, occupancy_hourly; can be deleted once nobody uses it |
 
 `per_listener_settings true`: the 1883 (MQTT) and 9001 (WebSockets, behind nginx `/mqtt`)
 listeners each have their own `password_file` and `acl_file` line pointing to the same files.
