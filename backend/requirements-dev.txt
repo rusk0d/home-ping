@@ -1,2 +1,2 @@
 # Only for running the tests (#76): pytest runs backend/tests. The backend itself needs requirements.txt.
-pytest==8.3.5
+pytest==9.1.1
