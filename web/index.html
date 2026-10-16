@@ -312,7 +312,7 @@
 <script>
   // Topics and payloads: see contracts/mqtt.md
   const TOPIC_ENV = 'home/esp32/bme280';  // main_node, every 30 s, retained
-  const TOPIC_CO2 = 'home/esp32/co2';     // co2_node, every 60 s, retained
+  const TOPIC_CO2 = 'home/esp32/co2';     // main_node (since the node merge, #57), every 60 s, retained
   const TOPIC_OCC = 'home/backend/occupancy_hourly'; // backend, every 5 min, retained
   const TOPIC_PRESENCE = 'home/esp32/presence';  // both radar nodes, every 5 s, retained
   const TOPIC_STATUS = 'home/esp32/+/status';    // "online" / last will "offline", retained (#81)
@@ -322,7 +322,6 @@
   const NODES = {
     home_ping_esp32:        { name: 'Main node',     staleAfter: 30 },   // radar every 5 s
     hallway_presence_esp32: { name: 'Hallway radar', staleAfter: 30 },   // radar every 5 s
-    co2_sensor_esp32:       { name: 'CO₂ node',      staleAfter: 180 },  // every 60 s
   };
   const STALE_AFTER = { env: 90, co2: 180, occ: 900 }; // seconds, ~3 missed publishes
   const MAX_POINTS = 120;   // sparkline points kept per metric (browser memory only)
@@ -458,7 +457,7 @@
       setSub('co2-sub', d.warming ? 'Sensor warming up (~3 min)' : `No valid reading (err ${d.err ?? '?'})`, 'ok');
     }
 
-    noteNode(d.device || 'co2_sensor_esp32', d, retained);
+    noteNode(d.device || 'home_ping_esp32', d, retained);
     addHistory('co2', { co2: valid ? d.co2 + ' ppm' : (d.warming ? 'warming' : 'invalid') });
   }
 
