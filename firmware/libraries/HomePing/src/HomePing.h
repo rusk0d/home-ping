@@ -31,23 +31,35 @@ inline void hpConnectWiFi(const char* ssid, const char* pass) {
   Serial.println(WiFi.localIP());
 }
 
-// Connects to the broker (blocking, retries every 5 s). Last will: if this node
-// drops off, the broker publishes "offline" (retained) on home/esp32/<device>/status
-// about 1.5 x keepalive later; on connect the node publishes "online" there (#13).
-inline void hpConnectMQTT(PubSubClient& mqtt, const char* device,
+// Connects to the broker without blocking the loop (#120): at most one attempt every
+// HP_MQTT_RETRY_MS, then it returns, so radar reading and the display keep running while
+// the broker is down. Call it from loop() while !mqtt.connected(); returns whether the
+// client is connected now. Last will: if this node drops off, the broker publishes
+// "offline" (retained) on home/esp32/<device>/status about 1.5 x keepalive later; on
+// connect the node publishes "online" there (#13).
+const unsigned long HP_MQTT_RETRY_MS = 5000;
+
+inline bool hpConnectMQTT(PubSubClient& mqtt, const char* device,
                           const char* user, const char* pass) {
-  while (!mqtt.connected()) {
-    char clientId[64];
-    snprintf(clientId, sizeof(clientId), "%s_%llx", device, ESP.getEfuseMac());
-    char statusTopic[64];
-    snprintf(statusTopic, sizeof(statusTopic), "home/esp32/%s/status", device);
-    Serial.println("Connecting to MQTT...");
-    if (mqtt.connect(clientId, user, pass, statusTopic, 1, true, "offline")) {
-      mqtt.publish(statusTopic, "online", true);
-      Serial.println("MQTT connected");
-    } else {
-      Serial.printf("MQTT failed, rc=%d, retrying in 5s\n", mqtt.state());
-      delay(5000);
-    }
+  if (mqtt.connected()) return true;
+  static unsigned long lastAttempt = 0;
+  static bool attempted = false;
+  unsigned long now = millis();
+  if (attempted && now - lastAttempt < HP_MQTT_RETRY_MS) return false;
+  attempted = true;
+  lastAttempt = now;
+
+  char clientId[64];
+  snprintf(clientId, sizeof(clientId), "%s_%llx", device, ESP.getEfuseMac());
+  char statusTopic[64];
+  snprintf(statusTopic, sizeof(statusTopic), "home/esp32/%s/status", device);
+  Serial.println("Connecting to MQTT...");
+  if (mqtt.connect(clientId, user, pass, statusTopic, 1, true, "offline")) {
+    mqtt.publish(statusTopic, "online", true);
+    Serial.println("MQTT connected");
+    return true;
   }
+  Serial.printf("MQTT failed, rc=%d, retrying in %lus
+", mqtt.state(), HP_MQTT_RETRY_MS / 1000);
+  return false;
 }
