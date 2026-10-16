@@ -1,7 +1,9 @@
-# Database schema contract (DRAFT)
+# Database schema contract
 
-Status: draft, reverse-engineered from `backend/server.py` on branch `contracts-draft` (2026-10-13). The live
-`data.db` wasn't inspected. Anything marked **UNCERTAIN** is inferred.
+The backend's SQLite database (`data.db`); schema and migrations in `backend/store.py`.
+It is the source of truth: update it in the same change as the code (see CLAUDE.md).
+First written on 2026-10-13 by reading the code; anything still marked **UNCERTAIN** was
+inferred then and hasn't been confirmed since.
 
 ## General
 
@@ -171,20 +173,19 @@ Notable derived values:
 
 ## Mismatches and issues
 
-1. ~~**`init_db.py` doesn't match `server.py`.**~~ Fixed in #4: `init_db.py` was
-   removed, and `server.py` now adds any missing `readings` columns on start. A
-   database created by the old script is repaired automatically. Rows it stored
-   before the repair have `device = NULL`, so per-device queries don't show them.
-2. **Payload `raw` is stored as `raw_value`** and the API renames it back to `raw`.
-3. ~~**Legacy columns that are always written as 0**~~ dropped in #14. All occupancy
-   lives in `presence_readings`.
-4. ~~**Retained MQTT messages create duplicate rows.**~~ Fixed in #5: retained messages are skipped.
-5. **In-memory state:** `LAST_UPTIME` (restart detection baseline) and `RADAR_FAIL_COUNT`
-   still reset when the backend restarts. That is harmless: the first message after a
+1. **In-memory state:** `LAST_UPTIME` (restart detection baseline) and `RADAR_FAIL_COUNT`
+   reset when the backend restarts. That is harmless: the first message after a
    restart only sets the baseline, and an outage needs 12 fresh disconnected messages
    anyway. Cooldowns and outage flags are in `system_state` (#5); `co2_ok` in `readings` (#14).
-6. ~~**`any_radar_quiet_minutes` excluded the newest row of any device**~~ Fixed with the
-   arrival alert change: it skipped the newest row in the table (with two radars, often the
-   *other* radar's latest row), although the current row isn't inserted yet when it runs.
-7. ~~**`events` and `devices` grow without limit.**~~ Fixed in #18: 30 days retention for both.
-8. ~~**No indexes.**~~ Fixed in #18 (see Conventions).
+
+## Changelog
+
+Fixed mismatches, oldest first (issue number: what changed).
+
+- #4: `init_db.py` removed; the backend adds missing `readings` columns on start. Rows stored by
+  the old script before the repair have `device = NULL`, so per-device queries don't show them.
+- #5: retained MQTT messages are skipped, so they no longer create duplicate rows.
+- #9: soil table dropped (and with it the `raw` → `raw_value` renaming).
+- #14: legacy always-0 occupancy columns dropped from `readings`.
+- #18: 30-day retention for `events` and `devices`; indexes added (see Conventions).
+- Arrival alert fix (#101): `any_radar_quiet_minutes` no longer skips the newest row in the table.
