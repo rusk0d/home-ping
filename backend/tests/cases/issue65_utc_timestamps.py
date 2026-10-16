@@ -24,6 +24,7 @@ sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 builtins.print = lambda *a, **k: None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[DB]", "[STATUS]")) else _p(*a, **k)
 import server
+server.prepare()   # importing does no work (#73)
 db = lambda: sqlite3.connect(server.DB)
 q = lambda sql: db().execute(sql).fetchall()
 

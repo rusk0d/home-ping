@@ -12,6 +12,7 @@ for name in ["firebase_admin", "firebase_admin.credentials", "firebase_admin.mes
 sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
 import server
+server.prepare()   # importing does no work (#73)
 db = server.DB
 # Simulate an existing DB with the old phone row, then run init_db again (= backend restart)
 con = sqlite3.connect(db)

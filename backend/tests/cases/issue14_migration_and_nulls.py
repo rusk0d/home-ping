@@ -24,6 +24,7 @@ con.commit(); con.close()
 sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 import server
+server.prepare()   # importing does no work (#73)
 assert server.DB == "data.db", server.DB
 builtins.print = lambda *a, **k: None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[DB]")) else _p(*a, **k)
 
