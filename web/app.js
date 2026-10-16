@@ -69,6 +69,13 @@ function co2Level(ppm) {
   if (ppm < 2000) return ['Stuffy – open a window', 'poor'];
   return ['Poor – ventilate now', 'bad'];
 }
+// Dew point in °C (#177), Magnus formula with the Sonntag constants; contracts/api.md
+// "Dew point", android ui/Levels.kt dewPoint. Null for a humidity of 0 or less.
+function dewPoint(t, rh) {
+  if (!(rh > 0)) return null;
+  const g = Math.log(rh / 100) + 17.62 * t / (243.12 + t);
+  return 243.12 * g / (17.62 - g);
+}
 function humLevel(h) {
   if (h < 30) return ['Very dry', 'poor'];
   if (h < 40) return ['Dry', 'ok'];
@@ -140,7 +147,11 @@ function onEnv(d, retained) {
   $('pres').textContent = fmt(d.pressure, 0);
 
   if (typeof d.temp_c === 'number') setSub('temp-sub', ...tempLevel(d.temp_c));
-  if (typeof d.humidity === 'number') setSub('hum-sub', ...humLevel(d.humidity));
+  if (typeof d.humidity === 'number') {
+    setSub('hum-sub', ...humLevel(d.humidity));
+    const dew = typeof d.temp_c === 'number' ? dewPoint(d.temp_c, d.humidity) : null;
+    if (dew !== null) $('hum-sub').append(` dew point ${fmt(dew, 0)} °C`);
+  }
   setSub('pres-sub', 'Sea level ≈ 1013 hPa');
 
   push('temp', d.temp_c); push('hum', d.humidity); push('pres', d.pressure);
