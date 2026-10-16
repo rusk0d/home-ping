@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Home Ping</title>
 <script src="config.js"></script>
-<script src="https://unpkg.com/mqtt@5.16.0/dist/mqtt.min.js"></script>
+<!-- Pinned with a hash (#62): the browser refuses the file if the CDN serves anything else.
+     After a version bump: openssl dgst -sha384 -binary mqtt.min.js | openssl base64 -A -->
+<script src="https://unpkg.com/mqtt@5.16.0/dist/mqtt.min.js"
+        integrity="sha384-9WWboT9UtuPFRlOLq4FygQkcJxzYcpz8SXGkNyCEXM+44n14xzjNlrRKYZwuF/A6"
+        crossorigin="anonymous"></script>
 <style>
   :root {
     --bg: #0f1218;
