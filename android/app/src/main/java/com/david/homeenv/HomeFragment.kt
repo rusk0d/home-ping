@@ -216,7 +216,7 @@ class HomeFragment : Fragment() {
     // ---------- rendering ----------
 
     private fun render(s: Snapshot) {
-        s.latest?.let { renderLatest(it) }
+        s.latest?.let { renderLatest(it, s.air) }
         s.air?.let { renderPressure(it) }
         s.hourly?.let { renderHourly(it) }
         renderDevices(s.devices, s.latest)
@@ -225,7 +225,7 @@ class HomeFragment : Fragment() {
         updateAges()
     }
 
-    private fun renderLatest(latest: JSONObject) {
+    private fun renderLatest(latest: JSONObject, air: JSONObject?) {
         // Temperature + humidity from the device with the newest env reading (the BME280
         // moved boards in the node merge, #57). Older backends without env_ts: the main node.
         val main = latest.newestBy("env_ts") ?: latest.optJSONObject(MAIN)
@@ -246,7 +246,9 @@ class HomeFragment : Fragment() {
         b.co2Value.text = ppm?.toString() ?: "--"
         b.co2Gauge.ppm = ppm
         if (ppm != null) {
-            val level = Levels.co2(ppm)
+            // The server's band (/api/air), when it is about this same reading (#127)
+            val serverBand = air?.takeIf { it.optNum("co2")?.toInt() == ppm }?.optString("band")
+            val level = Levels.co2Band(serverBand) ?: Levels.co2(ppm)
             Levels.applyChip(b.co2Chip, level)
             b.cardCo2.accentColor = Levels.color(requireContext(), level.color)
         } else {

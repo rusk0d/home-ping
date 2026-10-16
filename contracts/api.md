@@ -234,7 +234,22 @@ Latest CO2 and pressure from whichever device last reported them.
 ```
 
 - `co2`: integer ppm or null. Latest non-null `readings.co2` from any device.
-- `band`: `"good"` (<800), `"fair"` (<1200), `"stuffy"` (<2000), `"bad"` (≥2000), null when there is no CO2 reading.
+- `band`: `"good"` (<800), `"fair"` (<1200), `"stuffy"` (<2000), `"bad"` (≥2000), null when there is no CO2 reading (see "Level bands" below). Android uses it for the CO₂ chip, falling back to its own copy of the bands.
+
+### Level bands
+
+The one place the level thresholds are defined (#127). Change them here first, then in
+every copy: `backend/api.py` (`/api/air` `band`, CO₂ only), `web/index.html`
+(`co2Level`, `humLevel`, `tempLevel`) and `android/.../ui/Levels.kt` (chips and gauge stops).
+
+| Value | Bands (label, from low to high) |
+|---|---|
+| CO₂ (ppm) | Fresh `good` < 800 ≤ OK `fair` < 1200 ≤ Stuffy `stuffy` < 2000 ≤ Poor `bad` |
+| Humidity (%) | Very dry < 30 ≤ Dry < 40 ≤ Comfortable ≤ 60 < Humid ≤ 70 < Very humid |
+| Temperature (°C) | Cold < 18 ≤ Cool < 20 ≤ Comfortable ≤ 24 < Warm ≤ 27 < Hot |
+
+Gauge ranges (drawing only): CO₂ 400–3000 ppm (web and Android), humidity 0–100 % and
+temperature 14–30 °C (Android only).
 - `pressure`/`temp`/`humidity`: from the latest row with non-null `pressure`.
 - `pressure_3h_change`: hPa, latest pressure minus the newest reading at least 3 h old (1 dp), or null.
 - `ts`: env row ts if present, else co2 row ts, else null.
