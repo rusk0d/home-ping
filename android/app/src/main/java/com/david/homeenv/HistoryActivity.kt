@@ -4,13 +4,16 @@ import android.os.Bundle
 import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.david.homeenv.databinding.ActivityHistoryBinding
 import com.david.homeenv.ui.HistoryChartView
 import org.json.JSONArray
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
-import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * History screen (#82): the last [DAYS] days of hourly averages from
@@ -35,14 +38,12 @@ class HistoryActivity : AppCompatActivity() {
 
     private fun load() {
         b.swipeRefresh.isRefreshing = true
-        thread {
-            val hourly = Api.getArray("/api/hourly?days=$DAYS")
-            runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                b.swipeRefresh.isRefreshing = false
-                b.error.visibility = if (hourly == null) View.VISIBLE else View.GONE
-                hourly?.let { render(it) }
-            }
+        // Cancelled with the activity, so no isDestroyed check is needed (#125)
+        lifecycleScope.launch {
+            val hourly = withContext(Dispatchers.IO) { Api.getArray("/api/hourly?days=$DAYS") }
+            b.swipeRefresh.isRefreshing = false
+            b.error.visibility = if (hourly == null) View.VISIBLE else View.GONE
+            hourly?.let { render(it) }
         }
     }
 

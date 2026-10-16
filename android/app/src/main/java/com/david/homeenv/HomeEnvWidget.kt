@@ -11,6 +11,7 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import android.widget.RemoteViews
 import com.david.homeenv.ui.Level
 import com.david.homeenv.ui.Levels
@@ -25,6 +26,7 @@ import com.david.homeenv.BuildConfig
 class HomeEnvWidget : AppWidgetProvider() {
 
     companion object {
+        private const val TAG = "HomeEnvWidget"
         private const val ACTION_AUTO_UPDATE = "com.david.homeenv.AUTO_UPDATE"
         private const val UPDATE_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes
         private const val FETCH_TIMEOUT_S = 8L  // stay well inside goAsync's ~10 s budget
@@ -125,12 +127,12 @@ class HomeEnvWidget : AppWidgetProvider() {
                 alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAtMillis, pendingIntent)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Exact alarm failed, using an inexact one: $e")
             // Last resort (e.g. the exact-alarm permission was revoked in between)
             try {
                 alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAtMillis, pendingIntent)
             } catch (e2: Exception) {
-                e2.printStackTrace()
+                Log.w(TAG, "Couldn't schedule the widget update: $e2")
             }
         }
     }
