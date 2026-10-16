@@ -12,7 +12,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 - Auth: HTTP Basic. One shared account, `DASH_USER` / `DASH_PASS` from
   `backend/.env`. On failure: `401`, body `Authentication required`
   (text/plain), header `WWW-Authenticate: Basic realm="Login Required"`.
-  Every endpoint uses the `require_auth` decorator.
+  Every endpoint uses the `require_auth` decorator, except `/api/health` (#77).
 - Content type: `application/json` (via `jsonify`) unless noted.
 - Timestamps: **ISO 8601 in UTC**, `"YYYY-MM-DDTHH:MM:SSZ"` (since #65; before that,
   server-local `"YYYY-MM-DD HH:MM:SS"` without a zone). They are the time the backend
@@ -57,6 +57,7 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
 | POST | `/api/occupancy_arm` | Basic | Android Home |
 | GET | `/api/occupancy_status` | Basic | Android Home |
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
+| GET | `/api/health` | **none** | external uptime monitor (#77) |
 
 ---
 
@@ -282,6 +283,27 @@ Client: Android notification settings screen (bell icon in the header). Each swi
 or time change is one POST; on failure the screen goes back to the last confirmed state.
 
 ---
+
+### GET `/api/health` (since #77)
+
+For an external uptime monitor. **No auth**, so the monitor needs no password and failed
+checks never count towards fail2ban. It returns no sensor data.
+
+```json
+{"ok":true,"mqtt_connected":true,"last_message_age_s":4,"db_ok":true}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `ok` | bool | all of the three checks below pass |
+| `mqtt_connected` | bool | the backend's MQTT client is connected to the broker |
+| `last_message_age_s` | int or null | seconds since the last live (non-retained) MQTT message; null before the first one since startup |
+| `db_ok` | bool | `data.db` can be read |
+
+Status **200** when `ok`, else **503** with the same body. Stale means no live message for
+`HEALTH_MAX_MESSAGE_AGE` (**300 s**), counted from startup until the first message. The radars
+publish every 5 s, so a stale feed means ingestion stopped (backend, broker or all nodes).
+Client: an external monitor (UptimeRobot or similar) checking the status code.
 
 ## Mismatches and issues between components
 
