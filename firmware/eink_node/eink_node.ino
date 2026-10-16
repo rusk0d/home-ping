@@ -9,7 +9,7 @@
 #include <PubSubClient.h>
 #include <time.h>
 #include <ld2410.h>
-#include <esp_timer.h>
+#include <HomePingRadar.h>   // firmware/libraries/HomePing (#75)
 #include "secrets.h"
 
 // ========================
@@ -142,70 +142,6 @@ String removeAccents(String text) {
   text.replace("ű", "u");
   text.replace("Ű", "U");
   return text;
-}
-
-// ========================
-// MQTT FUNCTIONS
-// ========================
-void connectMQTT() {
-  while (!mqttClient.connected()) {
-    Serial.print("Connecting to MQTT...");
-    char clientId[64];
-    snprintf(clientId, sizeof(clientId), "%s_%llx", DEVICE_NAME, ESP.getEfuseMac());
-
-    // Last will: if this node drops off, the broker publishes "offline" (retained)
-    // on home/esp32/<device>/status about 1.5 x keepalive later (#13)
-    char statusTopic[64];
-    snprintf(statusTopic, sizeof(statusTopic), "home/esp32/%s/status", DEVICE_NAME);
-    if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS, statusTopic, 1, true, "offline")) {
-      mqttClient.publish(statusTopic, "online", true);
-      Serial.println(" connected!");
-    } else {
-      Serial.print(" failed, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(" retrying in 5s");
-      delay(5000);
-    }
-  }
-}
-
-void publishPresence() {
-  bool presence   = radar.presenceDetected();
-  bool stationary = radar.stationaryTargetDetected();
-  bool moving     = radar.movingTargetDetected();
-  int distance    = 0;
-  int signal      = 0;
-
-  if (stationary) {
-    distance = radar.stationaryTargetDistance();
-    signal   = radar.stationaryTargetEnergy();
-  } else if (moving) {
-    distance = radar.movingTargetDistance();
-    signal   = radar.movingTargetEnergy();
-  }
-
-  StaticJsonDocument<256> doc;
-  doc["device"]          = DEVICE_NAME;
-  doc["radar_connected"] = radar.isConnected();
-  doc["presence"]        = presence;
-  doc["stationary"]      = stationary;
-  doc["moving"]          = moving;
-  doc["distance"]        = distance;
-  doc["signal"]          = signal;
-  doc["rssi"]            = WiFi.RSSI();
-  // 64-bit timer: millis() wraps after ~49.7 days, which the backend would log
-  // as a restart. Since #50 there is no scheduled reboot, so it can run that long.
-  doc["uptime"]          = (uint32_t)(esp_timer_get_time() / 1000000ULL);
-
-  char payload[256];
-  serializeJson(doc, payload);
-
-  if (mqttClient.publish(MQTT_TOPIC, payload, true)) {
-    Serial.print("Presence: ");
-    Serial.println(payload);
-  } else {
-    Serial.println("Presence publish failed!");
-  }
 }
 
 // ========================
@@ -359,18 +295,7 @@ void setup() {
   display.setRotation(1);
   hardRefresh();
 
-  WiFi.begin(ssid, password);
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(300);
-    Serial.print(".");
-    // Never hang forever: reboot and try again after ~30s
-    if (++attempts > 100) {
-      Serial.println("\nWiFi timeout, restarting...");
-      ESP.restart();
-    }
-  }
-  Serial.println("\nWiFi connected");
+  hpConnectWiFi(ssid, password);   // reboots after ~30 s without WiFi
 
   configTzTime(TIME_ZONE, NTP_SERVER);
   // Wait for the first sync so the first screen already has the time (and the BKK
@@ -406,18 +331,11 @@ void loop() {
   // WiFi watchdog
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi dropped, reconnecting...");
-    WiFi.begin(ssid, password);
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(300);
-      Serial.print(".");
-      if (++attempts > 100) ESP.restart();
-    }
-    Serial.println("\nWiFi reconnected");
+    hpConnectWiFi(ssid, password);
   }
 
   if (!mqttClient.connected()) {
-    connectMQTT();
+    hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);
   }
   mqttClient.loop();
 
@@ -425,7 +343,7 @@ void loop() {
 
   if (now - lastPresencePublish >= PRESENCE_INTERVAL) {
     lastPresencePublish = now;
-    publishPresence();
+    hpPublishPresence(mqttClient, radar, DEVICE_NAME, MQTT_TOPIC);
   }
 
   if (now - lastUpdate > UPDATE_INTERVAL) {
