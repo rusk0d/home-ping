@@ -1,6 +1,7 @@
 """REST API (Flask app and routes, contracts/api.md).
 """
 
+import logging
 import sqlite3
 import time
 from werkzeug.exceptions import HTTPException
@@ -20,6 +21,8 @@ from store import (
 )
 from alerts import notification_settings
 from ingest import hourly_occupancy_today
+
+log = logging.getLogger(__name__)
 
 
 def require_auth(f):
@@ -47,7 +50,7 @@ def http_error(e):
 
 @app.errorhandler(Exception)
 def server_error(e):
-    print(f"[ERROR] {request.path}: {e!r}")
+    log.exception("%s: %r", request.path, e)
     return jsonify({"error": "internal error"}), 500
 
 
