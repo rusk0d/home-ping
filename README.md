@@ -18,7 +18,7 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 | Folder | What |
 |---|---|
 | `firmware/` | Arduino sketches: `co2_node`, `eink_node` (hallway radar + e-ink display), `main_node` |
-| `backend/` | Flask app (`server.py`, creates the DB schema on start), `test_push.py` |
+| `backend/` | Flask app (`server.py`, creates the DB schema on start), `test_push.py`, nightly `backup_db.py` |
 | `web/` | Single-file dashboard (`index.html`), connects to MQTT directly from the browser |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
 | `contracts/` | MQTT topics/payloads, REST API, push notifications, DB schema: the source of truth |
@@ -51,3 +51,22 @@ in its working directory.
   `contracts/mqtt.md` → "Web users" for adding one.
 - **Android:** `./gradlew assembleDebug` in `android/`. The `preview` build type
   (`./gradlew assemblePreview`) runs without Firebase.
+
+## Backups
+
+`backend/backup_db.py` copies `data.db` with SQLite's online backup API (safe while the
+backend runs), checks the copy and keeps the newest 7 as `backups/data-YYYY-MM-DD.db.gz`.
+A systemd timer runs it every night at 03:30. Install it on the server once (from the
+backend directory, `/root/iot`):
+
+```
+cp systemd/iot-backup.service systemd/iot-backup.timer /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now iot-backup.timer
+systemctl start iot-backup.service && ls -l backups/   # first backup right away
+```
+
+Check with `systemctl list-timers iot-backup.timer` and `journalctl -u iot-backup`.
+To keep a copy off the server, pull the folder now and then, e.g.
+`scp -r root@<server>:/root/iot/backups ./iot-backups`.
+Restore: `systemctl stop iot-backend`, `gunzip -c backups/data-<date>.db.gz > data.db`,
+`systemctl start iot-backend`.

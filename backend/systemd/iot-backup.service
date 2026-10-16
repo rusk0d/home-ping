@@ -1,0 +1,8 @@
+# Nightly data.db backup (#78). Install: see the "Backups" section in README.md.
+[Unit]
+Description=Back up the IoT backend database
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/iot
+ExecStart=/usr/bin/python3 backup_db.py --keep 7

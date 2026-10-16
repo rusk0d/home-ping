@@ -9,6 +9,8 @@ keystore.properties
 
 # Data
 *.db
+*.db.gz
+backups/
 *.sqlite
 *.sqlite3
 *.log
