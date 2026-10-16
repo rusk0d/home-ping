@@ -1,11 +1,10 @@
-# MQTT contract (DRAFT)
+# MQTT contract
 
-Status: draft, reverse-engineered from the code on branch `contracts-draft`
-(2026-10-13). Anything marked **UNCERTAIN** is inferred, not stated in code.
-
-Sources read: `firmware/co2_node/co2_node.ino`, `firmware/main_node/main_node.ino`,
-`firmware/eink_node/eink_node.ino`, `backend/server.py`, `web/index.html`.
-Updated 2026-10-14: web page moved from `home/esp32/dht11` to `bme280` + `co2` (#2).
+Topics and payloads between the ESP32 nodes (`firmware/`), the backend (`backend/ingest.py`)
+and the web page (`web/index.html`).
+It is the source of truth: update it in the same change as the code (see CLAUDE.md).
+First written on 2026-10-13 by reading the code; anything still marked **UNCERTAIN** was
+inferred then and hasn't been confirmed since.
 
 ## Web users (since #99)
 
@@ -276,46 +275,39 @@ Example:
 
 ## Mismatches and issues between components
 
-1. ~~**Web page listens on a dead topic.**~~ Fixed in #2: `web/index.html` now
-   subscribes to `home/esp32/bme280` and `home/esp32/co2` instead of `home/esp32/dht11`.
-2. **Two devices publish retained messages to `home/esp32/presence`.** The broker
+1. **Two devices publish retained messages to `home/esp32/presence`.** The broker
    keeps one retained message per topic, so a new subscriber gets only
    whichever node published last. The backend tells the nodes apart by
    `device`, so storage is fine, but the topic doesn't identify the
-   device on its own.
-3. ~~**Retained messages are replayed into the backend on every (re)connect.**~~
-   Fixed in #5: the backend skips messages with the retain flag, and the alert
-   cooldowns are stored in the DB (see `notifications.md`).
-4. **No timestamps in payloads.** Every stored `ts` is the backend's receive
+   device on its own (#10).
+2. **No timestamps in payloads.** Every stored `ts` is the backend's receive
    time (UTC since #65). Delayed messages get the receive time.
-5. ~~**No LWT / status topic.**~~ Fixed in #13: `home/esp32/<device>/status` with a last
-   will, and the backend pushes when a node has sent nothing for 5 min.
-6. ~~**`uptime` wraps at ~49.7 days.**~~ Fixed in #75 (all nodes, once reflashed): uptime comes
-   from the 64-bit `esp_timer_get_time()`. Before: `millis()/1000` wrapped on main_node and co2_node,
-   which have no scheduled reboot. The backend's restart detector
-   (`note_uptime`, drop > 120 s) will log a false `RESTART` event when that
-   happens (#8). eink_node no longer reboots every 12 h (#50) and uses the 64-bit
-   `esp_timer_get_time()` instead, so it's not affected.
-7. **main_node reports `uptime` on two topics.** The same device ID sends `uptime` on both
+3. **main_node reports `uptime` on two topics.** The same device ID sends `uptime` on both
    `presence` and `bme280`. The backend's `LAST_UPTIME` per device mixes the two
-   streams. The 120 s tolerance hides this, since both come from the same
-   `millis()`.
-8. **Fields sent but not stored or used by the backend:**
+   streams. The 120 s tolerance hides this, since both come from the same timer.
+4. **Fields sent but not stored or used by the backend:**
    - co2: `warming`, `err`, `rssi`, `sensor_tmp` are dropped. `co2_ok` is stored in `readings`.
    - bme280: all fields are used.
    - presence: all fields are stored.
-9. **Fields the backend reads that no firmware sends:**
-   - `server.py` comments mention "PIR occupied fields from other devices are
-     ignored". No current firmware sends PIR fields.
-10. **Backend defaults hide malformed messages.** A presence payload without
-    `radar_connected` is treated as connected, and one without `device` is
-    attributed to `home_ping_esp32`.
-11. **Topic name `bme280` vs device name.** main_node's env data goes to
-    `home/esp32/bme280` but is stored under device `home_ping_esp32` (which the
-    Android app labels "OLED"/"Ping"). The naming is inconsistent but harmless,
-    since the backend ignores topic names.
-12. ~~**eink_node declares API config it never uses.**~~ Removed in #16 (`apiUrl`/`apiUser`/
-    `apiPass` and `API_*` in `secrets.example.h`).
-13. ~~**Firmware build issues.**~~ Fixed in #16: the missing `;` after `BKK_URL`, and the
-    sketches no longer redeclare the `secrets.h` names. All three compile against
-    `secrets.example.h` (esp32 core 3.3.7).
+5. **Fields the backend reads that no firmware sends:** the backend comments mention
+   "PIR occupied fields from other devices are ignored". No current firmware sends PIR fields.
+6. **Backend defaults hide malformed messages.** A presence payload without
+   `radar_connected` is treated as connected, and one without `device` is
+   attributed to `home_ping_esp32`.
+7. **Topic name `bme280` vs device name.** main_node's env data goes to
+   `home/esp32/bme280` but is stored under device `home_ping_esp32` (which the
+   Android app labels "OLED"/"Ping"). The naming is inconsistent but harmless,
+   since the backend ignores topic names.
+
+## Changelog
+
+Fixed mismatches, oldest first (issue number: what changed).
+
+- #2: the web page subscribes to `home/esp32/bme280` and `home/esp32/co2` instead of the dead
+  `home/esp32/dht11`.
+- #5: the backend skips retained messages on (re)connect; alert cooldowns are stored in the DB.
+- #13: `home/esp32/<device>/status` with a last will; the backend pushes when a node is silent for 5 min.
+- #16: eink_node's unused API config removed; firmware build issues fixed (all sketches compile
+  against `secrets.example.h`).
+- #50, #75 (and #8): `uptime` comes from the 64-bit `esp_timer_get_time()` on all nodes, so it no
+  longer wraps after ~49.7 days (needs the nodes reflashed); eink_node no longer reboots every 12 h.
