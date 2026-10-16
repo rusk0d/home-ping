@@ -8,7 +8,7 @@ from support import check
 
 
 def test_issue66_paho_v2_and_logging(env):
-    import os, sys, json, tempfile, types, logging
+    import os, json, types, logging
     from unittest import mock
     os.environ.update(DASH_USER="u", DASH_PASS="p", MQTT_USER="m", MQTT_PASS="m", LOG_LEVEL="warning")
     import server, config, ingest, state

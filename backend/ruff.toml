@@ -1,0 +1,7 @@
+# ruff (#175): run as `ruff check backend` (CI does). The rule set is pinned here so a
+# personal/global ruff config does not change the result: correctness only: pyflakes
+# (unused imports/variables, undefined names) plus syntax errors. Style rules stay off: the tests use a compact style on purpose.
+target-version = "py311"
+
+[lint]
+select = ["E9", "F"]

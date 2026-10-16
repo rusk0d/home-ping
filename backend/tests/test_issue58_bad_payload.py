@@ -2,13 +2,11 @@
 """
 
 import paho.mqtt.client as real_paho          # the real library, for its dispatch code
-from support import BACKEND, check
+from support import check
 
 
 def test_issue58_bad_payload(env):
-    backend = str(BACKEND)
-    import os, sys, json, tempfile, sqlite3, types
-    from unittest import mock
+    import json, sqlite3
     logged = []
     import logging
     class _Log(logging.Handler):   # errors are logged since #66

@@ -5,8 +5,7 @@ from support import check
 
 
 def test_issue14_migration_and_nulls(env):
-    import os, sys, json, base64, tempfile, sqlite3, types
-    from unittest import mock
+    import os, json, base64, sqlite3, types
 
     # Old production layout with data, created BEFORE the server starts
     con = sqlite3.connect("data.db")
