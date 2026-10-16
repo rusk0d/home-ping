@@ -69,6 +69,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         manager.notify(id, notification)
     }
 
+    // Deprecated since Cloud Messaging 25.1 in favour of onRegistered (FID); see #153
+    @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         println("FCM new token: $token")

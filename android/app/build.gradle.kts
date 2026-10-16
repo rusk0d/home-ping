@@ -2,8 +2,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-	id("com.google.gms.google-services") 
+    id("com.google.gms.google-services")
 }
 val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
@@ -11,7 +10,7 @@ val localProps = Properties().apply {
 }
 android {
     namespace = "com.david.homeenv"
-    compileSdk = 34
+    compileSdk = 37   // needed by the current AndroidX libraries and OkHttp; targetSdk stays (#125, #60)
 
     defaultConfig {
         applicationId = "com.david.homeenv"
@@ -52,9 +51,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
 
-    kotlinOptions {
-        jvmTarget = "17"
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -63,10 +64,12 @@ android {
 tasks.matching { it.name == "processPreviewGoogleServices" }.configureEach { enabled = false }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.squareup.okhttp3:okhttp:4.11.0")
-    implementation("com.google.firebase:firebase-messaging-ktx:23.2.0")
-    implementation("com.google.android.material:material:1.11.0")
-	implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    // Firebase versions come from the BoM; the -ktx artifacts are discontinued (#125)
+    implementation(platform("com.google.firebase:firebase-bom:35.0.2"))
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.android.material:material:1.14.0")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0")
 }

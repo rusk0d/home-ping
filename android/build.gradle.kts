@@ -1,5 +1,5 @@
 plugins {
-    id("com.android.application") version "8.5.1" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.10" apply false
-    id("com.google.gms.google-services") version "4.4.0" apply false
+    // AGP 9 compiles Kotlin itself; the separate Kotlin plugin is gone (#125)
+    id("com.android.application") version "9.4.1" apply false
+    id("com.google.gms.google-services") version "4.5.0" apply false
 }
