@@ -37,7 +37,7 @@ inferred then and hasn't been confirmed since.
 
 | Client | Endpoints used |
 |---|---|
-| Android `HomeFragment` | `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`, `POST /api/occupancy_arm`, `/api/occupancy_status` |
+| Android `HomeFragment` | `/api/dashboard` (since #128; falls back to `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`), `POST /api/occupancy_arm`, `/api/occupancy_status` |
 | Android `MainActivity` (FCM) | `POST /api/register_token` |
 | Android `HistoryActivity` | `/api/hourly?days=7` |
 | Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings` |
@@ -61,10 +61,34 @@ inferred then and hasn't been confirmed since.
 | GET | `/api/occupancy_status` | Basic | Android Home |
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
 | GET | `/api/health` | **none** | external uptime monitor (#77) |
+| GET | `/api/dashboard` | Basic | Android Home (#128) |
 
 ---
 
 ## Endpoints
+
+### GET `/api/dashboard` (since #128)
+
+Everything the Android home screen shows, in one response: the six endpoints below, each
+under its own name and with exactly its shape (the backend calls their own functions).
+
+```json
+{"latest_all": {...}, "devices": [...], "stats24h_combined": {...},
+ "restarts": {...}, "air": {...}, "hourly": [...]}
+```
+
+| Key | Same as |
+|---|---|
+| `latest_all` | `GET /api/latest_all` |
+| `devices` | `GET /api/devices` |
+| `stats24h_combined` | `GET /api/stats24h_combined` |
+| `restarts` | `GET /api/restarts` |
+| `air` | `GET /api/air` |
+| `hourly` | `GET /api/hourly` (no parameters: today, temperature/humidity from any device) |
+
+Client: Android Home, every refresh. If it fails (e.g. an older backend without it, 404), the
+app falls back to the six requests. The single endpoints stay for the widget, the history
+screen and that fallback.
 
 ### GET `/api/latest`
 
