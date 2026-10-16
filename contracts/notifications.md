@@ -23,11 +23,14 @@ inferred then and hasn't been confirmed since.
 
 ### Subscription to topic `env`
 
-- Android `MainActivity.onCreate` calls `FirebaseMessaging.subscribeToTopic("env")`.
-- Android also sends its token to `POST /api/register_token`, and the backend calls
-  `messaging.subscribe_to_topic([token], "env")`.
-- `MyFirebaseMessagingService.onNewToken` re-registers a rotated token with
-  `POST /api/register_token` (`PushRegistration`, shared with `MainActivity`).
+- Android `MainActivity.onCreate` calls `Firebase.messaging.register()` (FID-based
+  registration) and `subscribeToTopic("env")`, on every start (cheap when already done).
+  FID registration is opt-in: manifest meta-data `firebase_messaging_installation_id_enabled`.
+- The app sends nothing to the backend (since #153): registration tokens are deprecated,
+  and the backend only sends to topic `env`. `MyFirebaseMessagingService.onRegistered`
+  only logs.
+- App versions from before #153 still send their token to `POST /api/register_token`
+  (legacy), and the backend calls `messaging.subscribe_to_topic([token], "env")`.
 
 ### Android handling
 
@@ -181,8 +184,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 ## Mismatches and issues
 
-1. **Duplicate topic subscription.** The client-side and server-side subscriptions to `env` are
-   redundant. If the backend `register_token` call fails, the client-side subscription still works.
+1. **Legacy server-side subscription.** `POST /api/register_token` is only called by app
+   versions from before #153; remove it once none is installed.
 
 ## Changelog
 
@@ -196,3 +199,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #12: temperature and humidity alerts each need only their own value.
 - #12: one notification ID per `event/device` instead of always 0.
 - #13: device-offline push (`NODE_STATUS`).
+- #153: the app registers with FCM by FID (`register()`) and no longer sends a token; `/api/register_token` is legacy.

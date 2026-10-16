@@ -38,7 +38,7 @@ inferred then and hasn't been confirmed since.
 | Client | Endpoints used |
 |---|---|
 | Android `HomeFragment` | `/api/dashboard` (since #128; falls back to `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`), `POST /api/occupancy_arm`, `/api/occupancy_status` |
-| Android `MainActivity` (FCM) | `POST /api/register_token` |
+| Android `MainActivity` (FCM) | none since #153 (older app versions: `POST /api/register_token`) |
 | Android `HistoryActivity` | `/api/hourly?days=7` |
 | Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings` |
 | Android `HomeEnvWidget` | `/api/latest`, `/api/air` |
@@ -56,7 +56,7 @@ inferred then and hasn't been confirmed since.
 | GET | `/api/air` | Basic | Android Home, widget |
 | GET | `/api/devices` | Basic | Android Home |
 | GET | `/api/restarts` | Basic | Android Home |
-| POST | `/api/register_token` | Basic | Android (FCM) |
+| POST | `/api/register_token` | Basic | legacy: Android before #153 |
 | POST | `/api/occupancy_arm` | Basic | Android Home |
 | GET | `/api/occupancy_status` | Basic | Android Home |
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
@@ -295,7 +295,10 @@ Request (JSON):
 - Response: `{"success": true}`.
 - Missing, non-JSON or non-object body → `400 {"error": "JSON object body required"}`.
 
-Client: Android `MainActivity.registerTokenServerSide` sends `{"token": ...}` only.
+Legacy (#153): the app no longer calls this. FCM registration tokens are deprecated; the app
+registers with FCM itself (FID-based `register()`) and subscribes to topic `env` client side,
+and the backend only sends to that topic. Kept so app versions from before #153 still
+register; remove once none is installed. Those older versions send `{"token": ...}` only.
 
 ### POST `/api/occupancy_arm`
 
