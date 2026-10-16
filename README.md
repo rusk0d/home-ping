@@ -70,3 +70,11 @@ To keep a copy off the server, pull the folder now and then, e.g.
 `scp -r root@<server>:/root/iot/backups ./iot-backups`.
 Restore: `systemctl stop iot-backend`, `gunzip -c backups/data-<date>.db.gz > data.db`,
 `systemctl start iot-backend`.
+
+## Uptime monitoring
+
+`GET /api/health` (no login, no sensor data) returns 200 while the backend is connected to
+MQTT, gets live readings and can read the database, and 503 otherwise (see
+`contracts/api.md`). Point a free external monitor at `https://<your domain>/api/health`,
+e.g. UptimeRobot (HTTP(s) monitor, 5 min interval, alert by email or its phone app).
+Because it runs off the server, it also notices when nginx or the whole VPS is down.
