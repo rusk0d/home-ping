@@ -1,0 +1,60 @@
+# Tests and builds on every PR and push to main (#76). Uses only the example
+# config files with fake values, no secrets.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      # The backend uses the machine's local time, like the server (Budapest); the
+      # migration test (#65) relies on it
+      TZ: Europe/Budapest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - run: pytest backend/tests -v
+
+  firmware:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sketch: [co2_node, eink_node, main_node]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install the ESP32 core and libraries
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli lib install "PubSubClient" "ArduinoJson" "ld2410" "Adafruit BME280 Library" "MH-Z19" "GxEPD2"
+      - name: Compile with the example secrets
+        run: |
+          cp firmware/secrets.example.h firmware/${{ matrix.sketch }}/secrets.h
+          arduino-cli compile --fqbn esp32:esp32:esp32 firmware/${{ matrix.sketch }}
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the preview APK with the example config
+        working-directory: android
+        run: |
+          cp local.properties.example local.properties
+          chmod +x gradlew
+          ./gradlew assemblePreview --console=plain
