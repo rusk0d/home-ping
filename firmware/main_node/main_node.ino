@@ -5,6 +5,7 @@
 #include <Adafruit_BME280.h>
 #include <ld2410.h>
 #include "esp_system.h"
+#include <HomePingRadar.h>   // firmware/libraries/HomePing (#75)
 #include "secrets.h"
 
 /* =======================
@@ -47,85 +48,8 @@ unsigned long lastEnvPublish = 0;
 StaticJsonDocument<256> doc;
 
 /* =======================
-   WIFI / MQTT
-   ======================= */
-void connectWiFi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.println("Connecting to WiFi...");
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    // Never hang forever: reboot and start fresh after ~30s
-    if (++attempts > 60) {
-      Serial.println("\nWiFi timeout, restarting...");
-      ESP.restart();
-    }
-  }
-  Serial.println("\nWiFi connected");
-  Serial.println(WiFi.localIP());
-}
-
-void connectMQTT() {
-  while (!mqttClient.connected()) {
-    char clientId[64];
-    snprintf(clientId, sizeof(clientId), "%s_%llx", DEVICE_NAME, ESP.getEfuseMac());
-    Serial.println("Connecting to MQTT...");
-    // Last will: if this node drops off, the broker publishes "offline" (retained)
-    // on home/esp32/<device>/status about 1.5 x keepalive later (#13)
-    char statusTopic[64];
-    snprintf(statusTopic, sizeof(statusTopic), "home/esp32/%s/status", DEVICE_NAME);
-    if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS, statusTopic, 1, true, "offline")) {
-      mqttClient.publish(statusTopic, "online", true);
-      Serial.println("MQTT connected");
-    } else {
-      Serial.printf("MQTT failed, rc=%d, retrying in 5s\n", mqttClient.state());
-      delay(5000);
-    }
-  }
-}
-
-/* =======================
    PUBLISH
    ======================= */
-void publishPresence() {
-  bool presence   = radar.presenceDetected();
-  bool stationary = radar.stationaryTargetDetected();
-  bool moving     = radar.movingTargetDetected();
-  int distance    = 0;
-  int signal      = 0;
-
-  if (stationary) {
-    distance = radar.stationaryTargetDistance();
-    signal   = radar.stationaryTargetEnergy();
-  } else if (moving) {
-    distance = radar.movingTargetDistance();
-    signal   = radar.movingTargetEnergy();
-  }
-
-  doc.clear();
-  doc["device"]          = DEVICE_NAME;
-  doc["radar_connected"] = radar.isConnected();
-  doc["presence"]        = presence;
-  doc["stationary"]      = stationary;
-  doc["moving"]          = moving;
-  doc["distance"]        = distance;
-  doc["signal"]          = signal;
-  doc["rssi"]            = WiFi.RSSI();
-  doc["uptime"]          = millis() / 1000;
-
-  char payload[256];
-  serializeJson(doc, payload);
-
-  if (mqttClient.publish(MQTT_TOPIC_PRESENCE, payload, true)) {
-    Serial.print("Presence: ");
-    Serial.println(payload);
-  } else {
-    Serial.println("Presence publish failed");
-  }
-}
-
 void publishEnv() {
   if (!bmeReady) {
     Serial.println("BME280 not ready, skipping env publish");
@@ -146,7 +70,7 @@ void publishEnv() {
   doc["temp_c"]   = tempC;
   doc["humidity"] = humidity;
   doc["pressure"] = pressure;
-  doc["uptime"]   = millis() / 1000;
+  doc["uptime"]   = hpUptimeSeconds();
 
   char payload[256];
   serializeJson(doc, payload);
@@ -184,10 +108,10 @@ void setup() {
   }
 
   // Network next, so nothing blocks once the radar starts streaming
-  connectWiFi();
+  hpConnectWiFi(WIFI_SSID, WIFI_PASS);
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
-  connectMQTT();
+  hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);
 
   // Radar last
   Serial2.setRxBufferSize(1024);
@@ -205,10 +129,10 @@ void loop() {
   // WiFi watchdog
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi dropped, reconnecting...");
-    connectWiFi();
+    hpConnectWiFi(WIFI_SSID, WIFI_PASS);
   }
 
-  if (!mqttClient.connected()) connectMQTT();
+  if (!mqttClient.connected()) hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);
   mqttClient.loop();
 
   radar.read();
@@ -217,7 +141,7 @@ void loop() {
 
   if (now - lastPresencePublish >= PRESENCE_INTERVAL) {
     lastPresencePublish = now;
-    publishPresence();
+    hpPublishPresence(mqttClient, radar, DEVICE_NAME, MQTT_TOPIC_PRESENCE);
   }
 
   if (now - lastEnvPublish >= ENV_INTERVAL) {

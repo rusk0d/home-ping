@@ -84,7 +84,7 @@ ingestion (#58).
 | Field | Type | Unit | Notes |
 |---|---|---|---|
 | `device` | string | n/a | Fixed per sketch (`DEVICE_NAME`). Used by the backend as the device ID everywhere. |
-| `uptime` | integer | seconds | Seconds since boot. eink_node: `esp_timer_get_time()` (64-bit, no wrap, since #50). main_node, co2_node: `millis() / 1000`, wraps after ~49.7 days (32-bit `millis()`, #8). |
+| `uptime` | integer | seconds | Seconds since boot, from the 64-bit `esp_timer_get_time()` (`hpUptimeSeconds()` in the shared HomePing library), so it doesn't wrap (#8, #50, #75). Before: `millis() / 1000`, which wrapped after ~49.7 days. |
 | `rssi` | integer | dBm | `WiFi.RSSI()`. Sent on presence and co2, **not** on bme280. |
 
 ---
@@ -290,7 +290,8 @@ Example:
    time (UTC since #65). Delayed messages get the receive time.
 5. ~~**No LWT / status topic.**~~ Fixed in #13: `home/esp32/<device>/status` with a last
    will, and the backend pushes when a node has sent nothing for 5 min.
-6. **`uptime` wraps at ~49.7 days.** `millis()/1000` wraps on main_node and co2_node,
+6. ~~**`uptime` wraps at ~49.7 days.**~~ Fixed in #75 (all nodes, once reflashed): uptime comes
+   from the 64-bit `esp_timer_get_time()`. Before: `millis()/1000` wrapped on main_node and co2_node,
    which have no scheduled reboot. The backend's restart detector
    (`note_uptime`, drop > 120 s) will log a false `RESTART` event when that
    happens (#8). eink_node no longer reboots every 12 h (#50) and uses the 64-bit
