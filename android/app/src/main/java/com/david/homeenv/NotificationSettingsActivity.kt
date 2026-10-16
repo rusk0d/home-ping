@@ -6,12 +6,15 @@ import android.os.Bundle
 import android.widget.CompoundButton
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.david.homeenv.databinding.ActivityNotificationSettingsBinding
 import com.david.homeenv.ui.Levels
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.switchmaterial.SwitchMaterial
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import kotlin.concurrent.thread
 
 /**
  * Which alerts push, and quiet hours (#82). The settings live on the server
@@ -39,16 +42,13 @@ class NotificationSettingsActivity : AppCompatActivity() {
     }
 
     private fun load() {
-        thread {
-            val s = Api.getObject("/api/notification_settings")
-            runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                if (s == null) {
-                    b.status.text = "Can't reach the server. Settings can't be changed right now."
-                } else {
-                    b.status.text = "Changes apply right away."
-                    show(s)
-                }
+        lifecycleScope.launch {
+            val s = withContext(Dispatchers.IO) { Api.getObject("/api/notification_settings") }
+            if (s == null) {
+                b.status.text = "Can't reach the server. Settings can't be changed right now."
+            } else {
+                b.status.text = "Changes apply right away."
+                show(s)
             }
         }
     }
@@ -93,16 +93,13 @@ class NotificationSettingsActivity : AppCompatActivity() {
 
     /** POSTs a partial change; the response is the full new state. */
     private fun save(change: JSONObject) {
-        thread {
-            val updated = Api.postForObject("/api/notification_settings", change)
-            runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                if (updated != null) {
-                    show(updated)
-                } else {
-                    settings?.let { show(it) }
-                    Snackbar.make(b.root, "Couldn't save. Check the connection.", Snackbar.LENGTH_LONG).show()
-                }
+        lifecycleScope.launch {
+            val updated = withContext(Dispatchers.IO) { Api.postForObject("/api/notification_settings", change) }
+            if (updated != null) {
+                show(updated)
+            } else {
+                settings?.let { show(it) }
+                Snackbar.make(b.root, "Couldn't save. Check the connection.", Snackbar.LENGTH_LONG).show()
             }
         }
     }
