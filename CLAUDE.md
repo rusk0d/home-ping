@@ -7,7 +7,8 @@ notifications via Firebase. A small web page and an Android app display the data
 - /firmware  Arduino sketches: main_node (radar, BME280, CO2), eink_node; shared code in
              firmware/libraries/HomePing (an Arduino library)
 - /backend   Flask app: server.py (entry point), config, state, store (SQLite,
-             creates the DB schema on start), alerts, nodes, ingest (MQTT), api
+             creates the DB schema on start), alerts, nodes,
+             server_checks (watchdog pushes), ingest (MQTT), api
 - /web       HTML page (index.html + app.js, no inline scripts: CSP), connects to MQTT
              directly from the browser; nginx/ has the site's security headers
 - /android   Kotlin app, talks only to the backend's REST API
