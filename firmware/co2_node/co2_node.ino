@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <MHZ19.h>
 #include "esp_system.h"
+#include <HomePing.h>   // firmware/libraries/HomePing (#75)
 #include "secrets.h"
 
 /* =======================
@@ -35,45 +36,6 @@ unsigned long lastPublish = 0;
 StaticJsonDocument<256> doc;
 
 /* =======================
-   WIFI / MQTT
-   ======================= */
-void connectWiFi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.println("Connecting to WiFi...");
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    if (++attempts > 60) {            // ~30s, then reboot and try fresh
-      Serial.println("\nWiFi timeout, restarting...");
-      ESP.restart();
-    }
-  }
-  Serial.println("\nWiFi connected");
-  Serial.println(WiFi.localIP());
-}
-
-void connectMQTT() {
-  while (!mqttClient.connected()) {
-    char clientId[64];
-    snprintf(clientId, sizeof(clientId), "%s_%llx", DEVICE_NAME, ESP.getEfuseMac());
-    Serial.println("Connecting to MQTT...");
-    // Last will: if this node drops off, the broker publishes "offline" (retained)
-    // on home/esp32/<device>/status about 1.5 x keepalive later (#13)
-    char statusTopic[64];
-    snprintf(statusTopic, sizeof(statusTopic), "home/esp32/%s/status", DEVICE_NAME);
-    if (mqttClient.connect(clientId, MQTT_USER, MQTT_PASS, statusTopic, 1, true, "offline")) {
-      mqttClient.publish(statusTopic, "online", true);
-      Serial.println("MQTT connected");
-    } else {
-      Serial.printf("MQTT failed, rc=%d, retrying in 5s\n", mqttClient.state());
-      delay(5000);
-    }
-  }
-}
-
-/* =======================
    PUBLISH
    ======================= */
 void publishCO2() {
@@ -90,7 +52,7 @@ void publishCO2() {
   doc["warming"] = warming;
   doc["err"]     = err;
   doc["rssi"]    = WiFi.RSSI();
-  doc["uptime"]  = millis() / 1000;
+  doc["uptime"]  = hpUptimeSeconds();
 
   // Only include a reading when it is actually trustworthy.
   // The backend stores NULL otherwise, so bad values never enter the history.
@@ -125,10 +87,10 @@ void setup() {
   mhz.autoCalibration(true);     // assumes the lowest reading in 24h is 400ppm
   Serial.println("MH-Z19C initialized (warming up ~3 min)");
 
-  connectWiFi();
+  hpConnectWiFi(WIFI_SSID, WIFI_PASS);
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
-  connectMQTT();
+  hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);
 }
 
 /* =======================
@@ -137,10 +99,10 @@ void setup() {
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi dropped, reconnecting...");
-    connectWiFi();
+    hpConnectWiFi(WIFI_SSID, WIFI_PASS);
   }
 
-  if (!mqttClient.connected()) connectMQTT();
+  if (!mqttClient.connected()) hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);
   mqttClient.loop();
 
   unsigned long now = millis();
