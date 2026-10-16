@@ -1,6 +1,7 @@
 """REST API (Flask app and routes, contracts/api.md).
 """
 
+import hmac
 import logging
 import sqlite3
 import time
@@ -25,11 +26,19 @@ from ingest import hourly_occupancy_today
 log = logging.getLogger(__name__)
 
 
+def credentials_ok(user, password):
+    """Constant-time check of both values, always both, so the timing doesn't tell
+    whether the user name or the password was wrong (#61)."""
+    user_ok = hmac.compare_digest((user or "").encode(), AUTH_USER.encode())
+    pass_ok = hmac.compare_digest((password or "").encode(), AUTH_PASS.encode())
+    return user_ok & pass_ok
+
+
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.authorization
-        if not auth or auth.username != AUTH_USER or auth.password != AUTH_PASS:
+        if not auth or not credentials_ok(auth.username, auth.password):
             return Response(
                 "Authentication required",
                 401,

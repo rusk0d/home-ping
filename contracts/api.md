@@ -13,6 +13,8 @@ Status: draft, reverse-engineered from `backend/server.py` and the Android app
   `backend/.env`. On failure: `401`, body `Authentication required`
   (text/plain), header `WWW-Authenticate: Basic realm="Login Required"`.
   Every endpoint uses the `require_auth` decorator, except `/api/health` (#77).
+  The user and password are compared in constant time (#61). On the server, fail2ban bans an
+  IP for 1 h after 10 failed logins (401) on `/api/` within 10 min (`backend/fail2ban/`).
 - Content type: `application/json` (via `jsonify`) unless noted.
 - Timestamps: **ISO 8601 in UTC**, `"YYYY-MM-DDTHH:MM:SSZ"` (since #65; before that,
   server-local `"YYYY-MM-DD HH:MM:SS"` without a zone). They are the time the backend

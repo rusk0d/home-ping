@@ -13,5 +13,6 @@ gradlew text eol=lf
 *.dll   binary
 *.webp  binary
 *.png   binary
-# systemd unit files are copied to Linux as they are: keep LF on Windows checkouts
+# systemd and fail2ban files are copied to Linux as they are: keep LF on Windows checkouts
 backend/systemd/* text eol=lf
+backend/fail2ban/* text eol=lf

@@ -87,3 +87,20 @@ MQTT, gets live readings and can read the database, and 503 otherwise (see
 `contracts/api.md`). Point a free external monitor at `https://<your domain>/api/health`,
 e.g. UptimeRobot (HTTP(s) monitor, 5 min interval, alert by email or its phone app).
 Because it runs off the server, it also notices when nginx or the whole VPS is down.
+
+## API brute-force protection
+
+The API checks the login in constant time. Repeated wrong logins are blocked by
+fail2ban on the server, which reads nginx's access log: 10 failed API logins (401)
+within 10 minutes ban that IP for an hour. Install once, from the backend directory:
+
+```
+cp fail2ban/home-ping-api.conf /etc/fail2ban/filter.d/
+cp fail2ban/home-ping-api.local /etc/fail2ban/jail.d/
+grep access_log /etc/nginx/sites-enabled/*   # adjust logpath in jail.d/home-ping-api.local if needed
+fail2ban-regex /var/log/nginx/access.log /etc/fail2ban/filter.d/home-ping-api.conf
+systemctl reload fail2ban && fail2ban-client status home-ping-api
+```
+
+A ban covers the whole site (ports 80/443) for that IP. To lift one:
+`fail2ban-client set home-ping-api unbanip <ip>`.
