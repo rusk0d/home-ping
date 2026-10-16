@@ -39,7 +39,11 @@ cases = [
     (L.format(ip="203.0.113.7", user="-", req="GET /index.html HTTP/1.1", status=401), None),
     (L.format(ip="203.0.113.7", user="-", req="GET /mqtt HTTP/1.1", status=401), None),
 ]
+# fail2ban removes the date it found before matching (a real line has "[]" left), so
+# test both forms; the first version of the filter needed text inside the brackets
+cases += [(re.sub(r"\[[^\]]*\]", "[]", line, count=1), host) for line, host in cases]
+cases.append(('94.21.99.133 - wrong [] "GET /api/occupancy_status HTTP/1.1" 401 23 "-" "curl/8.21.0"', "94.21.99.133"))
 for line, host in cases:
     m = rx.search(line)
     got = m.group("host") if m else None
-    check(f"filter: {line.split(chr(34))[1]} {line.split()[8]} -> {host or 'no match'}", got == host)
+    check(f"filter: {line.split(chr(34))[0][-12:]}{line.split(chr(34))[1]} {line.split(chr(34))[2].split()[0]} -> {host or 'no match'}", got == host)
