@@ -1,12 +1,11 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <GxEPD2_BW.h>
-#include <Fonts/FreeSansBold24pt7b.h>
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <SPI.h>
-#include <math.h>
 #include <PubSubClient.h>
 #include <time.h>
 #include <ld2410.h>
@@ -23,6 +22,39 @@ const unsigned long REBOOT_INTERVAL = 43200000UL; // 12 hours
 // BKK API CONFIG
 // ========================
 const char* bkkUrl = BKK_URL;
+// The route filter is taken from BKK_URL's includeRouteId=... parameters (#70),
+// so the route IDs live only in secrets.h.
+
+// Root CA of futar.bkk.hu (DigiCert Global Root G2, valid until 2038-01-15).
+// The HTTPS request is only made if the server's certificate chains up to it (#70).
+// If BKK switches to another CA, the departures stop loading ("BKK API error: -1"
+// on serial): replace this with the new root, e.g. from
+// `openssl s_client -connect futar.bkk.hu:443 -showcerts`.
+// SHA-256 fingerprint: CB:3C:CB:B7:60:31:E5:E0:13:8F:8D:D3:9A:23:F9:DE:47:FF:C3:5E:43:C1:14:4C:EA:27:D4:6A:5A:B1:CB:5F
+const char* BKK_ROOT_CA = R"PEM(
+-----BEGIN CERTIFICATE-----
+MIIDjjCCAnagAwIBAgIQAzrx5qcRqaC7KGSxHQn65TANBgkqhkiG9w0BAQsFADBh
+MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
+d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH
+MjAeFw0xMzA4MDExMjAwMDBaFw0zODAxMTUxMjAwMDBaMGExCzAJBgNVBAYTAlVT
+MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j
+b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IEcyMIIBIjANBgkqhkiG
+9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuzfNNNx7a8myaJCtSnX/RrohCgiN9RlUyfuI
+2/Ou8jqJkTx65qsGGmvPrC3oXgkkRLpimn7Wo6h+4FR1IAWsULecYxpsMNzaHxmx
+1x7e/dfgy5SDN67sH0NO3Xss0r0upS/kqbitOtSZpLYl6ZtrAGCSYP9PIUkY92eQ
+q2EGnI/yuum06ZIya7XzV+hdG82MHauVBJVJ8zUtluNJbd134/tJS7SsVQepj5Wz
+tCO7TG1F8PapspUwtP1MVYwnSlcUfIKdzXOS0xZKBgyMUNGPHgm+F6HmIcr9g+UQ
+vIOlCsRnKPZzFBQ9RnbDhxSJITRNrw9FDKZJobq7nMWxM4MphQIDAQABo0IwQDAP
+BgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBhjAdBgNVHQ4EFgQUTiJUIBiV
+5uNu5g/6+rkS7QYXjzkwDQYJKoZIhvcNAQELBQADggEBAGBnKJRvDkhj6zHd6mcY
+1Yl9PMWLSn/pvtsrF9+wX3N3KjITOYFnQoQj8kVnNeyIv/iPsGEMNKSuIEyExtv4
+NeF22d+mQrvHRAiGfzZ0JFrabA0UWTW98kndth/Jsw1HKj2ZL7tcu7XUIOGZX1NG
+Fdtom/DzMNU+MeKNhJ7jitralj41E6Vf8PlwUHBHQRFXGU7Aj64GxJUTFy8bJZ91
+8rGOmaFvE7FBcf6IKshPECBV1/MUReXgRPTqh5Uykw7+U0b6LJ3/iyK5S9kJRaTe
+pLiaWN0bfVKfjllDiIGknibVb63dDcY3fe0Dkhvld1927jyNxF1WW6LZZm6zNTfl
+MrY=
+-----END CERTIFICATE-----
+)PEM";
 
 // ========================
 // MQTT CONFIG
@@ -110,17 +142,6 @@ String removeAccents(String text) {
 }
 
 // ========================
-// TIME FUNCTIONS
-// ========================
-int getCurrentHour() {
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    return 12;
-  }
-  return timeinfo.tm_hour;
-}
-
-// ========================
 // MQTT FUNCTIONS
 // ========================
 void connectMQTT() {
@@ -201,12 +222,6 @@ void drawTramIcon(int x, int y, int size) {
   display.drawCircle(x + 3 * size / 4, wheelY, 3, GxEPD_BLACK);
 }
 
-void drawClockIcon(int x, int y) {
-  display.drawCircle(x, y, 8, GxEPD_BLACK);
-  display.drawLine(x, y, x, y - 5, GxEPD_BLACK); // hour hand
-  display.drawLine(x, y, x + 4, y, GxEPD_BLACK); // minute hand
-}
-
 void drawWifiIcon(int x, int y) {
   int rssi = WiFi.RSSI();
   int bars = (rssi >= -55) ? 3 : (rssi >= -70) ? 2 : (rssi >= -85) ? 1 : 0;
@@ -233,11 +248,25 @@ void hardRefresh() {
 // ========================
 // FETCH BKK DEPARTURES
 // ========================
+// True if BKK_URL has includeRouteId=<routeId>, or no includeRouteId at all
+bool routeWanted(const String &routeId) {
+  String url = bkkUrl;
+  if (url.indexOf("includeRouteId=") < 0) return true;
+  String key = "includeRouteId=" + routeId;
+  for (int i = url.indexOf(key); i >= 0; i = url.indexOf(key, i + 1)) {
+    int end = i + key.length();
+    if (end == (int)url.length() || url[end] == '&') return true;
+  }
+  return false;
+}
+
 void fetchAllDepartures(TramDeparture departures[], int &count) {
   count = 0;
 
+  WiFiClientSecure tls;
+  tls.setCACert(BKK_ROOT_CA);
   HTTPClient http;
-  http.begin(bkkUrl);
+  http.begin(tls, bkkUrl);
   http.setTimeout(10000);
 
   int httpCode = http.GET();
@@ -277,8 +306,8 @@ void fetchAllDepartures(TramDeparture departures[], int &count) {
 
     String routeId = references["trips"][tripId]["routeId"].as<String>();
 
-    // Only include our two routes
-    if (routeId != "BKK_3022" && routeId != "BKK_3510") continue;
+    // Only the routes BKK_URL asks for
+    if (!routeWanted(routeId)) continue;
 
     long long departureTime = stopTime["departureTime"].as<long long>();
     long long predictedDepartureTime = stopTime.containsKey("predictedDepartureTime")
