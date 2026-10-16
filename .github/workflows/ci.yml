@@ -10,6 +10,10 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      # The backend uses the machine's local time, like the server (Budapest); the
+      # migration test (#65) relies on it
+      TZ: Europe/Budapest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
