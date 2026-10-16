@@ -8,6 +8,7 @@
 
 inline void hpPublishPresence(PubSubClient& mqtt, ld2410& radar,
                               const char* device, const char* topic) {
+  if (!mqtt.connected()) return;   // broker down: hpConnectMQTT() retries in loop()
   bool presence   = radar.presenceDetected();
   bool stationary = radar.stationaryTargetDetected();
   bool moving     = radar.movingTargetDetected();

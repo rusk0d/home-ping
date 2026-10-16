@@ -111,7 +111,7 @@ void setup() {
   hpConnectWiFi(WIFI_SSID, WIFI_PASS);
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
-  hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);
+  hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);   // first attempt; loop() retries (#120)
 
   // Radar last
   Serial2.setRxBufferSize(1024);
