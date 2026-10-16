@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -14,6 +15,10 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.david.homeenv.BuildConfig
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "MainActivity"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +51,7 @@ class MainActivity : AppCompatActivity() {
         try {
             startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Can't open the exact-alarm settings: $e")
         }
     }
 
@@ -58,7 +63,7 @@ class MainActivity : AppCompatActivity() {
         // Subscribe to topic for notifications
         FirebaseMessaging.getInstance().subscribeToTopic("env")
             .addOnCompleteListener { task ->
-                println("Subscribed to topic 'env': ${task.isSuccessful}")
+                Log.i(TAG, "Subscribed to topic 'env': ${task.isSuccessful}")
             }
 
         // Request notification permission on Android 13+
@@ -91,11 +96,13 @@ class MainActivity : AppCompatActivity() {
 
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
-                println("FCM token: $token")
+                // The token itself isn't logged: it is this device's push credential
+                Log.i(TAG, "FCM token received")
+                // A plain thread: the registration shouldn't depend on this screen's lifecycle
                 Thread { PushRegistration.register(applicationContext, token) }.start()
             }
             .addOnFailureListener {
-                it.printStackTrace()
+                Log.w(TAG, "Couldn't get the FCM token: $it")
             }
     }
 }

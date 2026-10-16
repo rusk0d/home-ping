@@ -1,12 +1,14 @@
 package com.david.homeenv
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /** Sends the FCM token to the backend (POST /api/register_token), which subscribes it to topic "env". */
 object PushRegistration {
 
+    private const val TAG = "PushRegistration"
     private const val PREFS = "push"
     private const val KEY_TOKEN = "registered_token"
     private const val KEY_AT = "registered_at"
@@ -23,16 +25,16 @@ object PushRegistration {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val fresh = System.currentTimeMillis() - prefs.getLong(KEY_AT, 0) < RESEND_AFTER_MS
         if (prefs.getString(KEY_TOKEN, null) == token && fresh) {
-            println("Token already registered")
+            Log.i(TAG, "Token already registered")
             return
         }
         when (val code = Api.post("/api/register_token", JSONObject().put("token", token))) {
-            null -> println("Failed to register token: no response")
+            null -> Log.w(TAG, "Failed to register token: no response")
             in 200..299 -> {
-                println("Token registered successfully")
+                Log.i(TAG, "Token registered")
                 prefs.edit().putString(KEY_TOKEN, token).putLong(KEY_AT, System.currentTimeMillis()).apply()
             }
-            else -> println("Failed to register token: $code")
+            else -> Log.w(TAG, "Failed to register token: HTTP $code")
         }
     }
 }
