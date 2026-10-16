@@ -80,6 +80,9 @@ class MainActivity : AppCompatActivity() {
             if (granted) getAndRegisterToken()
         }
 
+    // Token-based registration is deprecated since Cloud Messaging 25.1; the move to FID
+    // registration (register/onRegistered) is #153. Tokens still work until then.
+    @Suppress("DEPRECATION")
     private fun getAndRegisterToken() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)

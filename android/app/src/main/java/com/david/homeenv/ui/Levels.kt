@@ -9,14 +9,14 @@ import androidx.core.content.ContextCompat
 import com.david.homeenv.R
 
 /** A level label and its colour, e.g. "Comfortable" / good. */
-data class Level(val text: String, @ColorRes val color: Int)
+data class Level(val text: String, @param:ColorRes val color: Int)
 
 /**
  * A banded scale: the value range a gauge shows, the band stops, and the colour of each
  * band (one more colour than stops). The single source for the chip thresholds below,
  * the CO₂ card's gauge and the widget gauges. web/index.html has its own copy.
  */
-class Scale(val min: Double, val max: Double, val stops: List<Double>, @ColorRes val colors: List<Int>) {
+class Scale(val min: Double, val max: Double, val stops: List<Double>, val colors: List<Int>) {   // colour resource IDs
     init { require(colors.size == stops.size + 1) }
 
     /** Position of [value] on the gauge, 0..1. */
