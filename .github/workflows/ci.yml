@@ -53,6 +53,17 @@ jobs:
           cp firmware/secrets.example.h firmware/${{ matrix.sketch }}/secrets.h
           arduino-cli compile --fqbn esp32:esp32:esp32 --library firmware/libraries/HomePing firmware/${{ matrix.sketch }}
 
+  # Host-side unit test of the shared firmware library against fake Arduino headers (#120)
+  firmware-lib:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build and run the HomePing test
+        working-directory: firmware/libraries/HomePing/test
+        run: |
+          g++ -std=c++17 -Wall -Wextra -I fakes -I ../src -o test_homeping test_homeping.cpp
+          ./test_homeping
+
   android:
     runs-on: ubuntu-latest
     steps:
