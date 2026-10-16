@@ -7,9 +7,9 @@ inferred then and hasn't been confirmed since.
 
 ## General
 
-- Server: Flask, `app.run(host="0.0.0.0", port=5000)` when run directly. Production runs under
-  systemd. **UNCERTAIN**: Android uses `https://www.example.com/...`
-  placeholders, so a reverse proxy with TLS presumably sits in front.
+- Server: Flask app served by waitress (since #59) on `127.0.0.1:5000` (`BIND_HOST`/`PORT` in
+  `.env`), behind nginx with TLS, which proxies `/api/`. Production runs under systemd as the
+  unprivileged user `iot` from `/opt/iot` (`backend/systemd/iot-backend.service`).
 - Auth: HTTP Basic. One shared account, `DASH_USER` / `DASH_PASS` from
   `backend/.env`. On failure: `401`, body `Authentication required`
   (text/plain), header `WWW-Authenticate: Basic realm="Login Required"`.
