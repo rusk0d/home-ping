@@ -43,6 +43,8 @@ class HomeFragment : Fragment() {
 
         private const val MAIN = "home_ping_esp32"
         private const val HALLWAY = "hallway_presence_esp32"
+        // Retired in the node merge (#57): its CO2 sensor is on the main node now. Still
+        // shown while the backend lists it, and used as the CO2 source by older backends.
         private const val CO2 = "co2_sensor_esp32"
         private val DEVICE_NAMES = linkedMapOf(MAIN to "Main node", HALLWAY to "Hallway radar", CO2 to "CO₂ node")
     }
@@ -205,19 +207,21 @@ class HomeFragment : Fragment() {
     }
 
     private fun renderLatest(latest: JSONObject) {
-        // Temperature + humidity from the main node (BME280). Fields can be null.
-        val main = latest.optJSONObject(MAIN)
+        // Temperature + humidity from the device with the newest env reading (the BME280
+        // moved boards in the node merge, #57). Older backends without env_ts: the main node.
+        val main = latest.newestBy("env_ts") ?: latest.optJSONObject(MAIN)
         val temp = main?.optNum("temp")
         val hum = main?.optNum("humidity")
         b.tempValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
         b.humidityValue.text = valueWithUnit(hum?.let { "%.0f".format(Locale.US, it) }, "%")
         Levels.applyChip(b.tempChip, temp?.let(Levels::temperature))
         Levels.applyChip(b.humidityChip, hum?.let(Levels::humidity))
-        // Note: for the main node, `ts` is the radar's timestamp (see contracts/api.md)
-        envTs = main?.optTs("ts")
+        // env_ts is the env reading's own time; `ts` can be the radar's (contracts/api.md, #11)
+        envTs = main?.optTs("env_ts") ?: main?.optTs("ts")
 
-        // CO2 node: `co2` is null whenever the reading isn't valid
-        val co2Node = latest.optJSONObject(CO2)
+        // CO2 from the device with the newest CO2 reading: the main node since the merge,
+        // co2_sensor_esp32 before. `co2` is null whenever the reading isn't valid.
+        val co2Node = latest.newestBy("co2_ts") ?: latest.optJSONObject(CO2)
         val ppm = co2Node?.optNum("co2")?.toInt()
         val sensorOk = co2Node?.takeIf { it.has("co2_ok") && !it.isNull("co2_ok") }?.optBoolean("co2_ok")
         b.co2Value.text = ppm?.toString() ?: "--"
@@ -235,7 +239,7 @@ class HomeFragment : Fragment() {
             false -> "sensor fault / warming up"
             null -> "sensor --"
         }
-        co2Ts = co2Node?.optTs("ts")
+        co2Ts = co2Node?.optTs("co2_ts") ?: co2Node?.optTs("ts")
 
         // Occupied now: combined radar state
         latest.optJSONObject("combined")?.let { combined ->
@@ -310,6 +314,8 @@ class HomeFragment : Fragment() {
         }
         b.devicesList.removeAllViews()
         DEVICE_NAMES.forEach { (id, name) ->
+            // The retired CO2 node only while the backend still lists it (#57)
+            if (id == CO2 && devices != null && id !in online) return@forEach
             val uptime = latest?.optJSONObject(id)?.optNum("uptime")?.toInt()
             val meta = when {
                 id !in online && uptime == null -> "no data yet"
@@ -402,6 +408,12 @@ class HomeFragment : Fragment() {
     }
 
     // ---------- helpers ----------
+
+    /** The device entry of /api/latest_all with the newest [tsKey] (env_ts / co2_ts), or null. */
+    private fun JSONObject.newestBy(tsKey: String): JSONObject? =
+        keys().asSequence().mapNotNull { optJSONObject(it) }
+            .filter { it.has(tsKey) && !it.isNull(tsKey) }
+            .maxByOrNull { it.optString(tsKey) }   // ISO 8601 UTC strings sort by time
 
     private fun JSONObject.optTs(key: String): Date? = if (isNull(key)) null else parseTs(optString(key))
 
