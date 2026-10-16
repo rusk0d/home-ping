@@ -109,6 +109,8 @@ Known keys:
 |---|---|---|---|---|
 | `occupancy_armed` | `'0'` / `'1'` | `'0'` via `INSERT OR IGNORE` at startup | `POST /api/occupancy_arm` | presence handler (arrival alert), `/api/occupancy_status` |
 | `cooldown:<key>` | unix time (float, as text) when the cooldown for alert `<key>` started (e.g. `cooldown:HUMIDITY_home_ping_esp32`) | no | `alert()` via `set_cooldown()` | loaded into `LAST_NOTIFICATION` at startup (#5) |
+| `arrival_started` | unix time an arrival started (first occupied reading after the quiet spell), `'0'` once confirmed | no | presence handler | presence handler (arrival alert) |
+| `arrival_quiet` | quiet minutes before that arrival, as an int | no | presence handler | arrival alert body |
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
 | `ts_utc` | `'1'` once the timestamps were converted to UTC | no | `init_db()` (#65) | `init_db()` |
 | `node_offline:<device>` | `'1'` while that node's current outage has been pushed, `'m'` while it is offline but the push was muted (#82), else `'0'` | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
@@ -164,8 +166,8 @@ Notable derived values:
 
 - `get_combined_occupancy()`: for each radar, its last 3 rows within 2 min. Occupied if any radar has ≥2 rows with `occupied=1`.
 - `calculate_combined_confidence(m)`: `MAX` over radars of `AVG(occupied)` in the last `m` minutes, ×100, truncated to an int.
-- `any_radar_quiet_minutes()`: minutes since the newest `occupied=1` row of any radar,
-  **excluding the single newest row in the table** (`id < MAX(id)`), else 9999.
+- `any_radar_quiet_minutes()`: minutes since the newest `occupied=1` row of any radar, else 9999.
+  It runs before the current message's row is inserted.
 
 ## Mismatches and issues
 
@@ -181,10 +183,8 @@ Notable derived values:
    still reset when the backend restarts. That is harmless: the first message after a
    restart only sets the baseline, and an outage needs 12 fresh disconnected messages
    anyway. Cooldowns and outage flags are in `system_state` (#5); `co2_ok` in `readings` (#14).
-6. **`any_radar_quiet_minutes` excludes the newest row of any device**, not the
-   current device's. With two radars interleaving every 5 s, it skips the
-   *other* radar's latest row (**UNCERTAIN**: the intent was "exclude the row
-   being processed", but the current row is inserted after this query runs, so
-   the exclusion is probably unnecessary).
+6. ~~**`any_radar_quiet_minutes` excluded the newest row of any device**~~ Fixed with the
+   arrival alert change: it skipped the newest row in the table (with two radars, often the
+   *other* radar's latest row), although the current row isn't inserted yet when it runs.
 7. ~~**`events` and `devices` grow without limit.**~~ Fixed in #18: 30 days retention for both.
 8. ~~**No indexes.**~~ Fixed in #18 (see Conventions).
