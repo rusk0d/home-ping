@@ -54,6 +54,7 @@ PRESENCE_SIGNAL_THRESHOLD = 15   # stationary readings below this energy are tre
 # CONFIDENCE_MINUTES that were occupied (0-100), or None without radar data.
 CONFIDENCE_MINUTES = 15
 HOURLY_MAX_DAYS = 7            # /api/hourly?days= limit (readings are kept 8 days)
+DAILY_MAX_DAYS = 400           # /api/daily?days= limit (the hourly table is kept for good, #129)
 
 # Alerts
 TEMP_THRESHOLD = 18
