@@ -11,17 +11,18 @@ sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 builtins.print = lambda *a, **k: None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[ERROR]", "[DB]")) else _p(*a, **k)
 import server
+import config, state, store, alerts, ingest
 server.prepare()   # importing does no work (#73)
-m = server.messaging   # what server.py actually calls
+m = alerts.messaging   # what server.py actually calls
 def check(label, cond): print(("PASS " if cond else "FAIL ") + label)
 def pushes(event): return sum(1 for c in m.send.call_args_list if m.Message.call_args_list and True) and \
     sum(1 for c in m.Message.call_args_list if c.kwargs.get("data", {}).get("event") == event)
 def restart():
     global server
-    server = importlib.reload(server); server.prepare()
+    server.prepare()
 def mqtt(topic, p, retain=False):
-    server.on_message(None, None, types.SimpleNamespace(retain=retain, topic=topic, payload=json.dumps(p).encode()))
-rows = lambda t: sqlite3.connect(server.DB).execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+    ingest.on_message(None, None, types.SimpleNamespace(retain=retain, topic=topic, payload=json.dumps(p).encode()))
+rows = lambda t: sqlite3.connect(config.DB).execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
 env = {"device": "home_ping_esp32", "temp_c": 22.0, "humidity": 70.0, "uptime": 100}
 
 # 1. retained replay is ignored completely
@@ -34,10 +35,10 @@ check("retained: no push", pushes("HUMIDITY_HIGH") == 0)
 mqtt("home/esp32/bme280", env)
 check("live: row stored", rows("readings") == 1)
 check("live: humidity push sent", pushes("HUMIDITY_HIGH") == 1)
-check("cooldown persisted in system_state", sqlite3.connect(server.DB).execute(
+check("cooldown persisted in system_state", sqlite3.connect(config.DB).execute(
     "SELECT COUNT(*) FROM system_state WHERE key='cooldown:HUMIDITY_home_ping_esp32'").fetchone()[0] == 1)
 restart()
-check("after restart: cooldown loaded", "HUMIDITY_home_ping_esp32" in server.LAST_NOTIFICATION)
+check("after restart: cooldown loaded", "HUMIDITY_home_ping_esp32" in state.LAST_NOTIFICATION)
 mqtt("home/esp32/bme280", env)
 check("after restart: no repeat push within cooldown", pushes("HUMIDITY_HIGH") == 1)
 mqtt("home/esp32/bme280", env, retain=True)
@@ -49,14 +50,14 @@ radar = lambda ok: mqtt("home/esp32/presence", {"device": "hallway_presence_esp3
 for _ in range(12): radar(False)
 check("outage: one push", pushes("RADAR_DISCONNECTED") == 1)
 restart()
-check("after restart: outage flag loaded", "hallway_presence_esp32" in server.RADAR_ALERTED)
-server.set_cooldown("RADAR_hallway_presence_esp32", 0)   # cooldown long over
+check("after restart: outage flag loaded", "hallway_presence_esp32" in state.RADAR_ALERTED)
+alerts.set_cooldown("RADAR_hallway_presence_esp32", 0)   # cooldown long over
 for _ in range(15): radar(False)
 check("after restart: same outage not pushed again", pushes("RADAR_DISCONNECTED") == 1)
 radar(True)
-check("radar back: flag cleared in DB", server.get_state("radar_alerted:hallway_presence_esp32") == "0")
+check("radar back: flag cleared in DB", store.get_state("radar_alerted:hallway_presence_esp32") == "0")
 restart()
-check("after restart: cleared flag stays cleared", "hallway_presence_esp32" not in server.RADAR_ALERTED)
+check("after restart: cleared flag stays cleared", "hallway_presence_esp32" not in state.RADAR_ALERTED)
 for _ in range(12): radar(False)
 check("new outage: pushed again", pushes("RADAR_DISCONNECTED") == 2)
 
@@ -65,5 +66,5 @@ m.send.side_effect = Exception("FCM down")
 mqtt("home/esp32/bme280", {"device": "t_node", "temp_c": 15.0, "uptime": 10})
 m.send.side_effect = None
 restart()
-left = server.LAST_NOTIFICATION["TEMP_t_node"] + server.NOTIFICATION_COOLDOWN - time.time()
+left = state.LAST_NOTIFICATION["TEMP_t_node"] + config.NOTIFICATION_COOLDOWN - time.time()
 check(f"failed push: retry in ~60 s kept across restart (got {left:.0f} s)", 55 <= left <= 61)

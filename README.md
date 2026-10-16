@@ -18,7 +18,7 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 | Folder | What |
 |---|---|
 | `firmware/` | Arduino sketches: `co2_node`, `eink_node` (hallway radar + e-ink display), `main_node` |
-| `backend/` | Flask app (`server.py`, creates the DB schema on start), `test_push.py`, nightly `backup_db.py` |
+| `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `ingest` (MQTT) and `api` modules; `test_push.py`, nightly `backup_db.py` |
 | `web/` | Single-file dashboard (`index.html`), connects to MQTT directly from the browser |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
 | `contracts/` | MQTT topics/payloads, REST API, push notifications, DB schema: the source of truth |
@@ -45,6 +45,7 @@ in its working directory.
 - **Backend:** `pip install -r backend/requirements.txt`, then `python server.py` in
   `backend/` with a `.env` next to it. In production it runs as the systemd unit
   `iot-backend` (`sudo systemctl restart iot-backend`, logs: `journalctl -u iot-backend -f`).
+  Deploy: copy all `backend/*.py` to the backend directory on the server, then restart.
   Test a push with `python3 test_push.py ["Title" "Text"]`.
   Tests: `pip install -r backend/requirements-dev.txt`, then `pytest backend/tests` (no
   broker, Firebase or real config needed). CI runs them, compiles the firmware and builds

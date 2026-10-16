@@ -10,8 +10,9 @@ for name in ["firebase_admin", "firebase_admin.credentials", "firebase_admin.mes
 sys.modules["firebase_admin"]._apps = {"x": 1}
 sys.path.insert(0, backend)
 import server   # no google/requests stubs: the import must work without them
+import api
 server.prepare()   # importing does no work (#73)
-c = server.app.test_client()
+c = api.app.test_client()
 auth = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}
 def check(label, cond): print(("PASS " if cond else "FAIL ") + label)
 for p in ["/api/latest2", "/api/history", "/api/stats24h", "/api/occupancy_rolling",

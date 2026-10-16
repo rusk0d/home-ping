@@ -24,18 +24,19 @@ con.commit(); con.close()
 sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 import server
+import config, store, ingest, api
 server.prepare()   # importing does no work (#73)
-assert server.DB == "data.db", server.DB
+assert config.DB == "data.db", config.DB
 builtins.print = lambda *a, **k: None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[DB]")) else _p(*a, **k)
 
 cols = [r[1] for r in sqlite3.connect("data.db").execute("PRAGMA table_info(readings)")]
 check("migration dropped occupied/occupancy_confidence/dark", not {"occupied", "occupancy_confidence", "dark"} & set(cols))
 check("migration kept the other columns", cols == ["id", "device", "ts", "temp", "humidity", "uptime", "co2", "pressure", "co2_ok"])
 check("migration kept the rows", sqlite3.connect("data.db").execute("SELECT COUNT(*) FROM readings").fetchone()[0] == 2)
-server.init_db()   # second start: no-op
+store.init_db()   # second start: no-op
 check("second start leaves layout alone", [r[1] for r in sqlite3.connect("data.db").execute("PRAGMA table_info(readings)")] == cols)
 
-c = server.app.test_client()
+c = api.app.test_client()
 A = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}
 get = lambda p: c.get(p, headers=A).get_json()
 
@@ -56,7 +57,7 @@ check("history_combined removed", c.get("/api/history_combined", headers=A).stat
 
 # Radar data arrives
 def radar(dev, occ):
-    server.on_message(None, None, types.SimpleNamespace(retain=False, topic="home/esp32/presence", payload=json.dumps(
+    ingest.on_message(None, None, types.SimpleNamespace(retain=False, topic="home/esp32/presence", payload=json.dumps(
         {"device": dev, "radar_connected": True, "presence": occ, "stationary": occ, "moving": False,
          "distance": 100, "signal": 50 if occ else 0, "rssi": -60, "uptime": 10}).encode()))
 for occ in (True, True, True, False):
@@ -72,12 +73,12 @@ check("hourly: no avg_confidence", all("avg_confidence" not in r for r in h))
 check("hourly: occupancy for the current hour", h[0]["avg_occupancy"] == 75)
 check("air band null without co2? (co2 present here)", get("/api/air")["band"] == "fair")
 # env-only message after migration still stored
-server.on_message(None, None, types.SimpleNamespace(retain=False, topic="home/esp32/bme280", payload=json.dumps(
+ingest.on_message(None, None, types.SimpleNamespace(retain=False, topic="home/esp32/bme280", payload=json.dumps(
     {"device": "home_ping_esp32", "temp_c": 23.0, "humidity": 46.0, "uptime": 200}).encode()))
 check("new env message stored and served", get("/api/latest")["temp"] == 23.0)
 
 # Empty DB
-os.remove("data.db"); server.init_db()
+os.remove("data.db"); store.init_db()
 l = get("/api/latest")
 check("empty DB: /api/latest 200 with nulls", l == {"ts": None, "temp": None, "humidity": None, "uptime": None, "online": False, "occupied": None, "confidence": None})
 check("empty DB: stats nulls", all(get("/api/stats24h_combined")[k] is None for k in ("avg_temp", "avg_humidity", "avg_occupancy")))

@@ -13,8 +13,9 @@ sys.path.insert(0, backend)
 import builtins; _p = builtins.print
 builtins.print = lambda *a, **k: None if a and str(a[0]).startswith(("[MQTT]", "[DEBUG]", "[PRESENCE]", "[DB]", "[STATUS]")) else _p(*a, **k)
 import server
+import config, ingest, api
 server.prepare()   # importing does no work (#73)
-con = sqlite3.connect(server.DB)
+con = sqlite3.connect(config.DB)
 now = datetime.now(timezone.utc).replace(tzinfo=None)
 fmt = lambda d: d.strftime("%Y-%m-%d %H:%M:%S")
 for days_ago in range(0, 8):
@@ -24,7 +25,7 @@ for days_ago in range(0, 8):
     con.execute("INSERT INTO readings (device, ts, co2) VALUES ('co2', ?, 1000)", (t,))
     con.execute("INSERT INTO presence_readings (device, ts, occupied) VALUES ('home_ping_esp32', ?, 1)", (t,))
 con.commit()
-c = server.app.test_client(); A = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}
+c = api.app.test_client(); A = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}
 get = lambda path: c.get(path, headers=A)
 
 h1 = get("/api/hourly").get_json()
@@ -40,4 +41,4 @@ check("days=1 same as default", get("/api/hourly?days=1").get_json() == h1)
 for bad in ["0", "8", "abc", "-1", "2.5"]:
     rv = get(f"/api/hourly?days={bad}")
     check(f"days={bad} -> 400 JSON error", rv.status_code == 400 and "error" in rv.get_json())
-check("hourly_occupancy_today() default unchanged", len(server.hourly_occupancy_today()) == 1)
+check("hourly_occupancy_today() default unchanged", len(ingest.hourly_occupancy_today()) == 1)
