@@ -271,6 +271,7 @@ Example:
 ## Web page (`web/index.html`) as a subscriber
 
 - Subscribes to `home/esp32/bme280`, `home/esp32/co2`, `home/backend/occupancy_hourly`,
+  `home/backend/history_24h` (since #132),
   `home/esp32/presence` and `home/esp32/+/status` (read-only user). Topics the broker's ACL
   refuses (SUBACK 128) are logged as a warning in the browser console.
 - **Devices list** (#81): one entry per node (main node, hallway radar, CO₂ node, plus any
@@ -287,14 +288,18 @@ Example:
 - bme280: shows `temp_c`, `humidity`, `pressure`, `uptime`.
 - co2: shows `co2` only when `co2_ok` is true and `co2` is present; otherwise
   shows "warming up" (`warming`) or "no valid reading" (`err`). Also shows `uptime`, `rssi`.
-- History and sparklines are in browser memory only, timestamped with the
-  browser's receive time. Retained messages (`packet.retain`) are labelled
+- Sparklines (since #132): the hourly averages from `history_24h` (each plotted at the middle
+  of its hour) followed by the live readings since the end of its last hour, on a time axis
+  from the oldest to the newest point. Each `history_24h` message replaces the hourly points
+  and drops the live ones it now covers; live points are kept for at most 24 h. Without
+  `history_24h` (older backend) they start empty, as before.
+- Live readings and the recent-readings table are in browser memory only, timestamped with
+  the browser's receive time. Retained messages (`packet.retain`) are labelled
   "last known value" instead of "just now".
 - A card is greyed out as stale after 90 s (bme280) or 180 s (co2) without a message.
 - `home/esp32/dht11` (an old, unpublished topic) is no longer used.
-- Level thresholds (CO₂ 800/1200/2000 ppm, humidity 30/40/60/70 %, temperature 18/20/24/27 °C)
-  are duplicated in `index.html` (`co2Level`, `humLevel`, `tempLevel`). The Android app's single
-  source is `ui/Levels.kt` (#74). Change both together.
+- Level thresholds: `co2Level`, `humLevel`, `tempLevel`, a copy of the "Level bands" table in
+  `api.md` (#127), which is the place to change them.
 
 ---
 
