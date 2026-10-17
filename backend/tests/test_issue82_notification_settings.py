@@ -5,9 +5,8 @@ from support import check
 
 
 def test_issue82_notification_settings(env):
-    import os, sys, json, base64, tempfile, sqlite3, types, time
+    import json, base64, sqlite3, types
     from datetime import datetime, timedelta, timezone
-    from unittest import mock
     import server
     import config, state, store, alerts, nodes, ingest, api
     server.prepare()   # importing does no work (#73)

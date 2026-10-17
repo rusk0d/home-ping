@@ -5,8 +5,7 @@ from support import check
 
 
 def test_issue18_indexes_and_retention(env):
-    import os, sys, base64, tempfile, sqlite3
-    from unittest import mock
+    import base64, sqlite3
     import server
     import config, store, nodes, api
     server.prepare()   # importing does no work (#73)

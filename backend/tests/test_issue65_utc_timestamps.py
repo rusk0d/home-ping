@@ -5,9 +5,8 @@ from support import check
 
 
 def test_issue65_utc_timestamps(env):
-    import os, sys, json, base64, tempfile, sqlite3, types, time, re
-    from datetime import datetime, timezone, timedelta
-    from unittest import mock
+    import json, base64, sqlite3, types, time, re
+    from datetime import datetime, timezone
 
     # Old DB with server-local timestamps (Budapest): one in summer time, one after the DST change
     con = sqlite3.connect("data.db")

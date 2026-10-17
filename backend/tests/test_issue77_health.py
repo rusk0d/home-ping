@@ -5,7 +5,7 @@ from support import check
 
 
 def test_issue77_health(env):
-    import os, sys, json, tempfile, types, time
+    import os, json, types, time
     from unittest import mock
     import server
     import config, state, store, ingest, api
