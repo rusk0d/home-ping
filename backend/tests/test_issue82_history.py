@@ -5,9 +5,8 @@ from support import check
 
 
 def test_issue82_history(env):
-    import os, sys, base64, tempfile, sqlite3
+    import os, base64, sqlite3
     from datetime import datetime, timedelta, timezone
-    from unittest import mock
     os.environ.update(DASH_USER="u", DASH_PASS="p", MQTT_USER="m", MQTT_PASS="m", TZ="Europe/Budapest")
     import server
     import config, ingest, api

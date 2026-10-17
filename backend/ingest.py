@@ -19,6 +19,7 @@ from store import (
 )
 from alerts import alert, set_radar_alerted
 from nodes import handle_status, touch_device
+from server_checks import check_watchdogs
 
 log = logging.getLogger(__name__)
 
@@ -158,7 +159,12 @@ def on_message(client, userdata, msg):
             return
 
         # ---- Everything else: environmental sensors. PIR fields are ignored. ----
-        device = data.get("device", "esp32")
+        # Every sketch sends its device ID; without one there's no device to store it
+        # under (the old default "esp32" made a phantom device and an offline push, #170)
+        device = data.get("device")
+        if not isinstance(device, str) or not device:
+            log.warning("payload on %s without a device, dropped: %.200s", msg.topic, payload)
+            return
         temp = data.get("temp_c")
         hum = data.get("humidity")
         uptime = data.get("uptime", 0)
@@ -311,6 +317,10 @@ def summaries_loop():
         except Exception as e:
             log.warning("hourly rollup failed: %s", e)
         publish_summaries()
+        try:
+            check_watchdogs()   # backup overdue, disk almost full (#176)
+        except Exception as e:
+            log.warning("watchdog check failed: %s", e)
 
 
 # paho callback API v2 (#66). A refused connect also arrives here, as a failure code;

@@ -18,7 +18,7 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 | Folder | What |
 |---|---|
 | `firmware/` | Arduino sketches: `main_node` (radar, BME280, MH-Z19 CO₂; merged with the former CO₂ node in #57), `eink_node` (hallway radar + e-ink display) |
-| `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `ingest` (MQTT) and `api` modules; `test_push.py`, nightly `backup_db.py` |
+| `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `server_checks`, `ingest` (MQTT) and `api` modules; `test_push.py`, nightly `backup_db.py` |
 | `web/` | Dashboard (`index.html` + `app.js`), connects to MQTT directly from the browser; `nginx/` has its security headers |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
 | `contracts/` | MQTT topics/payloads, REST API, push notifications, DB schema: the source of truth |
@@ -55,7 +55,7 @@ in its working directory.
   restart. Test a push with `sudo -u iot venv/bin/python test_push.py ["Title" "Text"]`
   in `/opt/iot`.
   Tests: `pip install -r backend/requirements-dev.txt`, then `pytest backend/tests` (no
-  broker, Firebase or real config needed). CI runs them, compiles the firmware and builds
+  broker, Firebase or real config needed) and `ruff check backend` (lint, #175). CI runs them, compiles the firmware and builds
   the Android preview APK on every PR (`.github/workflows/ci.yml`).
 - **Web:** serve `web/` (with `config.js`, which holds only the broker URL) from any static
   web server. Each person signs in with their own read-only MQTT account; see
@@ -78,10 +78,17 @@ systemctl start iot-backup.service && ls -l backups/   # first backup right away
 ```
 
 Check with `systemctl list-timers iot-backup.timer` and `journalctl -u iot-backup`.
+The backend checks it too (#176): when the newest backup is over 26 h old, or less than
+1 GB is free on the disk, the app gets a push (see `contracts/notifications.md`, "Server
+watchdog").
 To keep a copy off the server, pull the folder now and then, e.g.
 `scp -r root@<server>:/opt/iot/backups ./iot-backups`.
-Restore: `systemctl stop iot-backend`, `gunzip -c backups/data-<date>.db.gz > data.db`,
-`chown iot:iot data.db`, `systemctl start iot-backend`.
+Looking into the database by hand: `sudo -u iot sqlite3 /opt/iot/data.db`, not as root
+(WAL mode, #174: root would create `data.db-shm`/`-wal` that the backend can't write).
+Restore: `systemctl stop iot-backend`, `rm -f data.db-wal data.db-shm` (WAL files of the
+old database, #174; normally already gone after a clean stop),
+`gunzip -c backups/data-<date>.db.gz > data.db`, `chown iot:iot data.db`,
+`systemctl start iot-backend`.
 
 ## Production setup
 

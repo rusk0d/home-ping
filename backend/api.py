@@ -527,17 +527,20 @@ def dashboard():
     """Everything the Android home screen shows, in one response (#128).
 
     Calls the six endpoints' own functions, so each part has exactly the shape (and
-    defaults, e.g. /api/hourly = today) of the endpoint it is named after.
+    defaults, e.g. /api/hourly = today) of the endpoint it is named after. Each runs in
+    its own request context without a query string (#170), so /api/dashboard?days=7
+    can't change a part.
     """
-    def part(view):
-        rv = view.__wrapped__()   # the login was checked once, for /api/dashboard
+    def part(name, view):
+        with app.test_request_context(f"/api/{name}"):
+            rv = view.__wrapped__()   # the login was checked once, for /api/dashboard
         return (rv[0] if isinstance(rv, tuple) else rv).get_json()
 
     return jsonify({
-        "latest_all": part(latest_all),
-        "devices": part(devices),
-        "stats24h_combined": part(stats24h_combined),
-        "restarts": part(restarts),
-        "air": part(air),
-        "hourly": part(hourly),
+        "latest_all": part("latest_all", latest_all),
+        "devices": part("devices", devices),
+        "stats24h_combined": part("stats24h_combined", stats24h_combined),
+        "restarts": part("restarts", restarts),
+        "air": part("air", air),
+        "hourly": part("hourly", hourly),
     })

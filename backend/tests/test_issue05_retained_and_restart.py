@@ -5,8 +5,7 @@ from support import check
 
 
 def test_issue05_retained_and_restart(env):
-    import os, sys, json, tempfile, sqlite3, types, importlib, time
-    from unittest import mock
+    import json, sqlite3, types, time
     import server
     import config, state, store, alerts, ingest
     server.prepare()   # importing does no work (#73)
