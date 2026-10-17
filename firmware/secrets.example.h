@@ -9,5 +9,8 @@ const int         MQTT_PORT   = 8883;
 const char* const MQTT_USER   = "mqtt-user";
 const char* const MQTT_PASS   = "mqtt-password";
 
+// Over-the-air updates (#79): asked by the Arduino IDE on a network upload
+const char* const OTA_PASS    = "ota-password";
+
 // eink_node only: BKK departures query for the tram schedule
 const char* const BKK_URL = "https://futar.bkk.hu/api/...";

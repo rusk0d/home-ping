@@ -9,6 +9,7 @@
 #include <ld2410.h>
 #include <HomePingRadar.h>   // firmware/libraries/HomePing (#75)
 #include <HomePingTls.h>
+#include <HomePingOta.h>
 #include "secrets.h"
 
 // ========================
@@ -330,6 +331,7 @@ void setup() {
   hardRefresh();
 
   hpConnectWiFi(ssid, password);   // reboots after ~30 s without WiFi
+  hpStartOTA(DEVICE_NAME, OTA_PASS);
 
   configTzTime(TIME_ZONE, NTP_SERVER);
   // Wait for the first sync so the first screen already has the time (and the BKK
@@ -379,6 +381,7 @@ void fetchTask(void *) {
 // LOOP
 // ========================
 void loop() {
+  ArduinoOTA.handle();
   unsigned long now = millis();
 
   // WiFi watchdog
