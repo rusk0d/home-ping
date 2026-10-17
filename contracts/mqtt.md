@@ -172,8 +172,8 @@ Backend handling: env handler. Stores `temp_c` → `readings.temp`, `humidity`,
 | `presence` | bool | n/a | `radar.presenceDetected()` |
 | `stationary` | bool | n/a | stationary target detected |
 | `moving` | bool | n/a | moving target detected |
-| `distance` | integer | cm (**UNCERTAIN**: ld2410 library units, believed cm) | Stationary target distance if `stationary`, else moving target distance if `moving`, else 0 |
-| `signal` | integer | 0–100 energy (**UNCERTAIN**: library scale) | Same selection rule as `distance` |
+| `distance` | integer | cm (checked on hardware 2026-10-17, #19: 61–469 in one room) | Stationary target distance if `stationary`, else moving target distance if `moving`, else 0 |
+| `signal` | integer | 0–100 energy (checked on hardware 2026-10-17, #19) | Same selection rule as `distance` |
 | `rssi` | integer | dBm | |
 | `uptime` | integer | s | |
 
@@ -211,7 +211,7 @@ checks (see `notifications.md`). Missing fields default to: `presence`/`stationa
 | `device` | string | n/a | yes | `"home_ping_esp32"` (before #57: `"co2_sensor_esp32"`) |
 | `co2_ok` | bool | n/a | yes | true when the reading is valid (rule above) |
 | `warming` | bool | n/a | yes | uptime < 180 s |
-| `err` | integer | n/a | yes | MH-Z19 library `errorCode` (**UNCERTAIN**: `RESULT_OK` is 1 in the WifWaf MHZ19 library) |
+| `err` | integer | n/a | yes | MH-Z19 library `errorCode`; `RESULT_OK` = 1 (WifWaf MHZ19 1.5.4 header; a valid reading needs it, #19) |
 | `rssi` | integer | dBm | yes | |
 | `uptime` | integer | s | yes | |
 | `abc` | bool | n/a | yes (since #167) | the MH-Z19's automatic baseline correction as the sensor reports it; should be `false` |
