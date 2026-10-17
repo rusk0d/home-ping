@@ -1,4 +1,3 @@
-#include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
@@ -6,7 +5,6 @@
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <SPI.h>
-#include <PubSubClient.h>
 #include <time.h>
 #include <ld2410.h>
 #include <HomePingRadar.h>   // firmware/libraries/HomePing (#75)
@@ -240,8 +238,20 @@ bool fetchAllDepartures(TramDeparture departures[], int &count) {
   String payload = http.getString();
   http.end();
 
-  DynamicJsonDocument doc(16384);
-  DeserializationError error = deserializeJson(doc, payload);
+  // Keep only the fields used below (#126): the full response holds much more (stops,
+  // agencies, alerts, ...). "*" matches every trip/route id.
+  JsonDocument filter;
+  filter["currentTime"] = true;
+  JsonObject stopTimeFilter = filter["data"]["entry"]["stopTimes"].add<JsonObject>();
+  stopTimeFilter["tripId"] = true;
+  stopTimeFilter["departureTime"] = true;
+  stopTimeFilter["predictedDepartureTime"] = true;
+  stopTimeFilter["stopHeadsign"] = true;
+  filter["data"]["references"]["trips"]["*"]["routeId"] = true;
+  filter["data"]["references"]["routes"]["*"]["shortName"] = true;
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
 
   if (error) {
     Serial.print("JSON parse error: ");
@@ -263,17 +273,16 @@ bool fetchAllDepartures(TramDeparture departures[], int &count) {
 
     String tripId = stopTime["tripId"].as<String>();
 
-    if (!references["trips"].containsKey(tripId)) continue;
+    JsonObject trip = references["trips"][tripId];
+    if (trip.isNull()) continue;
 
-    String routeId = references["trips"][tripId]["routeId"].as<String>();
+    String routeId = trip["routeId"].as<String>();
 
     // Only the routes BKK_URL asks for
     if (!routeWanted(routeId)) continue;
 
     long long departureTime = stopTime["departureTime"].as<long long>();
-    long long predictedDepartureTime = stopTime.containsKey("predictedDepartureTime")
-                                   ? stopTime["predictedDepartureTime"].as<long long>()
-                                   : departureTime;
+    long long predictedDepartureTime = stopTime["predictedDepartureTime"] | departureTime;
 
     // BKK_URL asks for a couple of minutes back: skip trams that have already left.
     // Checked in seconds: integer division would turn -30 s into 0' (#118).
