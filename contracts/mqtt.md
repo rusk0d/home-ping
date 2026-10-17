@@ -42,6 +42,8 @@ read-only `web` account (from before #99) were deleted on 2026-10-16.
 
 `per_listener_settings true`: the 1883 (MQTT) and 9001 (WebSockets, behind nginx `/mqtt`)
 listeners each have their own `password_file` and `acl_file` line pointing to the same files.
+1883 is public (the nodes connect from home; TLS is #31). 9001 listens on localhost only
+(`listener 9001 127.0.0.1`, #169): nginx `/mqtt` is its only client.
 Add users with `mosquitto_passwd /etc/mosquitto/passwd <name>` (never `-c`, which wipes the
 file), edit the ACL with `printf`/an editor, then `systemctl restart mosquitto`. The nodes
 reconnect within a keep-alive interval, the backend at once.
