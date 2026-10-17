@@ -125,8 +125,10 @@ readable only by `iot`.
 
 Public (ufw): 22 (SSH), 80/443 (nginx: the web page, `/api/` and `/mqtt`), 8883 (MQTT
 over TLS for the nodes, #31). Everything else listens on `127.0.0.1` only: the backend on
-5000, Mosquitto's plain listener on 1883 (the backend) and its WebSockets listener on 9001
-(nginx `/mqtt` is its only client). Check with `ss -ltnp` and `ufw status`.
+5000 and Mosquitto's plain listener on 1883 (the backend). Mosquitto's WebSockets listener
+on 9001 (nginx `/mqtt` is its only client) shows as `*:9001`, because this Mosquitto can't
+bind websockets to localhost (#208); ufw is what keeps it closed. Check with `ss -ltnp` and
+`ufw status`.
 
 ## Uptime monitoring
 
