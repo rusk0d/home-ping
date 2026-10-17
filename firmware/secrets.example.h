@@ -3,8 +3,9 @@
 const char* const WIFI_SSID   = "your-ssid";
 const char* const WIFI_PASS   = "your-wifi-password";
 
-const char* const MQTT_BROKER = "192.168.0.10";
-const int         MQTT_PORT   = 1883;
+// TLS (#31): the host name in the broker's certificate (not an IP), port 8883
+const char* const MQTT_BROKER = "mqtt.example.com";
+const int         MQTT_PORT   = 8883;
 const char* const MQTT_USER   = "mqtt-user";
 const char* const MQTT_PASS   = "mqtt-password";
 
