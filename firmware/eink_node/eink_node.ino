@@ -8,6 +8,7 @@
 #include <time.h>
 #include <ld2410.h>
 #include <HomePingRadar.h>   // firmware/libraries/HomePing (#75)
+#include <HomePingTls.h>
 #include "secrets.h"
 
 // ========================
@@ -108,7 +109,7 @@ const uint32_t NTP_FIRST_SYNC_MS = 10000;  // wait this long at boot for the fir
 // ========================
 // MQTT CLIENT
 // ========================
-WiFiClient espClient;
+WiFiClientSecure espClient;   // MQTT over TLS (#31)
 PubSubClient mqttClient(espClient);
 
 // ========================
@@ -340,6 +341,7 @@ void setup() {
     Serial.println("Time not synced yet, continuing");
   }
 
+  espClient.setCACert(HP_MQTT_ROOT_CA);
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
 
@@ -363,6 +365,8 @@ void fetchTask(void *) {
   for (;;) {
     DepartureResult r;
     r.loaded = fetchAllDepartures(r.departures, r.count);
+    // Two TLS connections (MQTT and BKK) can be open at once (#31)
+    Serial.printf("Free heap: %u, lowest so far: %u\n", ESP.getFreeHeap(), ESP.getMinFreeHeap());
     xSemaphoreTake(fetchLock, portMAX_DELAY);
     fetched = r;
     fetchedNew = true;
