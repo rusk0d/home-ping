@@ -72,7 +72,7 @@ MOULD_HUMIDITY = 60   # %RH, the top of the "Comfortable" band
 MOULD_HOURS = 3
 NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
 PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
-QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
+QUIET_MINUTES_BEFORE_ALERT = 30   # flat must be quiet this long before an arrival alerts (60 until 2026-10-17)
 ARRIVAL_CONFIRM_SECONDS = 120     # movement this soon after the quiet spell ends confirms the arrival
 # Server watchdog pushes (#176), checked every OCCUPANCY_HOURLY_INTERVAL
 BACKUP_DIR = "backups"           # backup_db.py's folder; no folder = no backup check (dev)
