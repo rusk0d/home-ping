@@ -110,6 +110,11 @@
   .login .error:empty { display: none; }
   .who { font-size: 0.85rem; color: var(--muted); }
   .who a { color: inherit; margin-left: 6px; }
+  .lang {
+    font: inherit; font-size: 0.85rem; color: var(--muted); cursor: pointer;
+    padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--card-edge);
+  }
+  .lang:hover { color: var(--text); }
 
   .grid {
     display: grid; gap: 16px;
@@ -207,20 +212,21 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Home Ping<small>Live readings over MQTT</small></h1>
+    <h1>Home Ping<small data-i18n="subtitle">Live readings over MQTT</small></h1>
     <span>
-      <span class="who" id="who" hidden><span id="whoName"></span><a href="#" id="logout">Log out</a></span>
+      <button type="button" class="lang" id="lang" data-i18n="switchTo">Magyar</button>
+      <span class="who" id="who" hidden><span id="whoName"></span><a href="#" id="logout" data-i18n="logOut">Log out</a></span>
       <span class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></span>
     </span>
   </header>
 
   <form class="login" id="login" hidden autocomplete="on">
-    <h2>Sign in</h2>
-    <label>User <input type="text" id="loginUser" name="username" autocomplete="username" required></label>
-    <label>Password <input type="password" id="loginPass" name="password" autocomplete="current-password" required></label>
-    <label class="remember"><input type="checkbox" id="loginRemember"> Remember me on this device</label>
+    <h2 data-i18n="signIn">Sign in</h2>
+    <label><span data-i18n="user">User</span> <input type="text" id="loginUser" name="username" autocomplete="username" required></label>
+    <label><span data-i18n="password">Password</span> <input type="password" id="loginPass" name="password" autocomplete="current-password" required></label>
+    <label class="remember"><input type="checkbox" id="loginRemember"> <span data-i18n="remember">Remember me on this device</span></label>
     <p class="error" id="loginError"></p>
-    <button type="submit">Sign in</button>
+    <button type="submit" data-i18n="signIn">Sign in</button>
   </form>
 
   <div class="banner" id="configError" hidden>
@@ -232,7 +238,7 @@
     <article class="card temp" id="card-temp">
       <div class="label">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
-        Temperature
+        <span data-i18n="temperature">Temperature</span>
       </div>
       <div class="value"><span id="temp">--</span><span class="unit">°C</span></div>
       <div class="sub" id="temp-sub"></div>
@@ -243,7 +249,7 @@
     <article class="card hum" id="card-hum">
       <div class="label">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.7s-6 6.6-6 11.3a6 6 0 0 0 12 0c0-4.7-6-11.3-6-11.3z"/></svg>
-        Humidity
+        <span data-i18n="humidity">Humidity</span>
       </div>
       <div class="value"><span id="hum">--</span><span class="unit">%</span></div>
       <div class="sub" id="hum-sub"></div>
@@ -254,7 +260,7 @@
     <article class="card pres" id="card-pres">
       <div class="label">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-4"/><path d="M12 7v1M7 12h1M16 12h1"/></svg>
-        Pressure
+        <span data-i18n="pressure">Pressure</span>
       </div>
       <div class="value"><span id="pres">--</span><span class="unit">hPa</span></div>
       <div class="sub" id="pres-sub"></div>
@@ -280,7 +286,7 @@
     <div class="occ-head">
       <div class="label">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="7" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-        Occupancy today
+        <span data-i18n="occupancyToday">Occupancy today</span>
       </div>
       <div class="occ-summary" id="occ-summary"></div>
     </div>
@@ -291,24 +297,25 @@
         <span><i style="background:var(--good)"></i>≥60%</span>
         <span><i style="background:var(--ok)"></i>20–59%</span>
         <span><i style="background:var(--muted)"></i>1–19%</span>
-        <span><i style="background:repeating-linear-gradient(-45deg,var(--faint) 0 2px,transparent 2px 4px)"></i>no data</span>
+        <span><i style="background:repeating-linear-gradient(-45deg,var(--faint) 0 2px,transparent 2px 4px)"></i><span data-i18n="noData">no data</span></span>
       </span>
       <span id="occ-age">waiting…</span>
     </div>
   </article>
 
-  <h2>Devices</h2>
+  <h2 data-i18n="devices">Devices</h2>
   <section class="devices" id="devices"></section>
 
-  <h2>Recent readings</h2>
+  <h2 data-i18n="recentReadings">Recent readings</h2>
   <div class="log">
     <table>
-      <thead><tr><th>Received</th><th>Source</th><th>Temp</th><th>Humidity</th><th>Pressure</th><th>CO₂</th></tr></thead>
-      <tbody id="historyBody"><tr><td class="empty" colspan="6">Waiting for the first message…</td></tr></tbody>
+      <thead><tr><th data-i18n="colReceived">Received</th><th data-i18n="colSource">Source</th><th data-i18n="colTemp">Temp</th><th data-i18n="colHum">Humidity</th><th data-i18n="colPres">Pressure</th><th>CO₂</th></tr></thead>
+      <tbody id="historyBody"><tr><td class="empty" colspan="6" data-i18n="firstMessage">Waiting for the first message…</td></tr></tbody>
     </table>
   </div>
 </div>
 
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

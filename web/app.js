@@ -1,6 +1,7 @@
 // Home Ping dashboard, loaded by index.html. A separate file (not inline) so the page's
 // Content-Security-Policy can forbid inline scripts (#168, see web/nginx/).
-// Topics and payloads: see contracts/mqtt.md
+// Texts: t() from i18n.js (English/Hungarian); what's on screen is rendered again from the
+// last data when the language changes. Topics and payloads: see contracts/mqtt.md
 const TOPIC_ENV = 'home/esp32/bme280';  // main_node, every 30 s, retained
 const TOPIC_CO2 = 'home/esp32/co2';     // main_node (since the node merge, #57), every 60 s, retained
 const TOPIC_OCC = 'home/backend/occupancy_hourly'; // backend, every 5 min, retained
@@ -10,9 +11,9 @@ const TOPIC_STATUS = 'home/esp32/+/status';    // "online" / last will "offline"
 const STATUS_RE = /^home\/esp32\/([^/]+)\/status$/;
 // Known nodes. A node counts as online while live messages keep coming;
 // the limit is ~3 missed publishes of its most frequent topic.
-const NODES = {
-  home_ping_esp32:        { name: 'Main node',     staleAfter: 30 },   // radar every 5 s
-  hallway_presence_esp32: { name: 'Hallway radar', staleAfter: 30 },   // radar every 5 s
+const NODES = {   // name: an i18n.js key
+  home_ping_esp32:        { name: 'nodeMain',    staleAfter: 30 },   // radar every 5 s
+  hallway_presence_esp32: { name: 'nodeHallway', staleAfter: 30 },   // radar every 5 s
 };
 const STALE_AFTER = { env: 90, co2: 180, occ: 900 }; // seconds, ~3 missed publishes
 const DAY_MS = 24 * 3600e3;
@@ -28,24 +29,25 @@ const lastSeen = { env: null, co2: null, occ: null };   // { at: ms, retained: b
 const history = [];
 
 // ---------- formatting ----------
-const fmt = (v, d) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '--';
+const fmt = (v, d) => (typeof v === 'number' && isFinite(v)) ? localNum(v.toFixed(d)) : '--';
 
 function fmtUptime(s) {
   if (typeof s !== 'number') return '--';
   const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-  if (d) return `${d}d ${h}h`;
-  if (h) return `${h}h ${m}m`;
-  return `${m}m ${Math.floor(s % 60)}s`;
+  if (d) return t('uptime.d', { d, h });
+  if (h) return t('uptime.h', { h, m });
+  return t('uptime.m', { m, s: Math.floor(s % 60) });
 }
 
-function fmtAge(info) {
-  if (!info) return 'waiting…';
+// key: 'ago' ("5m ago") or 'noDataFor' ("no data for 5m")
+function fmtAge(info, key = 'ago') {
+  if (!info) return t('waiting');
   const s = Math.round((Date.now() - info.at) / 1000);
-  if (info.retained && s < 5) return 'last known value';
-  if (s < 5) return 'just now';
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  return `${Math.floor(s / 3600)}h ago`;
+  if (key === 'ago' && info.retained && s < 5) return t('lastKnown');
+  if (key === 'ago' && s < 5) return t('justNow');
+  if (s < 60) return t(key + '.s', { n: s });
+  if (s < 3600) return t(key + '.m', { n: Math.floor(s / 60) });
+  return t(key + '.h', { n: Math.floor(s / 3600) });
 }
 
 function chip(text, color) {
@@ -64,10 +66,10 @@ function setSub(id, text, color) {
 // ---------- levels ----------
 // Bands defined in contracts/api.md ("Level bands"); keep in sync with android ui/Levels.kt
 function co2Level(ppm) {
-  if (ppm < 800)  return ['Fresh', 'good'];
-  if (ppm < 1200) return ['OK', 'ok'];
-  if (ppm < 2000) return ['Stuffy – open a window', 'poor'];
-  return ['Poor – ventilate now', 'bad'];
+  if (ppm < 800)  return [t('co2Fresh'), 'good'];
+  if (ppm < 1200) return [t('co2Ok'), 'ok'];
+  if (ppm < 2000) return [t('co2Stuffy'), 'poor'];
+  return [t('co2Poor'), 'bad'];
 }
 // Dew point in °C (#177), Magnus formula with the Sonntag constants; contracts/api.md
 // "Dew point", android ui/Levels.kt dewPoint. Null for a humidity of 0 or less.
@@ -77,18 +79,18 @@ function dewPoint(t, rh) {
   return 243.12 * g / (17.62 - g);
 }
 function humLevel(h) {
-  if (h < 30) return ['Very dry', 'poor'];
-  if (h < 40) return ['Dry', 'ok'];
-  if (h <= 60) return ['Comfortable', 'good'];
-  if (h <= 70) return ['Humid', 'ok'];
-  return ['Very humid', 'poor'];
+  if (h < 30) return [t('humVeryDry'), 'poor'];
+  if (h < 40) return [t('humDry'), 'ok'];
+  if (h <= 60) return [t('humComfortable'), 'good'];
+  if (h <= 70) return [t('humHumid'), 'ok'];
+  return [t('humVeryHumid'), 'poor'];
 }
-function tempLevel(t) {
-  if (t < 18) return ['Cold', 'hum'];
-  if (t < 20) return ['Cool', 'ok'];
-  if (t <= 24) return ['Comfortable', 'good'];
-  if (t <= 27) return ['Warm', 'ok'];
-  return ['Hot', 'bad'];
+function tempLevel(c) {
+  if (c < 18) return [t('tempCold'), 'hum'];
+  if (c < 20) return [t('tempCool'), 'ok'];
+  if (c <= 24) return [t('tempComfortable'), 'good'];
+  if (c <= 27) return [t('tempWarm'), 'ok'];
+  return [t('tempHot'), 'bad'];
 }
 
 // ---------- sparklines ----------
@@ -162,31 +164,38 @@ let lastEnv = null;
 function showHumSub() {
   const d = lastEnv;
   if (!d) return;
-  if (mouldRisk) setSub('hum-sub', 'Mould risk', 'poor');
+  if (mouldRisk) setSub('hum-sub', t('mouldRisk'), 'poor');
   else setSub('hum-sub', ...humLevel(d.humidity));
   const dew = typeof d.temp_c === 'number' ? dewPoint(d.temp_c, d.humidity) : null;
-  if (dew !== null) $('hum-sub').append(` dew point ${fmt(dew, 0)} °C`);
+  if (dew !== null) $('hum-sub').append(' ' + t('dewPoint', { v: fmt(dew, 0) }));
 }
 
-function onEnv(d, retained) {
-  lastSeen.env = { at: Date.now(), retained };
+let lastEnvMsg = null;   // the last env message, to redraw after a language change
+function renderEnv(d) {
   $('temp').textContent = fmt(d.temp_c, 1);
   $('hum').textContent = fmt(d.humidity, 0);
   $('pres').textContent = fmt(d.pressure, 0);
 
   if (typeof d.temp_c === 'number') setSub('temp-sub', ...tempLevel(d.temp_c));
   if (typeof d.humidity === 'number') { lastEnv = d; showHumSub(); }
-  setSub('pres-sub', 'Sea level ≈ 1013 hPa');
+  setSub('pres-sub', t('seaLevel'));
+}
+
+function onEnv(d, retained) {
+  lastSeen.env = { at: Date.now(), retained };
+  lastEnvMsg = d;
+  renderEnv(d);
 
   push('temp', d.temp_c); push('hum', d.humidity); push('pres', d.pressure);
   drawSpark('temp', 1); drawSpark('hum', 0); drawSpark('pres', 0);
 
   noteNode(d.device || 'home_ping_esp32', d, retained);
-  addHistory('env', d.device, { temp: fmt(d.temp_c, 1) + ' °C', hum: fmt(d.humidity, 0) + ' %', pres: fmt(d.pressure, 0) + ' hPa' });
+  addHistory('env', d.device, { temp: d.temp_c, hum: d.humidity, pres: d.pressure });
 }
 
-function onCo2(d, retained) {
-  lastSeen.co2 = { at: Date.now(), retained };
+let lastCo2Msg = null;
+// Returns whether the reading is valid
+function renderCo2(d) {
   const valid = d.co2_ok && typeof d.co2 === 'number';
   const needle = $('co2-needle');
 
@@ -199,16 +208,22 @@ function onCo2(d, retained) {
     const pct = Math.min(100, Math.max(0, (d.co2 - 400) / 2600 * 100));
     needle.style.left = pct + '%';
     needle.hidden = false;
-    push('co2', d.co2);
-    drawSpark('co2', 0);
   } else {
     $('co2').textContent = '--';
     needle.hidden = true;
-    setSub('co2-sub', d.warming ? 'Sensor warming up (~3 min)' : `No valid reading (err ${d.err ?? '?'})`, 'ok');
+    setSub('co2-sub', d.warming ? t('co2Warming') : t('co2Invalid', { err: d.err ?? '?' }), 'ok');
   }
+  return valid;
+}
+
+function onCo2(d, retained) {
+  lastSeen.co2 = { at: Date.now(), retained };
+  lastCo2Msg = d;
+  const valid = renderCo2(d);
+  if (valid) { push('co2', d.co2); drawSpark('co2', 0); }
 
   noteNode(d.device || 'home_ping_esp32', d, retained);
-  addHistory('co2', d.device, { co2: valid ? d.co2 + ' ppm' : (d.warming ? 'warming' : 'invalid') });
+  addHistory('co2', d.device, { co2: valid ? d.co2 : (d.warming ? 'warming' : 'invalid') });
 }
 
 // ---------- nodes ----------
@@ -226,14 +241,13 @@ function node(device) {
     dot.className = 'dot';
     const name = document.createElement('div');
     name.className = 'name';
-    name.textContent = known.name;
     const meta = document.createElement('div');
     meta.className = 'meta';
     const text = document.createElement('div');
     text.append(name, meta);
     el.append(dot, text);
     $('devices').append(el);
-    nodes[device] = { ...known, el, meta, at: null, uptime: null, rssi: null, status: null, statusAt: null };
+    nodes[device] = { ...known, el, nameEl: name, meta, at: null, uptime: null, rssi: null, status: null, statusAt: null };
   }
   return nodes[device];
 }
@@ -270,12 +284,13 @@ function renderNode(device) {
   n.el.classList.toggle('on', state === 'on');
   n.el.classList.toggle('off', state === 'off');
   let stateText;
-  if (state === 'on') stateText = 'online';
+  if (state === 'on') stateText = t('nodeOnline');
   else if (state === 'off') stateText = (n.status === 'offline' && !(n.at && n.at > n.statusAt))
-    ? 'offline' : `no data for ${fmtAge({ at: n.at }).replace(' ago', '')}`;
-  else stateText = 'waiting for live data';
+    ? t('nodeOffline') : fmtAge({ at: n.at }, 'noDataFor');
+  else stateText = t('nodeWaiting');
+  n.nameEl.textContent = NODES[device] ? t(n.name) : n.name;
   const parts = [device];
-  if (n.uptime !== null) parts.push(`up ${fmtUptime(n.uptime)}`);
+  if (n.uptime !== null) parts.push(t('nodeUp', { v: fmtUptime(n.uptime) }));
   if (n.rssi !== null) parts.push(`${n.rssi} dBm`);
   parts.push(stateText);
   n.meta.textContent = parts.join(' · ');
@@ -287,7 +302,7 @@ Object.keys(nodes).forEach(renderNode);
 // ---------- hourly occupancy ----------
 const pad2 = n => String(n).padStart(2, '0');
 const localDate = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-let occDate = null;
+let occDate = null, lastOccMsg = null;
 
 const occCols = Array.from({ length: 24 }, (_, h) => {
   const col = document.createElement('div');
@@ -317,6 +332,7 @@ function onOcc(d) {
   const updated = new Date(String(d.updated).replace(' ', 'T'));
   lastSeen.occ = { at: isNaN(updated) ? Date.now() : updated.getTime(), retained: false };
   occDate = d.date;
+  lastOccMsg = d;
 
   const byHour = {};
   (d.hours || []).forEach(e => { byHour[parseInt(e.hour, 10)] = e.occupancy; });
@@ -333,38 +349,45 @@ function onOcc(d) {
     col.classList.toggle('now', h === current);
     occLabels[h].classList.toggle('now', h === current);
     // Hide hour labels right next to 'now' so they don't collide on narrow screens
-    occLabels[h].textContent = h === current ? 'now' : (h % 3 === 0 && Math.abs(h - current) > 1 ? pad2(h) : '');
+    occLabels[h].textContent = h === current ? t('now') : (h % 3 === 0 && Math.abs(h - current) > 1 ? pad2(h) : '');
     if (has) {
       bar.style.height = Math.max(v, 3) + '%';
       bar.style.background = `var(--${occColor(v)})`;
-      col.title = `${pad2(h)}:00–${pad2(h + 1)}:00 · ${v}% occupied`;
+      col.title = t('occTitle', { from: pad2(h), to: pad2(h + 1), v });
       sum += v;
       if (v > 0 && (peak === null || v > byHour[peak])) peak = h;
     } else {
       bar.style.height = '0';
-      col.title = h <= current ? `${pad2(h)}:00 · no radar data` : '';
+      col.title = h <= current ? t('occNoRadar', { h: pad2(h) }) : '';
     }
   });
 
   const summary = $('occ-summary');
   const strong = document.createElement('strong');
-  strong.textContent = `≈ ${(sum / 100).toFixed(1)} h`;
-  summary.replaceChildren(strong, ' occupied' + (peak !== null ? ` · busiest ${pad2(peak)}:00 (${byHour[peak]}%)` : ''));
+  strong.textContent = t('occHours', { v: fmt(sum / 100, 1) });
+  summary.replaceChildren(strong, t('occupied') + (peak !== null ? t('busiest', { h: pad2(peak), v: byHour[peak] }) : ''));
 }
 
-// device: the node that sent it (both readings come from the main node since the merge, #57)
+// device: the node that sent it (both readings come from the main node since the merge, #57).
+// values: raw numbers (co2 may be 'warming' or 'invalid'), formatted when drawn
 function addHistory(source, device, values) {
-  const node = NODES[device || 'home_ping_esp32'];
-  history.unshift({ time: new Date().toLocaleTimeString(), source, from: node ? node.name : device, ...values });
+  history.unshift({ at: new Date(), source, device: device || 'home_ping_esp32', ...values });
   if (history.length > MAX_HISTORY) history.pop();
+  renderHistory();
+}
 
+function renderHistory() {
+  if (!history.length) return;
+  const withUnit = (v, d, unit) => v === undefined ? undefined : fmt(v, d) + unit;
   const rows = history.map(e => {
     const tr = document.createElement('tr');
     const src = document.createElement('td');
     const dot = document.createElement('span');
     dot.className = 'src ' + (e.source === 'env' ? 'temp' : 'co2');
-    src.append(dot, e.from);
-    const cells = [e.time, null, e.temp, e.hum, e.pres, e.co2].map((v, i) => {
+    src.append(dot, NODES[e.device] ? t(NODES[e.device].name) : e.device);
+    const co2 = typeof e.co2 === 'string' ? t(e.co2) : withUnit(e.co2, 0, ' ppm');
+    const cells = [e.at.toLocaleTimeString(LANG === 'hu' ? 'hu' : undefined), null, withUnit(e.temp, 1, ' °C'), withUnit(e.hum, 0, ' %'),
+                   withUnit(e.pres, 0, ' hPa'), co2].map((v, i) => {
       if (i === 1) return src;
       const td = document.createElement('td');
       td.textContent = v ?? '—';
@@ -390,17 +413,11 @@ function tick() {
   Object.keys(nodes).forEach(renderNode);
   // Occupancy: stale if the backend stopped publishing or the data is from another day
   const occ = lastSeen.occ;
-  $('occ-age').textContent = occ ? 'updated ' + fmtAge(occ) : 'waiting…';
+  $('occ-age').textContent = occ ? t('updated', { age: fmtAge(occ) }) : t('waiting');
   $('card-occ').classList.toggle('stale',
     !!occ && ((now - occ.at) / 1000 > STALE_AFTER.occ || occDate !== localDate(new Date())));
 }
 setInterval(tick, 1000);
-
-// ---------- connection ----------
-function setStatus(state, text) {
-  $('status').className = 'status ' + state;
-  $('statusText').textContent = text;
-}
 
 // ---------- login (#99) ----------
 // Each person has their own read-only MQTT account. The login is kept only after the
@@ -426,18 +443,24 @@ function clearLogin() {
   for (const remember of [true, false]) { try { store(remember)?.removeItem(LOGIN_KEY); } catch (e) {} }
 }
 
+// message: an i18n.js key
+let loginError = '';
 function showLogin(message) {
   $('login').hidden = false;
   $('who').hidden = true;
-  $('loginError').textContent = message || '';
-  setStatus('down', 'Signed out');
+  loginError = message || '';
+  $('loginError').textContent = loginError && t(loginError);
+  setStatus('down', 'signedOut');
   $(message ? 'loginPass' : 'loginUser').focus();
 }
 
 // ---------- connection ----------
+// text: an i18n.js key
+let statusText = '';
 function setStatus(state, text) {
+  statusText = text;
   $('status').className = 'status ' + state;
-  $('statusText').textContent = text;
+  $('statusText').textContent = t(text);
 }
 
 // Back off between reconnects (5 s doubling to 30 s). mqtt.js retries every 1 s by
@@ -448,7 +471,7 @@ let client = null;
 
 function connect(login) {
   $('login').hidden = true;
-  setStatus('', 'Connecting…');
+  setStatus('', 'connecting');
   let accepted = false;
   const c = client = mqtt.connect(MQTT_CONFIG.url, {
     username: login.username,
@@ -464,7 +487,7 @@ function connect(login) {
       $('who').hidden = false;
     }
     c.options.reconnectPeriod = RECONNECT_MIN;
-    setStatus('live', 'Live');
+    setStatus('live', 'live');
     c.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC, TOPIC_HIST, TOPIC_PRESENCE, TOPIC_STATUS], (err, granted) => {
       if (err) console.error('MQTT subscribe failed', err);
       // QoS 128 = refused, e.g. the user's ACL doesn't cover the topic
@@ -473,9 +496,9 @@ function connect(login) {
   });
   c.on('reconnect', () => {
     c.options.reconnectPeriod = Math.min(c.options.reconnectPeriod * 2, RECONNECT_MAX);
-    setStatus('', 'Reconnecting…');
+    setStatus('', 'reconnecting');
   });
-  c.on('offline', () => { if (client === c) setStatus('down', 'Offline'); });
+  c.on('offline', () => { if (client === c) setStatus('down', 'offline'); });
   c.on('error', err => {
     console.error('MQTT error', err);
     // CONNACK 4 = bad user name or password, 5 = not authorized: don't retry, ask again
@@ -483,10 +506,10 @@ function connect(login) {
       c.end(true);
       client = null;
       clearLogin();
-      showLogin('Wrong user name or password.');
+      showLogin('wrongLogin');
       return;
     }
-    setStatus('down', 'Connection error');
+    setStatus('down', 'connError');
   });
 
   c.on('message', (topic, message, packet) => {
@@ -512,6 +535,18 @@ $('login').addEventListener('submit', e => {
   });
   $('loginPass').value = '';
 });
+// Language button: switch, then redraw everything from the last data
+$('lang').addEventListener('click', () => {
+  setLang(LANG === 'hu' ? 'en' : 'hu');
+  if (statusText) $('statusText').textContent = t(statusText);
+  if (loginError) $('loginError').textContent = t(loginError);
+  if (lastEnvMsg) renderEnv(lastEnvMsg);
+  if (lastCo2Msg) renderCo2(lastCo2Msg);
+  if (lastOccMsg) onOcc(lastOccMsg);
+  for (const [key, [, digits]] of Object.entries(SPARKS)) drawSpark(key, digits);
+  renderHistory();
+  tick();   // ages and devices
+});
 $('logout').addEventListener('click', e => {
   e.preventDefault();
   if (client) client.end(true);
@@ -522,7 +557,7 @@ $('logout').addEventListener('click', e => {
 
 if (typeof MQTT_CONFIG === 'undefined') {
   $('configError').hidden = false;
-  setStatus('down', 'Not configured');
+  setStatus('down', 'notConfigured');
 } else {
   const saved = loadLogin();
   if (saved) connect(saved); else showLogin();
