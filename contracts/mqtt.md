@@ -149,8 +149,9 @@ Backend handling: env handler. Stores `temp_c` → `readings.temp`, `humidity`,
   - `firmware/eink_node`: `DEVICE_NAME = "hallway_presence_esp32"` (backend treats this as "hallway")
 - Sensor: LD2410C mmWave radar.
 - Interval: every 5 s per node (`PRESENCE_INTERVAL = 5000`). On the eink node,
-  publishes can be delayed while the e-paper refreshes and the BKK fetch runs
-  (blocking, up to ~10 s HTTP timeout plus display refresh) once a minute.
+  publishes can be delayed while the e-paper refreshes once a minute (a fraction of a
+  second; ~2–3 s for the full refresh every 30 min). The BKK fetch runs in its own task
+  since #171 and no longer delays them.
 - Retained: yes. QoS 0.
 
 | Field | Type | Unit | Notes |

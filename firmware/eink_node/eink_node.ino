@@ -88,12 +88,11 @@ ld2410 radar;
 // ========================
 // TIMING
 // ========================
-const unsigned long UPDATE_INTERVAL   = 60000;  // BKK refresh, 1 min
+const unsigned long UPDATE_INTERVAL   = 60000;  // BKK refresh, 1 min (in fetchTask)
 const unsigned long PRESENCE_INTERVAL = 5000;   // radar publish, 5 s
 // Partial refresh every minute (no flashing, a fraction of a second instead of ~2-3 s),
 // a full refresh at boot and every 30 min against the ghosting partial updates leave (#133)
 const unsigned long FULL_REFRESH_INTERVAL = 30UL * 60 * 1000;
-unsigned long lastUpdate = 0;
 unsigned long lastPresencePublish = 0;
 unsigned long lastFullRefresh = 0;
 bool hadFullRefresh = false;
@@ -123,6 +122,20 @@ struct TramDeparture {
   int minutes;
   bool valid;
 };
+
+// The BKK departures are fetched in their own FreeRTOS task on core 0 (#171): the TLS
+// handshake and the request take up to the 10 s HTTP timeout, and inside loop() that
+// stopped the radar and MQTT every minute (a 1-12 s gap in the hallway presence data).
+// loop() runs on core 1 and only draws a result once the task has stored a new one.
+struct DepartureResult {
+  TramDeparture departures[10];
+  int count = 0;
+  bool loaded = false;
+};
+DepartureResult fetched;            // the newest result, guarded by fetchLock
+volatile bool fetchedNew = false;   // set by the task, cleared by loop() after drawing
+SemaphoreHandle_t fetchLock;
+const uint32_t FETCH_TASK_STACK = 16384;   // TLS + HTTP + JSON; the buffers are on the heap
 
 // ========================
 // HELPER FUNCTIONS
@@ -330,7 +343,23 @@ void setup() {
   radar.begin(Serial2, false);
   Serial.println("LD2410C initialized");
 
-  fetchAndRender();
+  // First fetch right away; loop() draws the result as soon as it is in
+  fetchLock = xSemaphoreCreateMutex();
+  xTaskCreatePinnedToCore(fetchTask, "bkk", FETCH_TASK_STACK, nullptr, 1, nullptr, 0);
+}
+
+// Runs on core 0: fetch, hand the result over, wait for the next minute
+void fetchTask(void *) {
+  TickType_t lastWake = xTaskGetTickCount();
+  for (;;) {
+    DepartureResult r;
+    r.loaded = fetchAllDepartures(r.departures, r.count);
+    xSemaphoreTake(fetchLock, portMAX_DELAY);
+    fetched = r;
+    fetchedNew = true;
+    xSemaphoreGive(fetchLock);
+    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(UPDATE_INTERVAL));
+  }
 }
 
 // ========================
@@ -357,11 +386,15 @@ void loop() {
     hpPublishPresence(mqttClient, radar, DEVICE_NAME, MQTT_TOPIC);
   }
 
-  if (now - lastUpdate > UPDATE_INTERVAL) {
-    lastUpdate = now;
-    fetchAndRender();
-    // The eink refresh blocked the loop for a while; clear the backlog
-    // so the parser resumes on a frame boundary rather than mid-frame.
+  if (fetchedNew) {
+    DepartureResult r;
+    xSemaphoreTake(fetchLock, portMAX_DELAY);
+    r = fetched;
+    fetchedNew = false;
+    xSemaphoreGive(fetchLock);
+    render(r);
+    // The eink refresh blocked the loop for a moment (a full one ~2-3 s); clear the
+    // backlog so the parser resumes on a frame boundary rather than mid-frame.
     while (Serial2.available()) Serial2.read();
   }
 
@@ -369,13 +402,13 @@ void loop() {
 }
 
 // ========================
-// FETCH + DRAW DASHBOARD
+// DRAW DASHBOARD
 // ========================
-void fetchAndRender() {
-  // Fetch all departures and sort by time
-  TramDeparture departures[10];
-  int count = 0;
-  bool loaded = fetchAllDepartures(departures, count);
+// [r] is a fetch result from fetchTask (departures sorted by time)
+void render(const DepartureResult &r) {
+  const TramDeparture *departures = r.departures;
+  int count = r.count;
+  bool loaded = r.loaded;
 
   // Get current time
   struct tm timeinfo;
