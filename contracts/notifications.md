@@ -130,8 +130,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 - Trigger, in two steps:
   1. An arrival starts with the first derived `occupied == 1` presence message (moving or
-     stationary) after `any_radar_quiet_minutes() >= 60` (`QUIET_MINUTES_BEFORE_ALERT`): no
-     `occupied=1` row from any radar in the last 60 min. The start time and quiet minutes are
+     stationary) after `any_radar_quiet_minutes() >= 30` (`QUIET_MINUTES_BEFORE_ALERT`; 60
+     until 2026-10-17): no `occupied=1` row from any radar in the last 30 min. The start time and quiet minutes are
      kept in `system_state` (`arrival_started`, `arrival_quiet`).
   2. The first presence message from any radar with `occupied == 1` **and** `moving == 1`
      within `ARRIVAL_CONFIRM_SECONDS` (**120 s**) of that start confirms it, and the push is sent
@@ -179,7 +179,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 | `HUMIDITY_LOW` | Humidity Alert | humidity < 25 %RH | once per excursion (until > 27), 15 min/device shared with HIGH | env msg |
 | `TEMP` | Temperature Alert | temp < 18 °C | once per excursion (until > 18.5), 15 min/device | env msg |
 | `RADAR_DISCONNECTED` | Radar Disconnected | ≥12 consecutive `radar_connected=false` | once per outage | presence msg |
-| `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥60 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
+| `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥30 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
 | `NODE_STATUS` | Node offline / Node back online | no data for 5 min / data again | once per outage | 30 s check |
 
 ## Mismatches and issues

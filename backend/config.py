@@ -69,7 +69,7 @@ ENV_VALID = {"temp_c": (-40, 85), "humidity": (0, 100), "pressure": (300, 1100)}
 TEMP_HYSTERESIS = 0.5
 NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
 PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
-QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
+QUIET_MINUTES_BEFORE_ALERT = 30   # flat must be quiet this long before an arrival alerts (60 until 2026-10-17)
 ARRIVAL_CONFIRM_SECONDS = 120     # movement this soon after the quiet spell ends confirms the arrival
 # Notification settings (#82)
 NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes")
