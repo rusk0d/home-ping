@@ -447,6 +447,7 @@ function clearLogin() {
 let loginError = '';
 function showLogin(message) {
   $('login').hidden = false;
+  $('dash').hidden = true;
   $('who').hidden = true;
   loginError = message || '';
   $('loginError').textContent = loginError && t(loginError);
@@ -471,6 +472,7 @@ let client = null;
 
 function connect(login) {
   $('login').hidden = true;
+  $('dash').hidden = false;
   setStatus('', 'connecting');
   let accepted = false;
   const c = client = mqtt.connect(MQTT_CONFIG.url, {
