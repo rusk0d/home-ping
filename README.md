@@ -140,7 +140,8 @@ Because it runs off the server, it also notices when nginx or the whole VPS is d
 
 `web/nginx/security-headers.conf` adds HSTS, `nosniff`, `Referrer-Policy`, a
 Content-Security-Policy and hides the nginx version. The CSP allows scripts only from the
-site itself and unpkg (mqtt.js, pinned with SRI), and connections only to the broker. That
+site itself and unpkg (mqtt.js, pinned with SRI), workers only from `blob:` (mqtt.js's
+keep-alive timer, #203), and connections only to the broker. That
 matters because "remember me" keeps the MQTT password in the browser's `localStorage`.
 Install once (the `sed` fills in the broker host from the deployed `config.js`):
 
