@@ -39,7 +39,7 @@ inferred then and hasn't been confirmed since.
 | Client | Endpoints used |
 |---|---|
 | Android `HomeFragment` | `/api/dashboard` (since #128; falls back to `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`), `POST /api/occupancy_arm`, `/api/occupancy_status` |
-| Android `MainActivity` (FCM) | none since #153 (older app versions: `POST /api/register_token`) |
+| Android `MainActivity` (FCM) | none since #153 (registers with FCM itself) |
 | Android `HistoryActivity` | `/api/hourly?days=7` |
 | Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings` |
 | Android `HomeEnvWidget` | `/api/latest`, `/api/air` |
@@ -58,7 +58,6 @@ inferred then and hasn't been confirmed since.
 | GET | `/api/air` | Basic | Android Home, widget |
 | GET | `/api/devices` | Basic | Android Home |
 | GET | `/api/restarts` | Basic | Android Home |
-| POST | `/api/register_token` | Basic | legacy: Android before #153 |
 | POST | `/api/occupancy_arm` | Basic | Android Home |
 | GET | `/api/occupancy_status` | Basic | Android Home |
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
@@ -310,26 +309,6 @@ Restart counts per device from `events` where `type='RESTART'`.
 
 Devices with no restart ever are absent. Client: Android Home sums `last_24h`.
 
-### POST `/api/register_token`
-
-Request (JSON):
-
-```json
-{"token": "<FCM registration token>", "device": "<optional label>"}
-```
-
-- `token` required. Missing → `400 {"error":"No token provided"}`.
-- `device` optional and ignored. Phones aren't written to the `devices` table
-  (that table is for sensor nodes).
-- Subscribes the token to the FCM topic `env` (server side).
-- Response: `{"success": true}`.
-- Missing, non-JSON or non-object body → `400 {"error": "JSON object body required"}`.
-
-Legacy (#153): the app no longer calls this. FCM registration tokens are deprecated; the app
-registers with FCM itself (FID-based `register()`) and subscribes to topic `env` client side,
-and the backend only sends to that topic. Kept so app versions from before #153 still
-register; remove once none is installed. Those older versions send `{"token": ...}` only.
-
 ### POST `/api/occupancy_arm`
 
 Request: `{"armed": true|false}`. `armed` must be a JSON boolean; a missing or
@@ -425,3 +404,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - Android no longer crashes on a null `temp`/`humidity` in `/api/latest_all`: it reads them
   null-safely (`optNum`) instead of `getDouble`/`getInt`.
 - #129: `GET /api/daily`, long-term daily values from the new `hourly` table.
+- #172: `POST /api/register_token` removed (legacy since #153; no app version that calls it is left).
