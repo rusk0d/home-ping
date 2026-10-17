@@ -261,11 +261,16 @@ Latest CO2 and pressure from whichever device last reported them.
 
 ```json
 {"ts":"2026-10-13T17:42:10Z","co2":812,"band":"fair","pressure":1013.6,
- "pressure_3h_change":-1.2,"temp":22.4,"humidity":48.3}
+ "pressure_3h_change":-1.2,"temp":22.4,"humidity":48.3,"mould_risk":false}
 ```
 
 - `co2`: integer ppm or null. Latest non-null `readings.co2` from any device.
 - `band`: `"good"` (<800), `"fair"` (<1200), `"stuffy"` (<2000), `"bad"` (≥2000), null when there is no CO2 reading (see "Level bands" below). Android uses it for the CO₂ chip, falling back to its own copy of the bands.
+- `mould_risk` (bool, since #177): true when **each of the last 3 complete hours**
+  (`MOULD_HOURS`) averaged above **60 %RH** (`MOULD_HUMIDITY`, the top of the "Comfortable"
+  band), over all devices' readings. An hour without humidity readings makes it false.
+  Android shows a hint on the humidity card. The web page applies the same rule to
+  `home/backend/history_24h` (its last 3 hours before `updated`).
 
 ### Level bands
 
