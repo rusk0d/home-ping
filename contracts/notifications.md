@@ -179,11 +179,22 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   of muting it (the backup runs at 03:30); turning the switch off mutes it like other alerts.
 - Push: title `Backup failed`, body `No database backup for over 26 h (last: …)`, or title
   `Disk almost full`, body `Only {N} MB free on the server`;
-  data `{"event": "WATCHDOG", "device": "backup" | "disk"}`. Logs `WATCHDOG_BACKUP` / `WATCHDOG_DISK`
+  data `{"event": "WATCHDOG", "device": "backup" | "disk" | "cert_<port>"}`. Logs `WATCHDOG_BACKUP` / `WATCHDOG_DISK`
   (device `server`).
 - Over (a backup newer than 26 h; free space ≥ 1024 + 256 MB): title `Backup OK again` /
   `Disk space OK again`, same `event`/`device`, so it **replaces** the warning in the app.
   Only sent if the warning was. Logs `WATCHDOG_BACKUP_OK` / `WATCHDOG_DISK_OK`.
+- Certificates (since #206): every `host:port` in `.env` `CERT_CHECK` (none = no check), at
+  most once an hour (`CERT_CHECK_INTERVAL`). The backend connects like a client (trusted chain,
+  host name) and reads the certificate's expiry. `device` = `cert_<port>` (one host per port).
+  - Expires in less than `CERT_MIN_DAYS` (**14**; certbot renews at 30): title
+    `Certificate expires soon`, body `{host:port} expires in {N} days ({date}); is the renewal running?`.
+  - Fails verification (expired, wrong name, untrusted): title `Certificate problem`, body
+    `{host:port}: {reason}`.
+  - Unreachable (connection error): no push, logged as a warning; the node and uptime
+    monitoring cover outages.
+  - Over (valid for at least 14 days again): title `Certificate renewed`, body
+    `{host:port} is valid until {date}`. Logs `WATCHDOG_CERT_<PORT>` / `WATCHDOG_CERT_<PORT>_OK`.
 
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
@@ -197,7 +208,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 | `RADAR_DISCONNECTED` | Radar Disconnected | ≥12 consecutive `radar_connected=false` | once per outage | presence msg |
 | `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥30 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
 | `NODE_STATUS` | Node offline / Node back online | no data for 5 min / data again | once per outage | 30 s check |
-| `WATCHDOG` | Backup failed / Disk almost full (+ "OK again") | newest backup > 26 h old / < 1 GB free | once per excursion | 5 min check |
+| `WATCHDOG` | Backup failed / Disk almost full / Certificate expires soon, Certificate problem (+ "OK again", "Certificate renewed") | newest backup > 26 h old / < 1 GB free / certificate < 14 days or invalid | once per excursion | 5 min check (certificates hourly) |
 
 ## Mismatches and issues
 
