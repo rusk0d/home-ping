@@ -48,7 +48,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 
 - One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
   `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
-  and back online). All on by default.
+  and back online; also the server watchdog, WATCHDOG, #176). All on by default.
 - **Quiet hours**: off by default. When on, the alert types above are muted between
   `start` and `end` (server local time, Budapest; the window may cross midnight,
   `start` inclusive, `end` exclusive).
@@ -169,6 +169,24 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 - A retired node (e.g. `co2_sensor_esp32` after the node merge) gets one offline push,
   then drops out of `devices` after 30 days.
 
+### 7. Server watchdog: `WATCHDOG` (since #176)
+
+- Trigger: `check_watchdogs()` in the summaries loop, every 5 min (`server_checks.py`).
+- `device` = the check: `backup` when the newest `backups/data-*.db.gz` is older than
+  `BACKUP_MAX_AGE_HOURS` (**26 h**; no `backups` folder = no check), `disk` when less than
+  `DISK_MIN_FREE_MB` (**1024 MB**) is free on the database's disk.
+- **Once per excursion**, persisted as `system_state` `watchdog:<check>` (`'1'` pushed,
+  `'m'` muted by the `nodes` switch, `'0'` fine). A failed send is retried at the next check.
+- Switch `nodes`. **Quiet hours postpone it** to the first check after they end, instead
+  of muting it (the backup runs at 03:30); turning the switch off mutes it like other alerts.
+- Push: title `Backup failed`, body `No database backup for over 26 h (last: …)`, or title
+  `Disk almost full`, body `Only {N} MB free on the server`;
+  data `{"event": "WATCHDOG", "device": "backup" | "disk"}`. Logs `WATCHDOG_BACKUP` / `WATCHDOG_DISK`
+  (device `server`).
+- Over (a backup newer than 26 h; free space ≥ 1024 + 256 MB): title `Backup OK again` /
+  `Disk space OK again`, same `event`/`device`, so it **replaces** the warning in the app.
+  Only sent if the warning was. Logs `WATCHDOG_BACKUP_OK` / `WATCHDOG_DISK_OK`.
+
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
 ## Summary table
@@ -181,6 +199,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 | `RADAR_DISCONNECTED` | Radar Disconnected | ≥12 consecutive `radar_connected=false` | once per outage | presence msg |
 | `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥60 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
 | `NODE_STATUS` | Node offline / Node back online | no data for 5 min / data again | once per outage | 30 s check |
+| `WATCHDOG` | Backup failed / Disk almost full (+ "OK again") | newest backup > 26 h old / < 1 GB free | once per excursion | 5 min check |
 
 ## Mismatches and issues
 
@@ -199,4 +218,5 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #12: temperature and humidity alerts each need only their own value.
 - #12: one notification ID per `event/device` instead of always 0.
 - #13: device-offline push (`NODE_STATUS`).
+- #176: watchdog pushes for an overdue backup and low disk space.
 - #153: the app registers with FCM by FID (`register()`) and no longer sends a token; `/api/register_token` is legacy.
