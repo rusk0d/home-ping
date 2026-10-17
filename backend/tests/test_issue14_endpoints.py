@@ -5,8 +5,7 @@ from support import check
 
 
 def test_issue14_endpoints(env):
-    import os, sys, base64, tempfile
-    from unittest import mock
+    import base64
     import server   # no google/requests stubs: the import must work without them
     import api
     server.prepare()   # importing does no work (#73)

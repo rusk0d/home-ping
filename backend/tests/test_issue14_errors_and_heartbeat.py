@@ -5,8 +5,8 @@ from support import check
 
 
 def test_issue14_errors_and_heartbeat(env):
-    import os, sys, json, base64, tempfile, sqlite3, types
-    from datetime import datetime, timedelta
+    import json, base64, sqlite3, types
+    from datetime import timedelta
     from unittest import mock
     import server
     import config, store, ingest, api

@@ -6,7 +6,7 @@ from support import BACKEND, check
 
 def test_issue61_api_auth(env):
     backend = str(BACKEND)
-    import os, sys, re, base64, tempfile, configparser
+    import os, re, base64, configparser
     from unittest import mock
     os.environ.update(DASH_USER="user", DASH_PASS="pässwörd", MQTT_USER="m", MQTT_PASS="m")
     import server, api

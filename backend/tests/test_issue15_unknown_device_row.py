@@ -2,13 +2,11 @@
 itself was removed in #172.)
 """
 
-from support import BACKEND, check
+from support import check
 
 
 def test_issue15_register_token(env):
-    backend = str(BACKEND)
-    import os, sys, base64, tempfile, sqlite3
-    from unittest import mock
+    import base64, sqlite3
     import server
     import config, store, alerts, api
     server.prepare()   # importing does no work (#73)

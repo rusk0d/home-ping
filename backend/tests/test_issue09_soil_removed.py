@@ -5,8 +5,7 @@ from support import check
 
 
 def test_issue09_soil_removed(env):
-    import os, sys, json, base64, tempfile, sqlite3, types
-    from unittest import mock
+    import json, base64, sqlite3, types
     import server
     import config, store, alerts, ingest, api
     server.prepare()   # importing does no work (#73)
