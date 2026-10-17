@@ -53,7 +53,7 @@ jobs:
       - name: Compile with the example secrets
         run: |
           cp firmware/secrets.example.h firmware/${{ matrix.sketch }}/secrets.h
-          arduino-cli compile --fqbn esp32:esp32:esp32 --library firmware/libraries/HomePing firmware/${{ matrix.sketch }}
+          arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs --library firmware/libraries/HomePing firmware/${{ matrix.sketch }}
 
   # Host-side unit test of the shared firmware library against fake Arduino headers (#120)
   firmware-lib:

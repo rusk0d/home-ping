@@ -41,7 +41,11 @@ in its working directory.
 
 ## Build and run
 
-- **Firmware:** open the sketch in the Arduino IDE (board: ESP32 Dev Module) and upload.
+- **Firmware:** open the sketch in the Arduino IDE (board: ESP32 Dev Module, Tools >
+  Partition Scheme: **Minimal SPIFFS (1.9MB APP with OTA/190KB SPIFFS)**) and upload. The
+  first flash with that scheme goes over USB; after that, uploads can go over WiFi (#79):
+  Tools > Port > the node's network port (`home-ping-esp32`, `hallway-presence-esp32`),
+  password `OTA_PASS` from `secrets.h`. The PC must be on the home network.
   The sketches share code from `firmware/libraries/HomePing` (WiFi, MQTT with the status
   last will, uptime, radar presence). Make it visible to the IDE once by linking it into
   your Arduino libraries folder, e.g. on Windows (PowerShell):
