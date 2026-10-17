@@ -1,4 +1,5 @@
-"""Server watchdog pushes (#176): the nightly backup is overdue, or the disk is nearly full.
+"""Server watchdog pushes (#176): the nightly backup is overdue, the disk is nearly full, or a
+TLS certificate is about to expire (#206; renewal was broken for weeks without anyone noticing).
 
 UptimeRobot only sees /api/health, so these would otherwise go unnoticed until data is lost.
 check_watchdogs() runs in the summaries loop (every 5 min). Each check pushes once per
@@ -11,10 +12,13 @@ default quiet hours). State in system_state `watchdog:<name>`: '1' pushed, 'm' m
 
 import logging
 import shutil
+import socket
+import ssl
 import time
 from pathlib import Path
 
-from config import BACKUP_DIR, BACKUP_MAX_AGE_HOURS, DB, DISK_FREE_HYSTERESIS_MB, DISK_MIN_FREE_MB
+from config import (BACKUP_DIR, BACKUP_MAX_AGE_HOURS, CERT_CHECK, CERT_CHECK_INTERVAL, CERT_MIN_DAYS, DB,
+                    DISK_FREE_HYSTERESIS_MB, DISK_MIN_FREE_MB)
 from store import get_state, set_state
 from alerts import alert, alert_muted
 
@@ -35,6 +39,47 @@ def backup_age_hours(now=None):
 def disk_free_mb():
     """Free space on the database's disk, MB."""
     return shutil.disk_usage(Path(DB).resolve().parent).free / 2**20
+
+
+def cert_expiry(host, port, timeout=10):
+    """When the certificate served at host:port expires (epoch seconds), checked like a client
+    would (trusted chain, host name). A certificate that fails that (expired, wrong name, ...)
+    returns the reason as a string. Raises OSError when the host can't be reached."""
+    ctx = ssl.create_default_context()
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as tls:
+                return ssl.cert_time_to_seconds(tls.getpeercert()["notAfter"])
+    except ssl.SSLCertVerificationError as e:
+        return e.verify_message or str(e)
+
+
+_certs_checked = 0.0   # a TLS handshake per target, so once an hour rather than every 5 min
+
+
+def check_certs(now=None):
+    global _certs_checked
+    now = now or time.time()
+    if now - _certs_checked < CERT_CHECK_INTERVAL:
+        return
+    _certs_checked = now
+    for target in CERT_CHECK:
+        host, _, port = target.rpartition(":")
+        try:
+            expires = cert_expiry(host, int(port))
+        except (OSError, ValueError) as e:
+            # Unreachable: nginx/Mosquitto down is UptimeRobot's and the nodes' job; no change here
+            log.warning("certificate check %s failed: %s", target, e)
+            continue
+        if isinstance(expires, str):
+            _watch(f"cert_{port}", True, False, "Certificate problem", f"{target}: {expires}", "", "")
+            continue
+        days = (expires - now) / 86400
+        until = time.strftime("%Y-%m-%d", time.localtime(expires))
+        _watch(f"cert_{port}", days < CERT_MIN_DAYS, days >= CERT_MIN_DAYS,
+               "Certificate expires soon",
+               f"{target} expires in {max(days, 0):.0f} days ({until}); is the renewal running?",
+               "Certificate renewed", f"{target} is valid until {until}")
 
 
 def _watch(name, bad, recovered, title, body, back_title, back_body):
@@ -65,3 +110,4 @@ def check_watchdogs(now=None):
     _watch("disk", free < DISK_MIN_FREE_MB, free >= DISK_MIN_FREE_MB + DISK_FREE_HYSTERESIS_MB,
            "Disk almost full", f"Only {free:.0f} MB free on the server",
            "Disk space OK again", f"{free:.0f} MB free on the server")
+    check_certs(now)
