@@ -5,8 +5,7 @@ from support import check
 
 
 def test_occupancy_arm(env):
-    import os, sys, types, base64, tempfile
-    from unittest import mock
+    import base64
     import server
     import api
     server.prepare()   # importing does no work (#73)

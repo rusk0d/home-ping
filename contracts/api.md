@@ -39,7 +39,7 @@ inferred then and hasn't been confirmed since.
 | Client | Endpoints used |
 |---|---|
 | Android `HomeFragment` | `/api/dashboard` (since #128; falls back to `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`), `POST /api/occupancy_arm`, `/api/occupancy_status` |
-| Android `MainActivity` (FCM) | none since #153 (older app versions: `POST /api/register_token`) |
+| Android `MainActivity` (FCM) | none since #153 (registers with FCM itself) |
 | Android `HistoryActivity` | `/api/hourly?days=7` |
 | Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings` |
 | Android `HomeEnvWidget` | `/api/latest`, `/api/air` |
@@ -58,7 +58,6 @@ inferred then and hasn't been confirmed since.
 | GET | `/api/air` | Basic | Android Home, widget |
 | GET | `/api/devices` | Basic | Android Home |
 | GET | `/api/restarts` | Basic | Android Home |
-| POST | `/api/register_token` | Basic | legacy: Android before #153 |
 | POST | `/api/occupancy_arm` | Basic | Android Home |
 | GET | `/api/occupancy_status` | Basic | Android Home |
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
@@ -87,6 +86,8 @@ under its own name and with exactly its shape (the backend calls their own funct
 | `restarts` | `GET /api/restarts` |
 | `air` | `GET /api/air` |
 | `hourly` | `GET /api/hourly` (no parameters: today, temperature/humidity from any device) |
+
+Query parameters on `/api/dashboard` are ignored: each part runs without them (#170).
 
 Client: Android Home, every refresh. If it fails (e.g. an older backend without it, 404), the
 app falls back to the six requests. The single endpoints stay for the widget, the history
@@ -263,11 +264,16 @@ Latest CO2 and pressure from whichever device last reported them.
 
 ```json
 {"ts":"2026-10-13T17:42:10Z","co2":812,"band":"fair","pressure":1013.6,
- "pressure_3h_change":-1.2,"temp":22.4,"humidity":48.3}
+ "pressure_3h_change":-1.2,"temp":22.4,"humidity":48.3,"mould_risk":false}
 ```
 
 - `co2`: integer ppm or null. Latest non-null `readings.co2` from any device.
 - `band`: `"good"` (<800), `"fair"` (<1200), `"stuffy"` (<2000), `"bad"` (≥2000), null when there is no CO2 reading (see "Level bands" below). Android uses it for the CO₂ chip, falling back to its own copy of the bands.
+- `mould_risk` (bool, since #177): true when **each of the last 3 complete hours**
+  (`MOULD_HOURS`) averaged above **60 %RH** (`MOULD_HUMIDITY`, the top of the "Comfortable"
+  band), over all devices' readings. An hour without humidity readings makes it false.
+  Android shows a hint on the humidity card. The web page applies the same rule to
+  `home/backend/history_24h` (its last 3 hours before `updated`).
 
 ### Level bands
 
@@ -312,26 +318,6 @@ Restart counts per device from `events` where `type='RESTART'`.
 ```
 
 Devices with no restart ever are absent. Client: Android Home sums `last_24h`.
-
-### POST `/api/register_token`
-
-Request (JSON):
-
-```json
-{"token": "<FCM registration token>", "device": "<optional label>"}
-```
-
-- `token` required. Missing → `400 {"error":"No token provided"}`.
-- `device` optional and ignored. Phones aren't written to the `devices` table
-  (that table is for sensor nodes).
-- Subscribes the token to the FCM topic `env` (server side).
-- Response: `{"success": true}`.
-- Missing, non-JSON or non-object body → `400 {"error": "JSON object body required"}`.
-
-Legacy (#153): the app no longer calls this. FCM registration tokens are deprecated; the app
-registers with FCM itself (FID-based `register()`) and subscribes to topic `env` client side,
-and the backend only sends to that topic. Kept so app versions from before #153 still
-register; remove once none is installed. Those older versions send `{"token": ...}` only.
 
 ### POST `/api/occupancy_arm`
 
@@ -428,3 +414,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - Android no longer crashes on a null `temp`/`humidity` in `/api/latest_all`: it reads them
   null-safely (`optNum`) instead of `getDouble`/`getInt`.
 - #129: `GET /api/daily`, long-term daily values from the new `hourly` table.
+- #172: `POST /api/register_token` removed (legacy since #153; no app version that calls it is left).

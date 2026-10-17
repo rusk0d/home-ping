@@ -5,7 +5,7 @@ from support import check
 
 
 def test_issue68_firebase_init(env):
-    import os, sys, types, tempfile
+    import sys, types
     from unittest import mock
     fa = types.ModuleType("firebase_admin"); apps = []
     def get_app():

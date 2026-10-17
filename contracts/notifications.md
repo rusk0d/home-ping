@@ -29,8 +29,6 @@ inferred then and hasn't been confirmed since.
 - The app sends nothing to the backend (since #153): registration tokens are deprecated,
   and the backend only sends to topic `env`. `MyFirebaseMessagingService.onRegistered`
   only logs.
-- App versions from before #153 still send their token to `POST /api/register_token`
-  (legacy), and the backend calls `messaging.subscribe_to_topic([token], "env")`.
 
 ### Android handling
 
@@ -48,7 +46,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 
 - One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
   `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
-  and back online). All on by default.
+  and back online; also the server watchdog, WATCHDOG, #176). All on by default.
 - **Quiet hours**: off by default. When on, the alert types above are muted between
   `start` and `end` (server local time, Budapest; the window may cross midnight,
   `start` inclusive, `end` exclusive).
@@ -130,8 +128,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 - Trigger, in two steps:
   1. An arrival starts with the first derived `occupied == 1` presence message (moving or
-     stationary) after `any_radar_quiet_minutes() >= 60` (`QUIET_MINUTES_BEFORE_ALERT`): no
-     `occupied=1` row from any radar in the last 60 min. The start time and quiet minutes are
+     stationary) after `any_radar_quiet_minutes() >= 30` (`QUIET_MINUTES_BEFORE_ALERT`; 60
+     until 2026-10-17): no `occupied=1` row from any radar in the last 30 min. The start time and quiet minutes are
      kept in `system_state` (`arrival_started`, `arrival_quiet`).
   2. The first presence message from any radar with `occupied == 1` **and** `moving == 1`
      within `ARRIVAL_CONFIRM_SECONDS` (**120 s**) of that start confirms it, and the push is sent
@@ -169,6 +167,24 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 - A retired node (e.g. `co2_sensor_esp32` after the node merge) gets one offline push,
   then drops out of `devices` after 30 days.
 
+### 7. Server watchdog: `WATCHDOG` (since #176)
+
+- Trigger: `check_watchdogs()` in the summaries loop, every 5 min (`server_checks.py`).
+- `device` = the check: `backup` when the newest `backups/data-*.db.gz` is older than
+  `BACKUP_MAX_AGE_HOURS` (**26 h**; no `backups` folder = no check), `disk` when less than
+  `DISK_MIN_FREE_MB` (**1024 MB**) is free on the database's disk.
+- **Once per excursion**, persisted as `system_state` `watchdog:<check>` (`'1'` pushed,
+  `'m'` muted by the `nodes` switch, `'0'` fine). A failed send is retried at the next check.
+- Switch `nodes`. **Quiet hours postpone it** to the first check after they end, instead
+  of muting it (the backup runs at 03:30); turning the switch off mutes it like other alerts.
+- Push: title `Backup failed`, body `No database backup for over 26 h (last: …)`, or title
+  `Disk almost full`, body `Only {N} MB free on the server`;
+  data `{"event": "WATCHDOG", "device": "backup" | "disk"}`. Logs `WATCHDOG_BACKUP` / `WATCHDOG_DISK`
+  (device `server`).
+- Over (a backup newer than 26 h; free space ≥ 1024 + 256 MB): title `Backup OK again` /
+  `Disk space OK again`, same `event`/`device`, so it **replaces** the warning in the app.
+  Only sent if the warning was. Logs `WATCHDOG_BACKUP_OK` / `WATCHDOG_DISK_OK`.
+
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
 ## Summary table
@@ -179,13 +195,13 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 | `HUMIDITY_LOW` | Humidity Alert | humidity < 25 %RH | once per excursion (until > 27), 15 min/device shared with HIGH | env msg |
 | `TEMP` | Temperature Alert | temp < 18 °C | once per excursion (until > 18.5), 15 min/device | env msg |
 | `RADAR_DISCONNECTED` | Radar Disconnected | ≥12 consecutive `radar_connected=false` | once per outage | presence msg |
-| `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥60 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
+| `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥30 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
 | `NODE_STATUS` | Node offline / Node back online | no data for 5 min / data again | once per outage | 30 s check |
+| `WATCHDOG` | Backup failed / Disk almost full (+ "OK again") | newest backup > 26 h old / < 1 GB free | once per excursion | 5 min check |
 
 ## Mismatches and issues
 
-1. **Legacy server-side subscription.** `POST /api/register_token` is only called by app
-   versions from before #153; remove it once none is installed.
+None open.
 
 ## Changelog
 
@@ -199,4 +215,6 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #12: temperature and humidity alerts each need only their own value.
 - #12: one notification ID per `event/device` instead of always 0.
 - #13: device-offline push (`NODE_STATUS`).
+- #176: watchdog pushes for an overdue backup and low disk space.
 - #153: the app registers with FCM by FID (`register()`) and no longer sends a token; `/api/register_token` is legacy.
+- #172: `POST /api/register_token` removed.

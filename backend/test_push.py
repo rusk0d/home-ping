@@ -1,11 +1,12 @@
 """Send a test push to every app subscribed to topic "env".
 
-Run on the server from the backend directory (it needs firebase_service_account.json):
+Run on the server in /opt/iot, as the backend's user with its venv (it needs
+firebase_service_account.json, which only that user can read, #59):
 
-    python3 test_push.py                       # "Test" / "Push from the server works"
-    python3 test_push.py "Title" "Some text"
+    sudo -u iot venv/bin/python test_push.py                     # "Test" / "Push from the server works"
+    sudo -u iot venv/bin/python test_push.py "Title" "Some text"
 
-Same message format as send_push() in server.py: data-only, android priority high.
+Same message format as send_push() in alerts.py: data-only, android priority high.
 It doesn't touch the running backend or the database.
 """
 import sys

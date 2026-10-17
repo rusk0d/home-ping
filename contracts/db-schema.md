@@ -21,6 +21,14 @@ inferred then and hasn't been confirmed since.
 - No foreign keys, migrations table or schema version.
 - Every query opens and closes its own `sqlite3.connect(DB)`. Connections are short-lived.
   Kept on purpose (#18): with the indexes, a whole MQTT message takes ~10 ms.
+- Journal mode **WAL** (since #174, set by `init_db()`, stored in the file): API reads and
+  MQTT writes don't block each other. Each connection sets `synchronous=NORMAL` (fewer
+  fsyncs; with WAL a power cut can lose the last commits but not corrupt the file). While
+  connections are open, SQLite keeps `data.db-wal` and `data.db-shm` next to `data.db`;
+  they belong to it. Copy the database only with `backup_db.py` (online backup API), never
+  `data.db` alone by hand while the backend runs. Open it by hand only as the backend's
+  user (`sudo -u iot sqlite3 /opt/iot/data.db`): a root process can create those two
+  files owned by root, and the backend can then no longer write.
 - Timestamps: every insert writes `ts` / `last_seen` with `datetime('now')`, a TEXT value
   `"YYYY-MM-DD HH:MM:SS"` in **UTC** (since #65). Columns are declared `TIMESTAMP`, which
   SQLite stores as TEXT. Range queries compare with `datetime('now', '-N ...')`, so
@@ -215,3 +223,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - Arrival alert fix (#101): `any_radar_quiet_minutes` no longer skips the newest row in the table.
 - #129: `hourly` table (long-term hourly aggregates, kept for good) and `system_state.hourly_until`.
 - #173: raw `readings`/`presence_readings` kept 2 days instead of 8; `/api/hourly`'s past days come from `hourly`.
+- #174: WAL journal mode and `synchronous=NORMAL`.
