@@ -318,7 +318,7 @@ def summaries_loop():
             log.warning("hourly rollup failed: %s", e)
         publish_summaries()
         try:
-            check_watchdogs()   # backup overdue, disk almost full (#176)
+            check_watchdogs()   # backup overdue, disk almost full (#176), certificates (#206)
         except Exception as e:
             log.warning("watchdog check failed: %s", e)
 
