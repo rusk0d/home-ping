@@ -289,6 +289,14 @@ every copy: `backend/api.py` (`/api/air` `band`, CO₂ only), `web/app.js`
 
 Gauge ranges (drawing only): CO₂ 400–3000 ppm (web and Android), humidity 0–100 % and
 temperature 14–30 °C (Android only).
+
+### Dew point
+
+Not served by the API: the clients compute it from the temperature and humidity they
+already have (#177; Android `Levels.dewPoint`, web `dewPoint`). Magnus formula with the
+Sonntag constants, `RH` in %, `T` in °C:
+`g = ln(RH/100) + 17.62·T/(243.12+T)`, dew point `= 243.12·g/(17.62−g)` °C, shown rounded
+to whole degrees. No value for `RH ≤ 0`.
 - `pressure`/`temp`/`humidity`: from the latest row with non-null `pressure`.
 - `pressure_3h_change`: hPa, latest pressure minus the newest reading at least 3 h old (1 dp), or null.
 - `ts`: env row ts if present, else co2 row ts, else null.
