@@ -45,4 +45,8 @@ When a build or test needs these, use the example files with fake values.
 - Backend (local dev/tests): `python server.py` with a local .env and a temp SQLite file
 - Test push (on the server, in /opt/iot): `sudo -u iot venv/bin/python test_push.py ["Title" "Text"]`
 - Android: `./gradlew assembleDebug` in /android
-- Firmware: compiled in the Arduino IDE (arduino-cli in CI later)
+- Firmware: Arduino IDE, board ESP32 Dev Module, Partition Scheme "Minimal SPIFFS (1.9MB APP
+  with OTA)"; first flash over USB, then over WiFi (Tools > Port > the node's network port,
+  password `OTA_PASS` from secrets.h, #79). The nodes connect to the broker with TLS on 8883
+  (`MQTT_BROKER` = the certificate's host name, #31). CI compiles both sketches with
+  arduino-cli and the same partition scheme (.github/workflows/firmware.yml).
