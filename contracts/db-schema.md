@@ -83,7 +83,7 @@ Written by: MQTT presence handler (`log_presence`) for every message with a `pre
 | `presence` | INTEGER 0/1 | yes | payload `presence` |
 | `stationary` | INTEGER 0/1 | yes | payload `stationary` |
 | `moving` | INTEGER 0/1 | yes | payload `moving` |
-| `distance` | INTEGER | yes | payload `distance`, cm (**UNCERTAIN** unit) |
+| `distance` | INTEGER | yes | payload `distance`, cm (checked on hardware, #19) |
 | `signal` | INTEGER | yes | payload `signal`, 0–100 energy |
 | `rssi` | INTEGER | yes | payload `rssi`, dBm |
 | `uptime` | INTEGER | yes | payload `uptime`, s |
