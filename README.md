@@ -46,6 +46,9 @@ in its working directory.
   first flash with that scheme goes over USB; after that, uploads can go over WiFi (#79):
   Tools > Port > the node's network port (`home-ping-esp32`, `hallway-presence-esp32`),
   password `OTA_PASS` from `secrets.h`. The PC must be on the home network.
+  Keep the IDE's ESP32 core (Boards Manager > esp32) at the version CI pins in
+  `.github/workflows/firmware.yml` (now 3.3.12), so CI checks what actually gets flashed;
+  bump both together (#209).
   The sketches share code from `firmware/libraries/HomePing` (WiFi, MQTT with the status
   last will, uptime, radar presence). Make it visible to the IDE once by linking it into
   your Arduino libraries folder, e.g. on Windows (PowerShell):
