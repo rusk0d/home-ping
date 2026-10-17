@@ -5,10 +5,10 @@ itself was removed in #172.)
 from support import check
 
 
-def test_issue15_register_token(env):
+def test_issue15_unknown_device_row(env):
     import base64, sqlite3
     import server
-    import config, store, alerts, api
+    import config, store, api
     server.prepare()   # importing does no work (#73)
     db = config.DB
     # Simulate an existing DB with the old phone row, then run init_db again (= backend restart)
