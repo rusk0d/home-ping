@@ -23,7 +23,7 @@ inline void hpPublishPresence(PubSubClient& mqtt, ld2410& radar,
     signal   = radar.movingTargetEnergy();
   }
 
-  StaticJsonDocument<256> doc;
+  JsonDocument doc;
   doc["device"]          = device;
   doc["radar_connected"] = radar.isConnected();
   doc["presence"]        = presence;
