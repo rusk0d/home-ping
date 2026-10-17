@@ -16,10 +16,6 @@ def test_issue14_errors_and_heartbeat(env):
     def is_json_error(r, code): return r.status_code == code and r.is_json and "error" in r.get_json()
 
     # 400s instead of 500s
-    check("register_token, no body -> JSON 400", is_json_error(c.post("/api/register_token", headers=A), 400))
-    check("register_token, text body -> JSON 400", is_json_error(c.post("/api/register_token", data="x", headers=A), 400))
-    check("register_token, JSON array -> JSON 400", is_json_error(c.post("/api/register_token", json=[1], headers=A), 400))
-    check("register_token, no token -> JSON 400", is_json_error(c.post("/api/register_token", json={}, headers=A), 400))
     c.post("/api/occupancy_arm", json={"armed": True}, headers=A)
     check("occupancy_arm, no body -> JSON 400", is_json_error(c.post("/api/occupancy_arm", headers=A), 400))
     check("occupancy_arm, armed='yes' -> JSON 400", is_json_error(c.post("/api/occupancy_arm", json={"armed": "yes"}, headers=A), 400))

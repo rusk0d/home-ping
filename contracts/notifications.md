@@ -29,8 +29,6 @@ inferred then and hasn't been confirmed since.
 - The app sends nothing to the backend (since #153): registration tokens are deprecated,
   and the backend only sends to topic `env`. `MyFirebaseMessagingService.onRegistered`
   only logs.
-- App versions from before #153 still send their token to `POST /api/register_token`
-  (legacy), and the backend calls `messaging.subscribe_to_topic([token], "env")`.
 
 ### Android handling
 
@@ -203,8 +201,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 ## Mismatches and issues
 
-1. **Legacy server-side subscription.** `POST /api/register_token` is only called by app
-   versions from before #153; remove it once none is installed.
+None open.
 
 ## Changelog
 
@@ -220,3 +217,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #13: device-offline push (`NODE_STATUS`).
 - #176: watchdog pushes for an overdue backup and low disk space.
 - #153: the app registers with FCM by FID (`register()`) and no longer sends a token; `/api/register_token` is legacy.
+- #172: `POST /api/register_token` removed.
