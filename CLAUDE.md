@@ -9,7 +9,7 @@ notifications via Firebase. A small web page and an Android app display the data
 - /backend   Flask app: server.py (entry point), config, state, store (SQLite,
              creates the DB schema on start), alerts, nodes,
              server_checks (watchdog pushes), ingest (MQTT), api
-- /web       HTML page (index.html + app.js, no inline scripts: CSP), connects to MQTT
+- /web       HTML page (index.html + app.js + i18n.js for EN/HU, no inline scripts: CSP), connects to MQTT
              directly from the browser; nginx/ has the site's security headers
 - /android   Kotlin app, talks only to the backend's REST API
 - /contracts MQTT topics/payloads, REST API, DB schema (source of truth)
