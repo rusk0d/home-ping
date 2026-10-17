@@ -88,6 +88,8 @@ under its own name and with exactly its shape (the backend calls their own funct
 | `air` | `GET /api/air` |
 | `hourly` | `GET /api/hourly` (no parameters: today, temperature/humidity from any device) |
 
+Query parameters on `/api/dashboard` are ignored: each part runs without them (#170).
+
 Client: Android Home, every refresh. If it fails (e.g. an older backend without it, 404), the
 app falls back to the six requests. The single endpoints stay for the widget, the history
 screen and that fallback.

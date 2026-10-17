@@ -158,7 +158,12 @@ def on_message(client, userdata, msg):
             return
 
         # ---- Everything else: environmental sensors. PIR fields are ignored. ----
-        device = data.get("device", "esp32")
+        # Every sketch sends its device ID; without one there's no device to store it
+        # under (the old default "esp32" made a phantom device and an offline push, #170)
+        device = data.get("device")
+        if not isinstance(device, str) or not device:
+            log.warning("payload on %s without a device, dropped: %.200s", msg.topic, payload)
+            return
         temp = data.get("temp_c")
         hum = data.get("humidity")
         uptime = data.get("uptime", 0)
