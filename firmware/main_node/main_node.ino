@@ -10,6 +10,7 @@
 #include "esp_system.h"
 #include <HomePingRadar.h>   // firmware/libraries/HomePing (#75)
 #include <HomePingTls.h>
+#include <HomePingOta.h>
 #include "secrets.h"
 
 /* =======================
@@ -171,6 +172,7 @@ void setup() {
 
   // Network next, so nothing blocks once the radar starts streaming
   hpConnectWiFi(WIFI_SSID, WIFI_PASS);
+  hpStartOTA(DEVICE_NAME, OTA_PASS);
   espClient.setCACert(HP_MQTT_ROOT_CA);
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
@@ -189,6 +191,8 @@ void setup() {
    LOOP
    ======================= */
 void loop() {
+  ArduinoOTA.handle();
+
   // WiFi watchdog
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi dropped, reconnecting...");
