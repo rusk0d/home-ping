@@ -60,7 +60,8 @@ in its working directory.
   in `/opt/iot`.
   Tests: `pip install -r backend/requirements-dev.txt`, then `pytest backend/tests` (no
   broker, Firebase or real config needed) and `ruff check backend` (lint, #175). CI runs them, compiles the firmware and builds
-  the Android preview APK on every PR (`.github/workflows/ci.yml`).
+  the Android preview APK on PRs, each only when its folder changed
+  (`.github/workflows/backend.yml`, `firmware.yml`, `android.yml`).
 - **Web:** serve `web/` (with `config.js`, which holds only the broker URL) from any static
   web server. Each person signs in with their own read-only MQTT account; see
   `contracts/mqtt.md` → "Web users" for adding one. Deploy `index.html` and `app.js`
