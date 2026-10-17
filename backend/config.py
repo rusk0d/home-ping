@@ -81,6 +81,11 @@ BACKUP_DIR = "backups"           # backup_db.py's folder; no folder = no backup 
 BACKUP_MAX_AGE_HOURS = 26        # nightly at 03:30, plus slack for a slow or late run
 DISK_MIN_FREE_MB = 1024          # push below this much free space on the database's disk
 DISK_FREE_HYSTERESIS_MB = 256    # ...and "OK again" only above min + this
+# TLS certificates to watch (#206): comma-separated host:port in .env CERT_CHECK, one host per
+# port, e.g. "www.example.com:443,example.com:8883". Empty (dev, tests) = no check.
+CERT_CHECK = [t.strip() for t in os.environ.get("CERT_CHECK", "").split(",") if t.strip()]
+CERT_MIN_DAYS = 14               # push when a certificate expires sooner (renewal runs at 30)
+CERT_CHECK_INTERVAL = 3600       # seconds between certificate checks
 # Notification settings (#82)
 NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes")
 QUIET_DEFAULTS = {"start": "22:00", "end": "07:00"}
