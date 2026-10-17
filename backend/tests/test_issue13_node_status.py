@@ -5,8 +5,7 @@ from support import check
 
 
 def test_issue13_node_status(env):
-    import os, sys, json, tempfile, sqlite3, types, importlib, time
-    from unittest import mock
+    import json, sqlite3, types, time
     errors = []
     import logging
     class _Errors(logging.Handler):   # MQTT handler errors are logged since #66

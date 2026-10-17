@@ -55,7 +55,7 @@ in its working directory.
   restart. Test a push with `sudo -u iot venv/bin/python test_push.py ["Title" "Text"]`
   in `/opt/iot`.
   Tests: `pip install -r backend/requirements-dev.txt`, then `pytest backend/tests` (no
-  broker, Firebase or real config needed). CI runs them, compiles the firmware and builds
+  broker, Firebase or real config needed) and `ruff check backend` (lint, #175). CI runs them, compiles the firmware and builds
   the Android preview APK on every PR (`.github/workflows/ci.yml`).
 - **Web:** serve `web/` (with `config.js`, which holds only the broker URL) from any static
   web server. Each person signs in with their own read-only MQTT account; see

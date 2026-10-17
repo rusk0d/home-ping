@@ -1,13 +1,11 @@
 """#117: humidity/temperature alerts once per excursion, with hysteresis.
 """
 
-from support import BACKEND, check
+from support import check
 
 
 def test_issue117_alert_once_per_excursion(env):
-    backend = str(BACKEND)
-    import os, sys, json, tempfile, types
-    from unittest import mock
+    import json, types
     import server, alerts, ingest, state, store
     server.prepare()
 
