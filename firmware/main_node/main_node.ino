@@ -2,8 +2,6 @@
 // LD2410C radar, BME280 and MH-Z19C on one board. Topics and payloads as before
 // (contracts/mqtt.md): presence every 5 s, bme280 every 30 s, co2 every 60 s.
 #include <Wire.h>
-#include <WiFi.h>
-#include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Adafruit_BME280.h>
 #include <MHZ19.h>
@@ -62,7 +60,7 @@ bool bmeReady = false;
 unsigned long lastPresencePublish = 0;
 unsigned long lastEnvPublish = 0;
 unsigned long lastCo2Publish = 0;
-StaticJsonDocument<256> doc;
+JsonDocument doc;
 
 /* =======================
    PUBLISH
