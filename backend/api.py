@@ -13,7 +13,7 @@ from firebase_admin import messaging
 import state
 from config import (
     AUTH_PASS, AUTH_USER, DAILY_MAX_DAYS, HEALTH_MAX_MESSAGE_AGE, HEARTBEAT_TIMEOUT, HHMM, HOURLY_MAX_DAYS,
-    NOTIFY_KINDS,
+    MOULD_HOURS, MOULD_HUMIDITY, NOTIFY_KINDS,
 )
 from store import (
     calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
@@ -399,6 +399,16 @@ def air():
         """)
         old = c.fetchone()
 
+        # Mould risk (#177): humidity per complete hour over the last MOULD_HOURS hours
+        c.execute("""
+            SELECT strftime('%Y-%m-%d %H', ts), AVG(humidity) FROM readings
+            WHERE humidity IS NOT NULL
+              AND ts >= datetime(strftime('%Y-%m-%d %H:00:00', 'now'), ?)
+              AND ts < strftime('%Y-%m-%d %H:00:00', 'now')
+            GROUP BY 1
+        """, (f"-{MOULD_HOURS} hours",))
+        humid_hours = [h for _, h in c.fetchall()]
+
     co2 = co2_row[1] if co2_row else None
     if co2 is None:        band = None
     elif co2 < 800:        band = "good"
@@ -419,6 +429,7 @@ def air():
         "pressure_3h_change": trend,
         "temp": env_row[2] if env_row else None,
         "humidity": env_row[3] if env_row else None,
+        "mould_risk": len(humid_hours) == MOULD_HOURS and all(h > MOULD_HUMIDITY for h in humid_hours),
     })
 
 

@@ -67,6 +67,9 @@ HUMIDITY_HYSTERESIS = 2
 # disconnected sensor) is dropped as a whole (#57)
 ENV_VALID = {"temp_c": (-40, 85), "humidity": (0, 100), "pressure": (300, 1100)}
 TEMP_HYSTERESIS = 0.5
+# Mould risk hint (#177): each of the last MOULD_HOURS complete hours averaged above this
+MOULD_HUMIDITY = 60   # %RH, the top of the "Comfortable" band
+MOULD_HOURS = 3
 NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
 PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
 QUIET_MINUTES_BEFORE_ALERT = 60   # flat must be quiet this long before an arrival alerts
