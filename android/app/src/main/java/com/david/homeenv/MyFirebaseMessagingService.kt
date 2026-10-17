@@ -34,10 +34,10 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 
-        // Data-only messages carry title/body in data; older backends send a notification block
+        // The backend sends data-only messages: title/body travel in data (#12)
         val data = message.data
-        val title = data["title"] ?: message.notification?.title ?: "Home Ping"
-        val body = data["body"] ?: message.notification?.body ?: ""
+        val title = data["title"] ?: "Home Ping"
+        val body = data["body"] ?: ""
 
         sendNotification(title, body, data["event"], data["device"])
     }

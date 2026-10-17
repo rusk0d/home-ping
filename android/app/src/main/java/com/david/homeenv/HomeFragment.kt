@@ -32,8 +32,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -50,15 +48,10 @@ class HomeFragment : Fragment() {
 
         private const val MAIN = "home_ping_esp32"
         private const val HALLWAY = "hallway_presence_esp32"
-        // Retired in the node merge (#57): its CO2 sensor is on the main node now. Still
-        // shown while the backend lists it, and used as the CO2 source by older backends.
-        private const val CO2 = "co2_sensor_esp32"
-        private val DEVICE_NAMES = linkedMapOf(MAIN to "Main node", HALLWAY to "Hallway radar", CO2 to "CO₂ node")
+        private val DEVICE_NAMES = linkedMapOf(MAIN to "Main node", HALLWAY to "Hallway radar")
     }
 
     private val handler = Handler(Looper.getMainLooper())
-    // Older backends (before #65) sent server-local time without a zone
-    private val legacyServerTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
     // Timestamps of the latest readings, for the "x ago" labels and stale dimming
     private var envTs: Date? = null
@@ -136,28 +129,17 @@ class HomeFragment : Fragment() {
         val hourly: JSONArray?,
     )
 
-    /**
-     * One request to /api/dashboard (#128). If that fails (e.g. a backend without it), the
-     * six single endpoints in parallel, as before. Blocking: call it on Dispatchers.IO.
-     */
-    private suspend fun loadSnapshot(): Snapshot = coroutineScope {
-        Api.getObject("/api/dashboard")?.let { d ->
-            return@coroutineScope Snapshot(
-                latest = d.optJSONObject("latest_all"),
-                devices = d.optJSONArray("devices"),
-                stats = d.optJSONObject("stats24h_combined"),
-                restarts = d.optJSONObject("restarts"),
-                air = d.optJSONObject("air"),
-                hourly = d.optJSONArray("hourly"),
-            )
-        }
-        val latest = async { Api.getObject("/api/latest_all") }
-        val devices = async { Api.getArray("/api/devices") }
-        val stats = async { Api.getObject("/api/stats24h_combined") }
-        val restarts = async { Api.getObject("/api/restarts") }
-        val air = async { Api.getObject("/api/air") }
-        val hourly = async { Api.getArray("/api/hourly") }
-        Snapshot(latest.await(), devices.await(), stats.await(), restarts.await(), air.await(), hourly.await())
+    /** One request to /api/dashboard (#128); all null when it fails. Blocking: call it on Dispatchers.IO. */
+    private fun loadSnapshot(): Snapshot {
+        val d = Api.getObject("/api/dashboard")
+        return Snapshot(
+            latest = d?.optJSONObject("latest_all"),
+            devices = d?.optJSONArray("devices"),
+            stats = d?.optJSONObject("stats24h_combined"),
+            restarts = d?.optJSONObject("restarts"),
+            air = d?.optJSONObject("air"),
+            hourly = d?.optJSONArray("hourly"),
+        )
     }
 
     private fun loadDashboardData() {
@@ -227,8 +209,8 @@ class HomeFragment : Fragment() {
 
     private fun renderLatest(latest: JSONObject, air: JSONObject?) {
         // Temperature + humidity from the device with the newest env reading (the BME280
-        // moved boards in the node merge, #57). Older backends without env_ts: the main node.
-        val main = latest.newestBy("env_ts") ?: latest.optJSONObject(MAIN)
+        // moved boards in the node merge, #57)
+        val main = latest.newestBy("env_ts")
         val temp = main?.optNum("temp")
         val hum = main?.optNum("humidity")
         b.tempValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
@@ -240,11 +222,11 @@ class HomeFragment : Fragment() {
         val dew = if (temp != null && hum != null) Levels.dewPoint(temp, hum) else null
         b.humidityDew.text = dew?.let { "dew %.0f°C".format(Locale.US, it) } ?: ""
         // env_ts is the env reading's own time; `ts` can be the radar's (contracts/api.md, #11)
-        envTs = main?.optTs("env_ts") ?: main?.optTs("ts")
+        envTs = main?.optTs("env_ts")
 
-        // CO2 from the device with the newest CO2 reading: the main node since the merge,
-        // co2_sensor_esp32 before. `co2` is null whenever the reading isn't valid.
-        val co2Node = latest.newestBy("co2_ts") ?: latest.optJSONObject(CO2)
+        // CO2 from the device with the newest CO2 reading (the main node since the merge,
+        // #57). `co2` is null whenever the reading isn't valid.
+        val co2Node = latest.newestBy("co2_ts")
         val ppm = co2Node?.optNum("co2")?.toInt()
         val sensorOk = co2Node?.takeIf { it.has("co2_ok") && !it.isNull("co2_ok") }?.optBoolean("co2_ok")
         b.co2Value.text = ppm?.toString() ?: "--"
@@ -264,7 +246,7 @@ class HomeFragment : Fragment() {
             false -> "sensor fault / warming up"
             null -> "sensor --"
         }
-        co2Ts = co2Node?.optTs("co2_ts") ?: co2Node?.optTs("ts")
+        co2Ts = co2Node?.optTs("co2_ts")
 
         // Occupied now: combined radar state
         latest.optJSONObject("combined")?.let { combined ->
@@ -339,8 +321,6 @@ class HomeFragment : Fragment() {
         }
         b.devicesList.removeAllViews()
         DEVICE_NAMES.forEach { (id, name) ->
-            // The retired CO2 node only while the backend still lists it (#57)
-            if (id == CO2 && devices != null && id !in online) return@forEach
             val uptime = latest?.optJSONObject(id)?.optNum("uptime")?.toInt()
             val meta = when {
                 id !in online && uptime == null -> "no data yet"
@@ -442,11 +422,10 @@ class HomeFragment : Fragment() {
 
     private fun JSONObject.optTs(key: String): Date? = if (isNull(key)) null else parseTs(optString(key))
 
-    /** API timestamps are ISO 8601 UTC ("2026-10-15T18:42:15Z", #65); the old local format still parses. */
+    /** API timestamps are ISO 8601 UTC ("2026-10-15T18:42:15Z", #65). */
     private fun parseTs(s: String?): Date? {
         if (s.isNullOrEmpty()) return null
         return runCatching { Date.from(Instant.parse(s)) }.getOrNull()
-            ?: runCatching { legacyServerTime.parse(s) }.getOrNull()
     }
 
     /** "22.4" + "°C" → big number with a small muted unit. */
