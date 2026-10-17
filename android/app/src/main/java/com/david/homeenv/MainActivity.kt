@@ -12,7 +12,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.firebase.Firebase
-import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.messaging
 import com.david.homeenv.BuildConfig
 class MainActivity : AppCompatActivity() {
@@ -57,10 +56,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupPush() {
-        if (FirebaseApp.getApps(this).isEmpty()) {
-            FirebaseApp.initializeApp(this)
-        }
-
+        // Firebase itself is initialised in HomeEnvApp
         // FID-based registration (#153; replaces the deprecated registration tokens). The
         // backend only sends to topic "env", so the app needs no token or ID of its own:
         // it registers and subscribes itself. Both are cheap when already done.
