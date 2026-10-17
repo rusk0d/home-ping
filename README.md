@@ -19,7 +19,7 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 |---|---|
 | `firmware/` | Arduino sketches: `main_node` (radar, BME280, MH-Z19 CO₂; merged with the former CO₂ node in #57), `eink_node` (hallway radar + e-ink display) |
 | `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `server_checks`, `ingest` (MQTT) and `api` modules; `test_push.py`, nightly `backup_db.py` |
-| `web/` | Dashboard (`index.html` + `app.js`), connects to MQTT directly from the browser; `nginx/` has its security headers |
+| `web/` | Dashboard (`index.html` + `app.js`, English/Hungarian texts in `i18n.js`), connects to MQTT directly from the browser; `nginx/` has its security headers |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
 | `contracts/` | MQTT topics/payloads, REST API, push notifications, DB schema: the source of truth |
 | `audit/` | Audit and code-review reports |
@@ -67,7 +67,7 @@ in its working directory.
   (`.github/workflows/backend.yml`, `firmware.yml`, `android.yml`).
 - **Web:** serve `web/` (with `config.js`, which holds only the broker URL) from any static
   web server. Each person signs in with their own read-only MQTT account; see
-  `contracts/mqtt.md` → "Web users" for adding one. Deploy `index.html` and `app.js`
+  `contracts/mqtt.md` → "Web users" for adding one. Deploy `index.html`, `app.js` and `i18n.js`
   together, and set up the security headers once (see "Web security headers").
 - **Android:** `./gradlew assembleDebug` in `android/`. The `preview` build type
   (`./gradlew assemblePreview`) runs without Firebase.
