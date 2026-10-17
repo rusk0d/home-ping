@@ -348,11 +348,13 @@ So the web page's sparklines start with the last day instead of empty.
 
 ## Mismatches and issues between components
 
-1. **Two devices publish retained messages to `home/esp32/presence`.** The broker
-   keeps one retained message per topic, so a new subscriber gets only
-   whichever node published last. The backend tells the nodes apart by
-   `device`, so storage is fine, but the topic doesn't identify the
-   device on its own (#10).
+1. **Two devices publish retained messages to `home/esp32/presence`** (kept on purpose,
+   #10 closed as not planned). The broker keeps one retained message per topic, so a new
+   subscriber gets only whichever node published last. That doesn't matter in practice:
+   the backend skips retained messages and tells the nodes apart by `device`, and the web
+   page's node list fills in at the other node's next reading (~5 s). Hourly occupancy is
+   main-room only (`PRESENCE_DEVICE`) by design; the hallway radar mostly sees people
+   passing through.
 2. **No timestamps in payloads.** Every stored `ts` is the backend's receive
    time (UTC since #65). Delayed messages get the receive time.
 3. **main_node reports `uptime` on two topics.** The same device ID sends `uptime` on both
