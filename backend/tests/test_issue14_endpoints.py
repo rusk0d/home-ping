@@ -20,5 +20,5 @@ def test_issue14_endpoints(env):
         r = c.get(p, headers=auth)
         check(f"{p} 200", r.status_code == 200)
     check("POST occupancy_arm 200", c.post("/api/occupancy_arm", json={"armed": True}, headers=auth).status_code == 200)
-    check("POST register_token 200", c.post("/api/register_token", json={"token": "t"}, headers=auth).status_code == 200)
+    check("register_token removed (#172) -> 404", c.post("/api/register_token", json={"token": "t"}, headers=auth).status_code == 404)
     check("auth still required", c.get("/api/latest").status_code == 401)
