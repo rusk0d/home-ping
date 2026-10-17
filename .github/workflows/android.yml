@@ -1,0 +1,45 @@
+# Android preview APK and lint (#76). Uses only the example config files with fake values, no secrets.
+# Runs only on PRs that touch these paths, and not again on the merge to main: the
+# private repo has 2,000 Actions minutes a month, and a full run of all three
+# workflows costs ~12. Run it by hand from the Actions tab with "Run workflow".
+name: Android
+
+on:
+  pull_request:
+    paths:
+      - android/**
+      - .github/workflows/android.yml
+  workflow_dispatch:
+
+# A new push to the PR cancels the run for the older commit
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The jobs only read the repo (#121)
+permissions:
+  contents: read
+
+# Actions are pinned to commit SHAs (the comment is the tag); Dependabot updates them (#121)
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Build the preview APK and run lint, with the example config
+        working-directory: android
+        run: |
+          cp local.properties.example local.properties
+          chmod +x gradlew
+          ./gradlew assemblePreview lintPreview --console=plain
+      - name: Upload the lint report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lint-report
+          path: android/app/build/reports/lint-results-preview.html

@@ -2,7 +2,7 @@
 # per ecosystem, so they stay reviewable and usually just merge. Major versions are
 # left out of the groups and come as one PR each, since they can need code changes
 # (e.g. Android Gradle Plugin 9, see #141/#125). CI runs on each PR. The Arduino core
-# and libraries aren't covered by Dependabot; they are pinned in .github/workflows/ci.yml.
+# and libraries aren't covered by Dependabot; they are pinned in .github/workflows/firmware.yml.
 version: 2
 updates:
   - package-ecosystem: pip
