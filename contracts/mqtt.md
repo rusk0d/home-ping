@@ -101,7 +101,7 @@ ingestion (#58).
 
 | Field | Type | Unit | Notes |
 |---|---|---|---|
-| `device` | string | n/a | Fixed per sketch (`DEVICE_NAME`). Used by the backend as the device ID everywhere. |
+| `device` | string | n/a | Fixed per sketch (`DEVICE_NAME`). Used by the backend as the device ID everywhere. **Required** on `bme280` and `co2`: without it (or not a non-empty string) the backend logs a warning and drops the message (#170; before, it stored it as device `"esp32"`). |
 | `uptime` | integer | seconds | Seconds since boot, from the 64-bit `esp_timer_get_time()` (`hpUptimeSeconds()` in the shared HomePing library), so it doesn't wrap (#8, #50, #75). Before: `millis() / 1000`, which wrapped after ~49.7 days. |
 | `rssi` | integer | dBm | `WiFi.RSSI()`. Sent on presence and co2, **not** on bme280. |
 
@@ -356,7 +356,7 @@ So the web page's sparklines start with the last day instead of empty.
    "PIR occupied fields from other devices are ignored". No current firmware sends PIR fields.
 6. **Backend defaults hide malformed messages.** A presence payload without
    `radar_connected` is treated as connected, and one without `device` is
-   attributed to `home_ping_esp32`.
+   attributed to `home_ping_esp32`. (Env payloads without `device` are dropped since #170.)
 7. **Topic name `bme280` vs device name.** main_node's env data goes to
    `home/esp32/bme280` but is stored under device `home_ping_esp32` (which the
    Android app labels "OLED"/"Ping"). The naming is inconsistent but harmless,
