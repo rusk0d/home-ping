@@ -60,7 +60,8 @@ Written by: MQTT env handler (`log_to_db`) for every message that has no
 | `pressure` | REAL | yes | payload `pressure`, hPa |
 | `co2_ok` | INTEGER | yes | payload `co2_ok` as 1/0; NULL when the message has none (added in #14, via the ALTER loop) |
 
-Retention: rows older than 8 days are deleted on every insert.
+Retention: rows older than `RAW_RETENTION_DAYS` (**2 days**, since #173; 8 before) are
+deleted on every insert. Longer history is in `hourly`.
 
 `occupied`, `occupancy_confidence` and `dark` (always 0) were dropped in #14: `init_db()`
 rebuilds the table without them if an older database still has them (works on any SQLite
@@ -88,10 +89,10 @@ Written by: MQTT presence handler (`log_presence`) for every message with a `pre
 | `uptime` | INTEGER | yes | payload `uptime`, s |
 | `radar_connected` | INTEGER 0/1 | yes | payload `radar_connected` (default 1) |
 
-Retention: rows older than 8 days are deleted on every insert.
-Volume: ~17,280 rows/day per radar node at the 5 s interval. With 2 nodes and 8 days that's ~276k rows
-(~45 MB database with the indexes). Measured on such a DB (#18): a presence message ~10 ms,
-`/api/latest_all` ~7 ms (265 ms without indexes).
+Retention: like `readings`, 2 days (`RAW_RETENTION_DAYS`, #173).
+Volume: ~17,280 rows/day per radar node at the 5 s interval, so ~70k rows with 2 nodes and
+2 days. With the old 8 days it was ~276k rows (~45 MB database with the indexes); measured
+on that (#18): a presence message ~10 ms, `/api/latest_all` ~7 ms (265 ms without indexes).
 
 `soil_readings` was removed with the soil feature (#9); `init_db()` drops it if it exists.
 
@@ -134,7 +135,7 @@ Known keys:
 
 One row per **complete** hour, all devices combined (like `/api/hourly` without `?device=`).
 Filled by `store.rollup_hourly()` from `readings` and `presence_readings`, which are only kept
-8 days: at startup (`server.prepare()`, catches up after downtime; the first run backfills
+2 days (#173): at startup (`server.prepare()`, catches up after downtime; the first run backfills
 whatever raw rows exist) and in the 300 s summaries loop, where it only does work once
 another hour has completed. Each run redoes the hour before `hourly_until` (late rows) and
 adds every completed hour since; an hour without any rows gets no row.
@@ -188,8 +189,8 @@ Read by: `/api/restarts` (`RESTART` only).
 
 | Table | Inserts / updates | Reads |
 |---|---|---|
-| `readings` | `log_to_db` (+ 8-day prune) | `/api/latest`, `/api/latest_all`, `/api/stats24h_combined`, `/api/hourly`, `/api/air` |
-| `presence_readings` | `log_presence` (+ 8-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `get_last_occupancy`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/hourly` |
+| `readings` | `log_to_db` (+ 2-day prune) | `/api/latest`, `/api/latest_all`, `/api/stats24h_combined`, `/api/hourly`, `/api/air` |
+| `presence_readings` | `log_presence` (+ 2-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `get_last_occupancy`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/hourly` |
 | `devices` | `touch_device` | `/api/latest`, `/api/latest_all`, `/api/devices` |
 | `system_state` | `init_db` seed, `set_state` | `get_state` |
 | `events` | `log_event` | `/api/restarts` |
@@ -221,4 +222,5 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #18: 30-day retention for `events` and `devices`; indexes added (see Conventions).
 - Arrival alert fix (#101): `any_radar_quiet_minutes` no longer skips the newest row in the table.
 - #129: `hourly` table (long-term hourly aggregates, kept for good) and `system_state.hourly_until`.
+- #173: raw `readings`/`presence_readings` kept 2 days instead of 8; `/api/hourly`'s past days come from `hourly`.
 - #174: WAL journal mode and `synchronous=NORMAL`.

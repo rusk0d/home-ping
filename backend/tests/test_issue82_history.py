@@ -9,7 +9,7 @@ def test_issue82_history(env):
     from datetime import datetime, timedelta, timezone
     os.environ.update(DASH_USER="u", DASH_PASS="p", MQTT_USER="m", MQTT_PASS="m", TZ="Europe/Budapest")
     import server
-    import config, ingest, api
+    import config, ingest, api, store
     server.prepare()   # importing does no work (#73)
     con = sqlite3.connect(config.DB)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -20,6 +20,14 @@ def test_issue82_history(env):
         con.execute("INSERT INTO readings (device, ts, co2, pressure) VALUES ('co2', ?, 800, 1010)", (t,))
         con.execute("INSERT INTO readings (device, ts, co2) VALUES ('co2', ?, 1000)", (t,))
         con.execute("INSERT INTO presence_readings (device, ts, occupied) VALUES ('home_ping_esp32', ?, 1)", (t,))
+    con.commit()
+    # Past days come from the hourly table since #173: roll the inserted rows up, like the
+    # backend does every 5 min (prepare() already ran on the empty DB, so start over)
+    con.execute("DELETE FROM system_state WHERE key = 'hourly_until'"); con.commit()
+    store.rollup_hourly()
+    # ...and they no longer need the raw rows: drop those before today
+    con.execute("DELETE FROM readings WHERE ts < datetime('now','localtime','start of day','utc')")
+    con.execute("DELETE FROM presence_readings WHERE ts < datetime('now','localtime','start of day','utc')")
     con.commit()
     c = api.app.test_client(); A = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}
     get = lambda path: c.get(path, headers=A)
@@ -33,6 +41,9 @@ def test_issue82_history(env):
     h7 = get("/api/hourly?days=7").get_json()
     check("days=7: 7 rows (today + 6 days, 7-day-old row excluded)", len(h7) == 7)
     check("newest first", h7[0]["hour"] > h7[-1]["hour"])
+    check("past days from the hourly table: same values", all(
+        r["avg_temp"] == 20 and r["avg_humidity"] == 50 and r["avg_co2"] == 900 and r["avg_pressure"] == 1010
+        and r["avg_occupancy"] == 100 for r in h7))
     check("days=1 same as default", get("/api/hourly?days=1").get_json() == h1)
     for bad in ["0", "8", "abc", "-1", "2.5"]:
         rv = get(f"/api/hourly?days={bad}")

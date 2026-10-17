@@ -199,12 +199,15 @@ Client: Android Home reads `avg_temp` (double), `avg_humidity` (int),
 
 Per-hour buckets **since local (Budapest) midnight** (not a rolling 24 h), newest first.
 `days` (optional, integer 1–7, default 1): `1` = today only; `n` = today and the `n-1`
-days before it (since #82). Readings are kept 8 days, so 7 is the maximum. Anything
-else → 400 `{"error": "days must be 1-7"}`.
+days before it (since #82). Anything else → 400 `{"error": "days must be 1-7"}`.
+Since #173 today comes from the raw readings and the days before from the `hourly` table
+(raw readings are kept only 2 days); the response looks the same. A past hour appears once
+the rollup has stored it (within 5 min after the hour).
 `hour` is a local-time label (`"YYYY-MM-DD HH:00"`, no zone). On the autumn DST change the
 repeated hour 02:00–03:00 falls into one bucket.
 Temperature/humidity averages come from `readings` of `device` if given, else of any device
-that reports them (since #57; before: default `home_ping_esp32`).
+that reports them (since #57; before: default `home_ping_esp32`). `device` applies to today
+only: the `hourly` table combines all devices.
 CO2/pressure averages come from `readings` of any device (like `/api/air`).
 Occupancy comes from `presence_readings` for `home_ping_esp32` only (`PRESENCE_DEVICE`).
 An hour appears if any of these has data.
@@ -230,7 +233,7 @@ Clients:
 ### GET `/api/daily` (since #129)
 
 One entry per **server-local day** from the `hourly` table (see `db-schema.md`), newest
-first. For ranges beyond the 8 days of raw readings that `/api/hourly` is limited to.
+first. For ranges beyond the 7 days of `/api/hourly`.
 
 - `?days=N`: today and the N-1 days before it, 1–400 (`DAILY_MAX_DAYS`), default 30.
   Anything else → `400 {"error": "days must be 1-400"}`.
