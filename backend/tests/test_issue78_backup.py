@@ -5,7 +5,7 @@ from support import BACKEND, check
 
 
 def test_issue78_backup(env):
-    import os, sys, gzip, sqlite3, subprocess, tempfile, threading, time
+    import sys, gzip, sqlite3, subprocess, threading
     from pathlib import Path
     backend = BACKEND
 

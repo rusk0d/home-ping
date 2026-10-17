@@ -8,12 +8,11 @@ import time
 from werkzeug.exceptions import HTTPException
 from functools import wraps
 from flask import Flask, jsonify, request, Response, abort
-from firebase_admin import messaging
 
 import state
 from config import (
     AUTH_PASS, AUTH_USER, DAILY_MAX_DAYS, HEALTH_MAX_MESSAGE_AGE, HEARTBEAT_TIMEOUT, HHMM, HOURLY_MAX_DAYS,
-    NOTIFY_KINDS,
+    MOULD_HOURS, MOULD_HUMIDITY, NOTIFY_KINDS,
 )
 from store import (
     calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
@@ -414,6 +413,16 @@ def air():
         """)
         old = c.fetchone()
 
+        # Mould risk (#177): humidity per complete hour over the last MOULD_HOURS hours
+        c.execute("""
+            SELECT strftime('%Y-%m-%d %H', ts), AVG(humidity) FROM readings
+            WHERE humidity IS NOT NULL
+              AND ts >= datetime(strftime('%Y-%m-%d %H:00:00', 'now'), ?)
+              AND ts < strftime('%Y-%m-%d %H:00:00', 'now')
+            GROUP BY 1
+        """, (f"-{MOULD_HOURS} hours",))
+        humid_hours = [h for _, h in c.fetchall()]
+
     co2 = co2_row[1] if co2_row else None
     if co2 is None:        band = None
     elif co2 < 800:        band = "good"
@@ -434,6 +443,7 @@ def air():
         "pressure_3h_change": trend,
         "temp": env_row[2] if env_row else None,
         "humidity": env_row[3] if env_row else None,
+        "mould_risk": len(humid_hours) == MOULD_HOURS and all(h > MOULD_HUMIDITY for h in humid_hours),
     })
 
 
@@ -456,21 +466,6 @@ def devices():
         })
 
     return jsonify(out)
-
-
-@app.route("/api/register_token", methods=["POST"])
-@require_auth
-def register_token():
-    data = json_body()
-    token = data.get("token")
-
-    if not token:
-        return jsonify({"error": "No token provided"}), 400
-
-    # Phones aren't sensor nodes, so no touch_device() here (#15)
-    messaging.subscribe_to_topic([token], "env")
-
-    return jsonify({"success": True})
 
 
 @app.route("/api/occupancy_arm", methods=["POST"])
@@ -558,17 +553,20 @@ def dashboard():
     """Everything the Android home screen shows, in one response (#128).
 
     Calls the six endpoints' own functions, so each part has exactly the shape (and
-    defaults, e.g. /api/hourly = today) of the endpoint it is named after.
+    defaults, e.g. /api/hourly = today) of the endpoint it is named after. Each runs in
+    its own request context without a query string (#170), so /api/dashboard?days=7
+    can't change a part.
     """
-    def part(view):
-        rv = view.__wrapped__()   # the login was checked once, for /api/dashboard
+    def part(name, view):
+        with app.test_request_context(f"/api/{name}"):
+            rv = view.__wrapped__()   # the login was checked once, for /api/dashboard
         return (rv[0] if isinstance(rv, tuple) else rv).get_json()
 
     return jsonify({
-        "latest_all": part(latest_all),
-        "devices": part(devices),
-        "stats24h_combined": part(stats24h_combined),
-        "restarts": part(restarts),
-        "air": part(air),
-        "hourly": part(hourly),
+        "latest_all": part("latest_all", latest_all),
+        "devices": part("devices", devices),
+        "stats24h_combined": part("stats24h_combined", stats24h_combined),
+        "restarts": part("restarts", restarts),
+        "air": part("air", air),
+        "hourly": part("hourly", hourly),
     })

@@ -5,9 +5,8 @@ from support import check
 
 
 def test_arrival_alert(env):
-    import os, sys, tempfile, sqlite3, time
+    import sqlite3, time
     from datetime import timedelta
-    from unittest import mock
     import server
     import config, store, alerts, ingest
     server.prepare()   # importing does no work (#73)
@@ -68,10 +67,10 @@ def test_arrival_alert(env):
 
     # 4. Short absence -> no push
     pushes.clear()
-    leave_for(30)
+    leave_for(config.QUIET_MINUTES_BEFORE_ALERT - 10)
     reading("hallway_presence_esp32", stationary=True, signal=100)
     reading("hallway_presence_esp32", moving=True, signal=100)
-    check("30 min quiet (< 60) -> no push", pushes == [])
+    check("quiet shorter than QUIET_MINUTES_BEFORE_ALERT -> no push", pushes == [])
 
     # 5. Disarmed: the arrival is consumed but nothing is pushed
     pushes.clear()
