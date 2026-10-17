@@ -88,6 +88,9 @@ object Levels {
         }
     }
 
+    /** Humidity chip while /api/air reports `mould_risk` (#177; contracts/api.md). */
+    val MOULD_RISK = Level("Mould risk", R.color.poor)
+
     /**
      * Dew point in °C from temperature (°C) and relative humidity (%), Magnus formula with
      * the Sonntag constants (contracts/api.md, "Dew point"; web: dewPoint). Null for a

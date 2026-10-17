@@ -234,7 +234,9 @@ class HomeFragment : Fragment() {
         b.tempValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
         b.humidityValue.text = valueWithUnit(hum?.let { "%.0f".format(Locale.US, it) }, "%")
         Levels.applyChip(b.tempChip, temp?.let(Levels::temperature))
-        Levels.applyChip(b.humidityChip, hum?.let(Levels::humidity))
+        // Humid for hours (/api/air mould_risk, #177): the chip says so instead of the level
+        val mould = air?.optBoolean("mould_risk") == true
+        Levels.applyChip(b.humidityChip, if (mould && hum != null) Levels.MOULD_RISK else hum?.let(Levels::humidity))
         val dew = if (temp != null && hum != null) Levels.dewPoint(temp, hum) else null
         b.humidityDew.text = dew?.let { "dew %.0f°C".format(Locale.US, it) } ?: ""
         // env_ts is the env reading's own time; `ts` can be the radar's (contracts/api.md, #11)
