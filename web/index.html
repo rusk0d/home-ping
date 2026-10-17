@@ -234,6 +234,8 @@
     <code>MQTT_CONFIG = { url }</code> (see <code>config.example.js</code>).
   </div>
 
+  <!-- The dashboard: hidden until a login is being used, so a signed-out visitor sees only the form -->
+  <main id="dash" hidden>
   <section class="grid">
     <article class="card temp" id="card-temp">
       <div class="label">
@@ -313,6 +315,7 @@
       <tbody id="historyBody"><tr><td class="empty" colspan="6" data-i18n="firstMessage">Waiting for the first message…</td></tr></tbody>
     </table>
   </div>
+  </main>
 </div>
 
 <script src="i18n.js"></script>
