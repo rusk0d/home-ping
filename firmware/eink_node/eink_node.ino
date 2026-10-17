@@ -366,8 +366,7 @@ void fetchTask(void *) {
     DepartureResult r;
     r.loaded = fetchAllDepartures(r.departures, r.count);
     // Two TLS connections (MQTT and BKK) can be open at once (#31)
-    Serial.printf("Free heap: %u, lowest so far: %u
-", ESP.getFreeHeap(), ESP.getMinFreeHeap());
+    Serial.printf("Free heap: %u, lowest so far: %u\n", ESP.getFreeHeap(), ESP.getMinFreeHeap());
     xSemaphoreTake(fetchLock, portMAX_DELAY);
     fetched = r;
     fetchedNew = true;
