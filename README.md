@@ -83,8 +83,12 @@ The backend checks it too (#176): when the newest backup is over 26 h old, or le
 watchdog").
 To keep a copy off the server, pull the folder now and then, e.g.
 `scp -r root@<server>:/opt/iot/backups ./iot-backups`.
-Restore: `systemctl stop iot-backend`, `gunzip -c backups/data-<date>.db.gz > data.db`,
-`chown iot:iot data.db`, `systemctl start iot-backend`.
+Looking into the database by hand: `sudo -u iot sqlite3 /opt/iot/data.db`, not as root
+(WAL mode, #174: root would create `data.db-shm`/`-wal` that the backend can't write).
+Restore: `systemctl stop iot-backend`, `rm -f data.db-wal data.db-shm` (WAL files of the
+old database, #174; normally already gone after a clean stop),
+`gunzip -c backups/data-<date>.db.gz > data.db`, `chown iot:iot data.db`,
+`systemctl start iot-backend`.
 
 ## Production setup
 
