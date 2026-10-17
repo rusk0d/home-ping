@@ -102,9 +102,26 @@ function push(key, v) {
 // history_24h (#132): replaces the hourly points; live points from before the end of
 // its last hour are dropped, the hourly average covers them
 const SPARKS = { temp: ['temp', 1], hum: ['humidity', 0], pres: ['pressure', 0], co2: ['co2', 0] };
+// Mould risk (#177), the same rule as /api/air `mould_risk` (contracts/api.md): each of the
+// last MOULD_HOURS complete hours before the topic's `updated` averaged above 60 %RH
+const MOULD_HUMIDITY = 60, MOULD_HOURS = 3;
+let mouldRisk = false;
+function mouldRiskFrom(updated, hours) {
+  const now = Date.parse(updated);
+  if (!isFinite(now)) return false;
+  const current = Math.floor(now / 3600e3) * 3600e3;   // start of the incomplete hour
+  for (let i = 1; i <= MOULD_HOURS; i++) {
+    const h = hours.find(x => x.t === current - i * 3600e3);
+    if (!h || !(h.humidity > MOULD_HUMIDITY)) return false;
+  }
+  return true;
+}
+
 function onHistory(d) {
   if (!Array.isArray(d.hours)) return;
   const hours = d.hours.map(h => ({ ...h, t: Date.parse(h.start) })).filter(h => isFinite(h.t));
+  mouldRisk = mouldRiskFrom(d.updated, hours);
+  showHumSub();
   const end = hours.length ? hours[hours.length - 1].t + 3600e3 : -Infinity;
   for (const [key, [field, digits]] of Object.entries(SPARKS)) {
     hourly[key] = hours.filter(h => typeof h[field] === 'number')
@@ -140,6 +157,17 @@ function drawSpark(key, digits) {
 }
 
 // ---------- message handlers ----------
+// The humidity card's line: level chip ("Mould risk" instead while it applies), dew point
+let lastEnv = null;
+function showHumSub() {
+  const d = lastEnv;
+  if (!d) return;
+  if (mouldRisk) setSub('hum-sub', 'Mould risk', 'poor');
+  else setSub('hum-sub', ...humLevel(d.humidity));
+  const dew = typeof d.temp_c === 'number' ? dewPoint(d.temp_c, d.humidity) : null;
+  if (dew !== null) $('hum-sub').append(` dew point ${fmt(dew, 0)} °C`);
+}
+
 function onEnv(d, retained) {
   lastSeen.env = { at: Date.now(), retained };
   $('temp').textContent = fmt(d.temp_c, 1);
@@ -147,11 +175,7 @@ function onEnv(d, retained) {
   $('pres').textContent = fmt(d.pressure, 0);
 
   if (typeof d.temp_c === 'number') setSub('temp-sub', ...tempLevel(d.temp_c));
-  if (typeof d.humidity === 'number') {
-    setSub('hum-sub', ...humLevel(d.humidity));
-    const dew = typeof d.temp_c === 'number' ? dewPoint(d.temp_c, d.humidity) : null;
-    if (dew !== null) $('hum-sub').append(` dew point ${fmt(dew, 0)} °C`);
-  }
+  if (typeof d.humidity === 'number') { lastEnv = d; showHumSub(); }
   setSub('pres-sub', 'Sea level ≈ 1013 hPa');
 
   push('temp', d.temp_c); push('hum', d.humidity); push('pres', d.pressure);
