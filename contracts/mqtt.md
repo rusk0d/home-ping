@@ -48,8 +48,10 @@ pointing to the same files.
   `/etc/letsencrypt/renewal-hooks/deploy/mosquitto.sh` (copies them on each renewal and
   restarts Mosquitto; the nodes reconnect by themselves).
 - 1883 (plain MQTT), localhost only (`listener 1883 127.0.0.1`): the backend.
-- 9001 (WebSockets), localhost only (`listener 9001 127.0.0.1`, #169): nginx `/mqtt` is
-  its only client.
+- 9001 (WebSockets): nginx `/mqtt` is its only client. The config says
+  `listener 9001 127.0.0.1` (#169), but Mosquitto 2.0.11 with Ubuntu's libwebsockets 4.0
+  binds websockets listeners to all interfaces anyway (`*:9001`), with `bind_interface lo`
+  too (tested 2026-10-17, #208). **ufw keeps 9001 closed**: never `ufw allow 9001`.
 Add users with `mosquitto_passwd /etc/mosquitto/passwd <name>` (never `-c`, which wipes the
 file), edit the ACL with `printf`/an editor, then `systemctl restart mosquitto`. The nodes
 reconnect within a keep-alive interval, the backend at once.
