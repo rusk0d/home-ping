@@ -8,7 +8,6 @@ import time
 from werkzeug.exceptions import HTTPException
 from functools import wraps
 from flask import Flask, jsonify, request, Response, abort
-from firebase_admin import messaging
 
 import state
 from config import (
@@ -441,21 +440,6 @@ def devices():
         })
 
     return jsonify(out)
-
-
-@app.route("/api/register_token", methods=["POST"])
-@require_auth
-def register_token():
-    data = json_body()
-    token = data.get("token")
-
-    if not token:
-        return jsonify({"error": "No token provided"}), 400
-
-    # Phones aren't sensor nodes, so no touch_device() here (#15)
-    messaging.subscribe_to_topic([token], "env")
-
-    return jsonify({"success": True})
 
 
 @app.route("/api/occupancy_arm", methods=["POST"])
