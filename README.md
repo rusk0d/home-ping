@@ -118,10 +118,10 @@ readable only by `iot`.
 
 ### Ports
 
-Public (ufw): 22 (SSH), 80/443 (nginx: the web page, `/api/` and `/mqtt`), 1883 (MQTT for
-the nodes; plain TCP until TLS, #31). Everything else listens on `127.0.0.1` only: the
-backend on 5000 and Mosquitto's WebSockets listener on 9001 (`listener 9001 127.0.0.1`;
-nginx `/mqtt` is its only client). Check with `ss -ltnp` and `ufw status`.
+Public (ufw): 22 (SSH), 80/443 (nginx: the web page, `/api/` and `/mqtt`), 8883 (MQTT
+over TLS for the nodes, #31). Everything else listens on `127.0.0.1` only: the backend on
+5000, Mosquitto's plain listener on 1883 (the backend) and its WebSockets listener on 9001
+(nginx `/mqtt` is its only client). Check with `ss -ltnp` and `ufw status`.
 
 ## Uptime monitoring
 

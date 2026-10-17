@@ -2,12 +2,14 @@
 // LD2410C radar, BME280 and MH-Z19C on one board. Topics and payloads as before
 // (contracts/mqtt.md): presence every 5 s, bme280 every 30 s, co2 every 60 s.
 #include <Wire.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <Adafruit_BME280.h>
 #include <MHZ19.h>
 #include <ld2410.h>
 #include "esp_system.h"
 #include <HomePingRadar.h>   // firmware/libraries/HomePing (#75)
+#include <HomePingTls.h>
 #include "secrets.h"
 
 /* =======================
@@ -49,7 +51,7 @@ const uint32_t CO2_WARMUP_S = 180;
 /* =======================
    GLOBALS
    ======================= */
-WiFiClient espClient;
+WiFiClientSecure espClient;   // MQTT over TLS (#31)
 PubSubClient mqttClient(espClient);
 ld2410 radar;
 Adafruit_BME280 bme;
@@ -169,6 +171,7 @@ void setup() {
 
   // Network next, so nothing blocks once the radar starts streaming
   hpConnectWiFi(WIFI_SSID, WIFI_PASS);
+  espClient.setCACert(HP_MQTT_ROOT_CA);
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
   hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);   // first attempt; loop() retries (#120)
