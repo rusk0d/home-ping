@@ -38,9 +38,11 @@ const unsigned long CO2_INTERVAL      = 60000;  // every minute is plenty for CO
 #define I2C_SCL 22
 // The module is at 0x76 or 0x77 depending on its SDO pin; both are tried
 const uint8_t BME_ADDRESSES[] = {0x76, 0x77};
-// Next to the MH-Z19 (heated lamp) the sensor reads high; set after comparing with a
-// reference thermometer
+// Added to the temperature. 0: the sensor hangs ~40 cm below the board on jumpers, away
+// from the MH-Z19's heated lamp, and reads like a reference thermometer (#167)
 const float TEMP_OFFSET = 0.0;
+// After this many failed reads in a row the sensor is set up again (#225)
+const int BME_MAX_READ_FAILURES = 3;
 
 // MH-Z19C (UART1)
 #define CO2_RX   25     // <- sensor Tx
@@ -59,6 +61,7 @@ Adafruit_BME280 bme;
 MHZ19 mhz;
 
 bool bmeReady = false;
+int bmeReadFailures = 0;
 
 unsigned long lastPresencePublish = 0;
 unsigned long lastEnvPublish = 0;
@@ -69,16 +72,28 @@ JsonDocument doc;
    PUBLISH
    ======================= */
 // home/esp32/bme280 (contracts/mqtt.md)
+// A BME280 that failed at boot or stopped answering (e.g. a loose joint) is set up again
+// on the next env interval (#225); until then nothing is published, and the backend
+// pushes "Sensor not reporting" after 15 min (#224).
 void publishEnv() {
-  if (!bmeReady) return;   // reported once at boot
+  if (!bmeReady) {
+    bmeReady = initBme(false);
+    if (!bmeReady) return;
+  }
   float tempC    = bme.readTemperature() + TEMP_OFFSET;
   float humidity = bme.readHumidity();
   float pressure = bme.readPressure() / 100.0F;
 
   if (isnan(tempC) || isnan(humidity) || isnan(pressure)) {
     Serial.println("BME280 read failed, skipping env publish");
+    if (++bmeReadFailures >= BME_MAX_READ_FAILURES) {
+      Serial.println("BME280 keeps failing, setting it up again");
+      bmeReady = false;
+      bmeReadFailures = 0;
+    }
     return;
   }
+  bmeReadFailures = 0;
 
   doc.clear();
   doc["device"]   = DEVICE_NAME;
@@ -134,18 +149,20 @@ void publishCO2() {
   }
 }
 
-// Tries both addresses, twice: the sensor sometimes misses the very first attempt
-bool initBme() {
-  for (int attempt = 0; attempt < 2; attempt++) {
+// Tries both addresses. At boot twice, 1 s apart: the sensor sometimes misses the very
+// first attempt. The retries from publishEnv() make one pass without the delay, so the
+// loop (radar, MQTT) isn't held up, and only log when the sensor is back.
+bool initBme(bool atBoot) {
+  for (int attempt = 0; attempt < (atBoot ? 2 : 1); attempt++) {
+    if (attempt > 0) delay(1000);
     for (uint8_t addr : BME_ADDRESSES) {
       if (bme.begin(addr, &Wire)) {
         Serial.printf("BME280 initialized at 0x%02X\n", addr);
         return true;
       }
     }
-    delay(1000);
   }
-  Serial.println("BME280 NOT found (check SDA/SCL wiring), continuing without it");
+  if (atBoot) Serial.println("BME280 NOT found (check SDA/SCL wiring), retrying every 30 s");
   return false;
 }
 
@@ -162,7 +179,7 @@ void setup() {
   // BME280 first; it needs a moment to settle after power-up anyway
   Wire.begin(I2C_SDA, I2C_SCL);
   delay(100);
-  bmeReady = initBme();
+  bmeReady = initBme(true);
 
   // MH-Z19C: warms up for ~3 min, readings are flagged invalid until then
   Serial1.begin(CO2_BAUD, SERIAL_8N1, CO2_RX, CO2_TX);
