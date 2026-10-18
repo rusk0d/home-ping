@@ -41,11 +41,11 @@ def any_radar_quiet_minutes():
     return (utcnow() - last_occ).total_seconds() / 60
 
 
-def read_uptime(data):
-    """The payload's uptime in s, or None if missing or not a number (#226): a default of 0
-    would look like a reboot to note_uptime() and log a bogus RESTART."""
+def read_int(data, key):
+    """data[key] as an int, or None if missing or not a number. For uptime (#226) a default
+    of 0 would look like a reboot to note_uptime() and log a bogus RESTART."""
     try:
-        return int(data["uptime"])
+        return int(data[key])
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -59,7 +59,7 @@ def handle_presence_data(data):
     distance = int(data.get("distance", 0) or 0)
     signal = int(data.get("signal", 0) or 0)
     rssi = int(data.get("rssi", 0) or 0)
-    uptime = read_uptime(data)
+    uptime = read_int(data, "uptime")
     radar_connected = 1 if data.get("radar_connected", True) else 0
 
     # Filter noise: moving always counts, stationary only with a decent signal
@@ -71,7 +71,7 @@ def handle_presence_data(data):
     log_presence(device, occupied, presence, stationary, moving,
                  distance, signal, rssi, uptime, radar_connected)
     touch_device(device)
-    note_uptime(device, uptime)
+    note_uptime(device, uptime, read_int(data, "reset_reason"))
 
     prev_occ = get_last_occupancy(device)
     if prev_occ is not None and prev_occ != occupied:
@@ -176,7 +176,7 @@ def on_message(client, userdata, msg):
             return
         temp = data.get("temp_c")
         hum = data.get("humidity")
-        uptime = read_uptime(data)
+        uptime = read_int(data, "uptime")
         co2 = data.get("co2")
         pressure = data.get("pressure")
 
@@ -194,7 +194,7 @@ def on_message(client, userdata, msg):
 
         log_to_db(device, temp, hum, uptime, co2, pressure, co2_ok)
         touch_device(device)
-        note_uptime(device, uptime)
+        note_uptime(device, uptime, read_int(data, "reset_reason"))
 
         now = time.time()
 
