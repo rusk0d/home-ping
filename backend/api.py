@@ -3,6 +3,7 @@
 
 import hmac
 import logging
+import re
 import sqlite3
 import time
 from werkzeug.exceptions import HTTPException
@@ -257,20 +258,26 @@ def restarts():
         """)
         week = dict(c.fetchall())
 
+        # The newest RESTART row per device (by id: several can share a second)
         c.execute("""
-            SELECT device, MAX(ts)
+            SELECT device, ts, value
             FROM events
-            WHERE type = 'RESTART'
-            GROUP BY device
+            WHERE id IN (SELECT MAX(id) FROM events WHERE type = 'RESTART' GROUP BY device)
         """)
-        last = dict(c.fetchall())
+        last = {device: (ts, value) for device, ts, value in c.fetchall()}
+
+    def reason(value):
+        # "uptime 86400s -> 12s, reason brownout (9)" (#228); older rows have no reason
+        m = re.search(r", reason (.+) \(\d+\)$", value or "")
+        return m.group(1) if m else None
 
     devices = set(day) | set(week) | set(last)
     return jsonify({
         d: {
             "last_24h": day.get(d, 0),
             "last_7d": week.get(d, 0),
-            "last_restart": iso(last.get(d)),
+            "last_restart": iso(last.get(d, (None, None))[0]),
+            "last_reason": reason(last.get(d, (None, None))[1]),
         } for d in devices
     })
 

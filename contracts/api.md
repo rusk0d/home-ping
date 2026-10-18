@@ -323,10 +323,12 @@ Client: Android Home reads `device`, `online` for `home_ping_esp32`,
 Restart counts per device from `events` where `type='RESTART'`.
 
 ```json
-{"co2_sensor_esp32":{"last_24h":1,"last_7d":3,"last_restart":"2026-10-13T05:12:40Z"}}
+{"home_ping_esp32":{"last_24h":1,"last_7d":3,"last_restart":"2026-10-13T05:12:40Z","last_reason":"brownout"}}
 ```
 
-Devices with no restart ever are absent. Client: Android Home sums `last_24h`.
+Devices with no restart ever are absent. `last_reason` (#228): the reset reason of the newest
+restart (`power-on`, `software`, `panic`, `task watchdog`, `brownout`, …; `code` for an unknown
+code), null when that restart had none (older firmware). Client: Android Home sums `last_24h`.
 
 ### POST `/api/occupancy_arm`
 
@@ -425,3 +427,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #129: `GET /api/daily`, long-term daily values from the new `hourly` table.
 - #172: `POST /api/register_token` removed (legacy since #153; no app version that calls it is left).
 - #227: `/api/stats24h_combined` `coverage_hours` comes from the same radar as `avg_occupancy`/`occupied_hours`.
+- #228: `/api/restarts` (and `/api/dashboard` `restarts`) adds `last_reason`.

@@ -101,6 +101,7 @@ void publishEnv() {
   doc["humidity"] = humidity;
   doc["pressure"] = pressure;
   doc["uptime"]   = hpUptimeSeconds();
+  doc["reset_reason"] = (int)esp_reset_reason();   // #228, as in the presence payload
 
   char payload[256];
   serializeJson(doc, payload);
@@ -130,6 +131,7 @@ void publishCO2() {
   doc["err"]     = err;
   doc["rssi"]    = WiFi.RSSI();
   doc["uptime"]  = hpUptimeSeconds();
+  doc["reset_reason"] = (int)esp_reset_reason();   // #228, as in the presence payload
 
   // Only include a reading when it is actually trustworthy.
   // The backend stores NULL otherwise, so bad values never enter the history.
