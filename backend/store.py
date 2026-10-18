@@ -282,29 +282,30 @@ def occupancy_stats(hours=24):
     if not rows:
         return {"avg_occupancy": None, "occupied_hours": None, "coverage_hours": None}
 
-    best_pct = 0
-    best_hours = 0
-    coverage = 0
-
+    # The radar with the highest occupancy % answers, all three values from it (#227):
+    # taking the coverage from another radar mixed sensors once their spans differed.
+    # Ties (e.g. nobody home: 0 % on both) go to the longer span.
+    best = None   # (pct, span_h, occupied fraction)
     for device, total, occupied, first_ts, last_ts in rows:
         if not total:
             continue
-        pct = (occupied / total) * 100
+        frac = occupied / total
 
         # Real span this device actually covered
         t0 = parse_ts(first_ts)
         t1 = parse_ts(last_ts)
         span_h = max((t1 - t0).total_seconds() / 3600, 0)
 
-        if pct > best_pct:
-            best_pct = pct
-            best_hours = span_h * (occupied / total)
-        coverage = max(coverage, span_h)
+        if best is None or (frac * 100, span_h) > best[:2]:
+            best = (frac * 100, span_h, frac)
 
+    if best is None:
+        return {"avg_occupancy": None, "occupied_hours": None, "coverage_hours": None}
+    pct, span_h, frac = best
     return {
-        "avg_occupancy": round(best_pct, 0),
-        "occupied_hours": round(best_hours, 2),
-        "coverage_hours": round(coverage, 1),
+        "avg_occupancy": round(pct, 0),
+        "occupied_hours": round(span_h * frac, 2),
+        "coverage_hours": round(span_h, 1),
     }
 
 
