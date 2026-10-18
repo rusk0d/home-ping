@@ -4,6 +4,7 @@
 
 #include <ArduinoJson.h>
 #include <ld2410.h>
+#include <esp_system.h>
 #include "HomePing.h"
 
 inline void hpPublishPresence(PubSubClient& mqtt, ld2410& radar,
@@ -33,6 +34,9 @@ inline void hpPublishPresence(PubSubClient& mqtt, ld2410& radar,
   doc["signal"]          = signal;
   doc["rssi"]            = WiFi.RSSI();
   doc["uptime"]          = hpUptimeSeconds();
+  // Why the node last booted (#228): the ESP-IDF esp_reset_reason_t code, e.g. 1 power-on,
+  // 3 software (ESP.restart(): WiFi timeout, OTA), 4 panic, 6 task watchdog, 9 brownout
+  doc["reset_reason"]    = (int)esp_reset_reason();
 
   char payload[256];
   serializeJson(doc, payload);

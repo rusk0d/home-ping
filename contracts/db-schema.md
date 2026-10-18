@@ -167,7 +167,7 @@ Event types written by `server.py`:
 
 | `type` | `device` | `value` example | Written when |
 |---|---|---|---|
-| `RESTART` | sensor ID | `uptime 86400s -> 12s` | `uptime` dropped by > 120 s vs. last message (in-memory baseline) |
+| `RESTART` | sensor ID | `uptime 86400s -> 12s, reason brownout (9)` | `uptime` dropped by > 120 s vs. last message (in-memory baseline). `, reason …` since #228, from the message's `reset_reason`; absent when the node didn't send one |
 | `OCCUPANCY_CHANGE` | radar ID | `occupied` / `vacant` | derived `occupied` differs from the previous row of that radar |
 | `RADAR_DISCONNECTED` | radar ID | `sent, no frames from LD2410C` | radar-offline push attempted |
 | `OCCUPANCY_ALERT` | radar ID | `sent, after 75 min quiet` | arrival push attempted |
@@ -224,3 +224,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #129: `hourly` table (long-term hourly aggregates, kept for good) and `system_state.hourly_until`.
 - #173: raw `readings`/`presence_readings` kept 2 days instead of 8; `/api/hourly`'s past days come from `hourly`.
 - #174: WAL journal mode and `synchronous=NORMAL`.
+- #228: `RESTART` event value ends with `, reason <name> (<code>)` when the node sends `reset_reason`.

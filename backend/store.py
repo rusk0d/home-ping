@@ -408,8 +408,21 @@ def set_state(key, value):
         """, (key, value))
 
 
-def note_uptime(device, uptime):
-    """Log a restart when a device's uptime goes backwards."""
+# esp_reset_reason_t (ESP-IDF, esp_system.h), sent by the nodes as reset_reason (#228)
+RESET_REASONS = {
+    0: "unknown", 1: "power-on", 2: "external pin", 3: "software", 4: "panic",
+    5: "interrupt watchdog", 6: "task watchdog", 7: "watchdog", 8: "deep sleep",
+    9: "brownout", 10: "SDIO", 11: "USB", 12: "JTAG", 13: "eFuse error",
+    14: "power glitch", 15: "CPU lockup",
+}
+
+
+def reset_reason_text(code):
+    return f"{RESET_REASONS.get(code, 'code')} ({code})"
+
+
+def note_uptime(device, uptime, reset_reason=None):
+    """Log a restart when a device's uptime goes backwards, with the node's reset reason."""
     if uptime is None:
         return
     prev = state.LAST_UPTIME.get(device)
@@ -423,8 +436,9 @@ def note_uptime(device, uptime):
     # a smaller number: a node that publishes on several topics (env, presence) can
     # send them slightly out of order, so its uptime may briefly go back a little.
     if uptime < prev - UPTIME_DROP_TOLERANCE:
-        log_event(device, "RESTART", f"uptime {prev}s -> {uptime}s")
-        log.info("restart %s: was up %ss, now %ss", device, prev, uptime)
+        reason = "" if reset_reason is None else f", reason {reset_reason_text(reset_reason)}"
+        log_event(device, "RESTART", f"uptime {prev}s -> {uptime}s{reason}")
+        log.info("restart %s: was up %ss, now %ss%s", device, prev, uptime, reason)
 
 
 # -------------------------
