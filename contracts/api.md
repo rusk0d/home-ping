@@ -189,7 +189,8 @@ has no `env_ts`/`co2_ts`). Plus `uptime` per device for the device list (the ret
   rounded to 1 dp. null when there are no rows.
 - `avg_occupancy`: % (0–100, rounded to 0 dp) from `occupancy_stats(24)`. The highest-occupancy radar wins.
 - `occupied_hours`: that radar's span × occupied fraction (2 dp).
-- `coverage_hours`: longest per-radar span of data in the window (1 dp).
+- `coverage_hours`: that same radar's span of data in the window (1 dp; #227, was the
+  longest span of any radar). On equal occupancy (e.g. 0 % on both) the longer span wins.
 - The three occupancy fields are null without radar data in the window.
 
 Client: Android Home reads `avg_temp` (double), `avg_humidity` (int),
@@ -423,3 +424,4 @@ Fixed mismatches, oldest first (issue number: what changed).
   null-safely (`optNum`) instead of `getDouble`/`getInt`.
 - #129: `GET /api/daily`, long-term daily values from the new `hourly` table.
 - #172: `POST /api/register_token` removed (legacy since #153; no app version that calls it is left).
+- #227: `/api/stats24h_combined` `coverage_hours` comes from the same radar as `avg_occupancy`/`occupied_hours`.
