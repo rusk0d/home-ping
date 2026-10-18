@@ -45,6 +45,7 @@ HEARTBEAT_TIMEOUT = 120  # seconds without a message before a device counts as o
 NODE_OFFLINE_ALERT_SECONDS = 300  # no data this long -> "node offline" push (longer than
                                   # HEARTBEAT_TIMEOUT so a reboot or WiFi blip doesn't alert)
 NODE_CHECK_INTERVAL = 30          # seconds between offline checks
+SENSOR_SILENT_SECONDS = 900       # no valid BME280 / CO2 value this long on a live node -> push (#224)
 UPTIME_DROP_TOLERANCE = 120   # seconds; a restart needs uptime to drop by more (see note_uptime)
 HEALTH_MAX_MESSAGE_AGE = 300   # /api/health fails when no live MQTT message came for this long (#77)
 

@@ -1,4 +1,4 @@
-"""Device heartbeat and node offline / back online alerts (#13).
+"""Device heartbeat, node offline / back online alerts (#13), silent sensors (#224).
 """
 
 import logging
@@ -7,10 +7,10 @@ import time
 import state
 from config import (
     DEVICES_RETENTION_DAYS, NODE_CHECK_INTERVAL, NODE_OFFLINE_ALERT_SECONDS,
-    NOTIFICATION_COOLDOWN,
+    NOTIFICATION_COOLDOWN, SENSOR_SILENT_SECONDS,
 )
-from store import db, log_event, parse_ts, set_state, utcnow
-from alerts import alert
+from store import db, get_state, log_event, parse_ts, set_state, utcnow
+from alerts import alert, alert_muted
 
 log = logging.getLogger(__name__)
 
@@ -94,13 +94,81 @@ def set_node_offline(device, offline, pushed=True):
     set_state(f"node_offline:{device}", ("1" if pushed else "m") if offline else "0")
 
 
+# -------------------------
+# SENSOR SILENT / BACK (#224)
+# -------------------------
+# A node can stay online (radar, status, the other sensor keep last_seen fresh) while one
+# of its sensors is dead: a failed BME280 publishes nothing, a failed MH-Z19C publishes
+# co2_ok false. Checked for each sensor a device has in the raw data (kept
+# RAW_RETENTION_DAYS): silent when there's been no valid value for SENSOR_SILENT_SECONDS
+# although the node was sending other data at the start of that time and still is, so an
+# outage (NODE_STATUS) or a reboot doesn't count. Once per excursion, persisted as
+# sensor_silent:<device>:<sensor> ('1' pushed, 'm' muted, '0' fine); quiet hours postpone
+# it, like the server watchdog.
+SENSORS = {   # sensor: (name in pushes, a valid value, the sensor reported at all)
+    "env": ("BME280", "temp IS NOT NULL", "temp IS NOT NULL"),
+    "co2": ("CO₂ sensor", "co2 IS NOT NULL AND co2_ok = 1", "co2 IS NOT NULL OR co2_ok IS NOT NULL"),
+}
+
+
+def check_sensors():
+    silent_since = f"-{SENSOR_SILENT_SECONDS} seconds"
+    alive_from = f"-{SENSOR_SILENT_SECONDS + NODE_OFFLINE_ALERT_SECONDS} seconds"
+    has = ", ".join(f"MAX({reported})" for _, _, reported in SENSORS.values())
+    fresh = ", ".join(f"MAX({valid} AND ts >= datetime('now', ?))" for _, valid, _ in SENSORS.values())
+    with db() as conn:
+        devices = conn.execute("SELECT device FROM devices WHERE last_seen >= datetime('now', ?)",
+                               (f"-{NODE_OFFLINE_ALERT_SECONDS} seconds",)).fetchall()
+        for (device,) in devices:
+            if device in state.NODE_OFFLINE:
+                continue
+            row = conn.execute(f"SELECT {has}, {fresh} FROM readings WHERE device = ?",
+                               (*[silent_since] * len(SENSORS), device)).fetchone()
+            # Was the node sending anything just before the silent window started?
+            alive = conn.execute("""
+                SELECT 1 FROM presence_readings WHERE device = ? AND ts BETWEEN datetime('now', ?) AND datetime('now', ?)
+                UNION ALL
+                SELECT 1 FROM readings WHERE device = ? AND ts BETWEEN datetime('now', ?) AND datetime('now', ?)
+                LIMIT 1""", (device, alive_from, silent_since, device, alive_from, silent_since)).fetchone()
+            for i, sensor in enumerate(SENSORS):
+                if not row[i]:
+                    continue   # the device has no such sensor (or no data in the window)
+                ok = bool(row[len(SENSORS) + i])
+                _sensor_state(device, sensor, silent=bool(alive) and not ok, back=ok)
+
+
+def _sensor_state(device, sensor, silent, back):
+    name = SENSORS[sensor][0]
+    key = f"sensor_silent:{device}:{sensor}"
+    status = get_state(key, "0")
+    # One notification slot per sensor: the "back" push replaces the warning in the app
+    data = {"event": "SENSOR_STATUS", "device": f"{device}:{sensor}"}
+    if status == "0" and silent:
+        if alert_muted("nodes") == "quiet hours":
+            return   # try again after quiet hours
+        body = f"{device}: no {name} readings for {SENSOR_SILENT_SECONDS // 60} min"
+        result = alert(device, f"SENSOR_SILENT_{sensor.upper()}", body, "Sensor not reporting", body,
+                       {**data, "status": "silent"}, kind="nodes")
+        if result:   # a failed send is retried at the next check
+            set_state(key, "1" if result == "sent" else "m")
+    elif status != "0" and back:
+        set_state(key, "0")
+        body = f"{device}: {name} readings are back"
+        if status == "1":   # only clear a notification that was actually shown
+            alert(device, f"SENSOR_OK_{sensor.upper()}", body, "Sensor reporting again", body,
+                  {**data, "status": "ok"}, kind="nodes")
+        else:
+            log_event(device, f"SENSOR_OK_{sensor.upper()}", f"no push (warning was muted), {body}")
+
+
 def node_check_loop():
     while True:
         time.sleep(NODE_CHECK_INTERVAL)
-        try:
-            check_nodes()
-        except Exception as e:
-            log.error("offline check failed: %s", e)
+        for check in (check_nodes, check_sensors):
+            try:
+                check()
+            except Exception as e:
+                log.error("%s failed: %s", check.__name__, e)
 
 
 def handle_status(device, status):

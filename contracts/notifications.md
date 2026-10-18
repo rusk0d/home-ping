@@ -46,7 +46,8 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 
 - One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
   `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
-  and back online; also the server watchdog, WATCHDOG, #176). All on by default.
+  and back online; also the server watchdog, WATCHDOG, #176, and silent sensors, SENSOR_STATUS,
+  #224). All on by default.
 - **Quiet hours**: off by default. When on, the alert types above are muted between
   `start` and `end` (server local time, Budapest; the window may cross midnight,
   `start` inclusive, `end` exclusive).
@@ -196,6 +197,28 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   - Over (valid for at least 14 days again): title `Certificate renewed`, body
     `{host:port} is valid until {date}`. Logs `WATCHDOG_CERT_<PORT>` / `WATCHDOG_CERT_<PORT>_OK`.
 
+### 8. Sensor silent / back: `SENSOR_STATUS` (since #224)
+
+- Trigger: `check_sensors()` every 30 s, in `node_check_loop` after the offline check
+  (`nodes.py`). For each device online (`last_seen` within 300 s, not in `NODE_OFFLINE`) and
+  each sensor it has in the raw `readings` (kept 2 days): `env` (BME280: a row with `temp`)
+  and `co2` (MH-Z19C: a row with `co2` or `co2_ok`). A radar-only node has neither.
+- **Silent:** no valid value for `SENSOR_SILENT_SECONDS` (**900 s**; `env`: `temp` not null,
+  `co2`: `co2` not null and `co2_ok` = 1), while the node was sending other data at the start
+  of that window (a row in the 5 min before it). So a node outage (that's `NODE_STATUS`), a
+  backend outage, or a reboot (CO₂ warm-up ~3 min) doesn't alert. Covers a BME280 that
+  publishes nothing and an MH-Z19C that keeps sending `co2_ok: false`.
+- **Once per excursion**, persisted as `system_state` `sensor_silent:<device>:<sensor>`
+  (`'1'` pushed, `'m'` muted by the `nodes` switch, `'0'` fine). A failed send is retried at
+  the next check. Switch `nodes`; **quiet hours postpone it**, like the watchdog.
+- Push: title `Sensor not reporting`, body `{device}: no {BME280 | CO₂ sensor} readings for 15 min`,
+  data `{"event": "SENSOR_STATUS", "status": "silent", "device": "<device>:<env|co2>"}`.
+  Logs `SENSOR_SILENT_ENV` / `SENSOR_SILENT_CO2` (device = the node).
+- Back (a valid value within the window again): title `Sensor reporting again`, body
+  `{device}: {sensor} readings are back`, same `event`/`device` with `"status": "ok"`, so it
+  **replaces** the warning in the app (one slot per sensor). Only pushed if the warning was;
+  logs `SENSOR_OK_ENV` / `SENSOR_OK_CO2`.
+
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
 ## Summary table
@@ -209,6 +232,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 | `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥30 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
 | `NODE_STATUS` | Node offline / Node back online | no data for 5 min / data again | once per outage | 30 s check |
 | `WATCHDOG` | Backup failed / Disk almost full / Certificate expires soon, Certificate problem (+ "OK again", "Certificate renewed") | newest backup > 26 h old / < 1 GB free / certificate < 14 days or invalid | once per excursion | 5 min check (certificates hourly) |
+| `SENSOR_STATUS` | Sensor not reporting / Sensor reporting again | node online, no valid BME280 / CO₂ value for 15 min / valid again | once per excursion | 30 s check |
 
 ## Mismatches and issues
 
@@ -229,3 +253,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #176: watchdog pushes for an overdue backup and low disk space.
 - #153: the app registers with FCM by FID (`register()`) and no longer sends a token; `/api/register_token` is legacy.
 - #172: `POST /api/register_token` removed.
+- #224: push when a sensor on a live node goes silent (`SENSOR_STATUS`).
