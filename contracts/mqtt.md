@@ -115,6 +115,7 @@ ingestion (#58).
 | `device` | string | n/a | Fixed per sketch (`DEVICE_NAME`). Used by the backend as the device ID everywhere. **Required** on `bme280` and `co2`: without it (or not a non-empty string) the backend logs a warning and drops the message (#170; before, it stored it as device `"esp32"`). |
 | `uptime` | integer | seconds | Seconds since boot, from the 64-bit `esp_timer_get_time()` (`hpUptimeSeconds()` in the shared HomePing library), so it doesn't wrap (#8, #50, #75). Before: `millis() / 1000`, which wrapped after ~49.7 days. |
 | `rssi` | integer | dBm | `WiFi.RSSI()`. Sent on presence and co2, **not** on bme280. |
+| `reset_reason` | integer | n/a | Why the node last booted (#228): ESP-IDF `esp_reset_reason()` (`esp_reset_reason_t`), the same for every message until the next boot. 1 power-on, 3 software (`ESP.restart()`: WiFi timeout, OTA), 4 panic, 5 interrupt watchdog, 6 task watchdog, 7 other watchdog, 9 brownout, 14 power glitch, 15 CPU lockup (full list: `RESET_REASONS` in `backend/store.py`). On presence, bme280 and co2. Optional: nodes on older firmware don't send it. |
 
 ---
 
@@ -394,3 +395,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #50, #75 (and #8): `uptime` comes from the 64-bit `esp_timer_get_time()` on all nodes, so it no
   longer wraps after ~49.7 days (needs the nodes reflashed); eink_node no longer reboots every 12 h.
 - #132: retained `home/backend/history_24h` (hourly averages of the last 24 complete hours) for the web sparklines.
+- #228: `reset_reason` (ESP-IDF reset reason code) on presence, bme280 and co2; the backend adds it to `RESTART` events.
