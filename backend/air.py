@@ -1,0 +1,194 @@
+"""Air-out helper (#245), observe-only for now: outdoor weather from Open-Meteo, window
+openings detected from the main node's CO₂ and temperature, and CO₂ excursions while
+someone is home. Everything goes to the event log (WINDOW_OPEN / WINDOW_CLOSED /
+AIR_HIGH / AIR_OK) so the thresholds can be checked against what really happened
+before any of it pushes.
+"""
+
+import json
+import logging
+import math
+import time
+import urllib.parse
+import urllib.request
+from datetime import timedelta
+
+from config import (
+    AIR_CHECK_INTERVAL, AIR_CO2_HIGH, AIR_CO2_OK, AIR_DEVICE, QUIET_MINUTES_BEFORE_ALERT,
+    WEATHER_INTERVAL, WEATHER_LAT, WEATHER_LON, WEATHER_MAX_AGE, WINDOW_CLOSE_CO2_RISE,
+    WINDOW_CLOSE_TEMP_RISE, WINDOW_CO2_DROP, WINDOW_MAX_MINUTES, WINDOW_MINUTES,
+    WINDOW_TEMP_DROP, WINDOW_TEMP_FALLING,
+)
+from store import db, get_state, log_event, parse_ts, set_state, utcnow
+from alerts import in_quiet_hours
+from ingest import any_radar_quiet_minutes
+
+log = logging.getLogger(__name__)
+
+WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+WEATHER = None   # last good reading: {"at": unix time, "temp", "humidity", "precipitation"}
+_last_fetch = 0.0
+
+
+# -------------------------
+# WEATHER (Open-Meteo, free, no key)
+# -------------------------
+def fetch_weather():
+    """Current outdoor values, or raises. Open-Meteo refreshes them every 15 minutes."""
+    query = urllib.parse.urlencode({
+        "latitude": WEATHER_LAT, "longitude": WEATHER_LON,
+        "current": "temperature_2m,relative_humidity_2m,precipitation",
+    })
+    req = urllib.request.Request(f"{WEATHER_URL}?{query}", headers={"User-Agent": "home-ping"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        cur = json.load(resp)["current"]
+    return {"at": time.time(), "temp": float(cur["temperature_2m"]),
+            "humidity": float(cur["relative_humidity_2m"]), "precipitation": float(cur["precipitation"])}
+
+
+def update_weather():
+    """Fetch every WEATHER_INTERVAL; no coordinates in .env (dev, tests) = no weather."""
+    global WEATHER, _last_fetch
+    if not (WEATHER_LAT and WEATHER_LON) or time.time() - _last_fetch < WEATHER_INTERVAL:
+        return
+    _last_fetch = time.time()
+    try:
+        WEATHER = fetch_weather()
+    except Exception as e:   # keep the last value; weather() drops it once it's too old
+        log.warning("weather fetch failed: %s", e)
+
+
+def weather():
+    """The last weather, or None when there is none or it's older than WEATHER_MAX_AGE."""
+    if WEATHER is None or time.time() - WEATHER["at"] > WEATHER_MAX_AGE:
+        return None
+    return WEATHER
+
+
+def absolute_humidity(temp, rh):
+    """g/m³ of water. Airing only dries the flat when outside holds less than inside,
+    whatever the %RH: 5 °C at 90 % is ~6.1 g/m³, 22 °C at 50 % is ~9.7 g/m³."""
+    return 6.112 * math.exp(17.67 * temp / (temp + 243.5)) * rh * 2.1674 / (273.15 + temp)
+
+
+def outside_text(w):
+    if w is None:
+        return "no weather"
+    rain = ", raining" if w["precipitation"] > 0 else ""
+    return f"outside {w['temp']:.1f} °C {w['humidity']:.0f} %{rain}"
+
+
+# -------------------------
+# CHECKS
+# -------------------------
+def recent_readings(now):
+    """The air node's last WINDOW_MINUTES of readings: [(ts, temp, humidity, co2 or None)]."""
+    since = (now - timedelta(minutes=WINDOW_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+    until = now.strftime("%Y-%m-%d %H:%M:%S")
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT ts, temp, humidity, co2, co2_ok FROM readings
+            WHERE device = ? AND ts BETWEEN ? AND ? ORDER BY ts
+        """, (AIR_DEVICE, since, until)).fetchall()
+    return [(parse_ts(ts), t, h, c if ok == 1 else None) for ts, t, h, c, ok in rows]
+
+
+def check_window(now, temps, co2s):
+    """A window opening is a fast fall of CO₂ and/or temperature. When the temperature fell
+    too, it is also what shows the window closing again: it climbs back within minutes,
+    while CO₂ can already rise with the window still open (people next to the sensor)."""
+    stamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    co2_drop = co2s[-1] - max(co2s) if co2s else 0
+    temp_drop = temps[-1] - max(temps) if temps else 0
+    spell = get_state("air:window", "")
+    if spell:
+        since, before = spell.split("|")
+        minutes = (now - parse_ts(since)).total_seconds() / 60
+        # CO₂ reacts first, so whether the temperature fell too is only known later: compare
+        # with the temperature from before the opening
+        temp_fell = bool(before and temps) and float(before) - min(temps) >= WINDOW_TEMP_FALLING
+        why = None
+        if minutes >= 2:   # not the same few readings that opened it
+            if temp_fell and temps[-1] - min(temps) >= WINDOW_CLOSE_TEMP_RISE:
+                why = "temperature rising"
+            elif (not temp_fell and minutes >= WINDOW_MINUTES and co2s
+                  and co2s[-1] - min(co2s) >= WINDOW_CLOSE_CO2_RISE):
+                why = "CO₂ rising"
+        if why is None and minutes >= WINDOW_MAX_MINUTES:
+            why = "no close seen"
+        if why:
+            inside = ", ".join(filter(None, [temps and f"{temps[-1]:.1f} °C",
+                                             co2s and f"CO₂ {co2s[-1]:.0f} ppm"]))
+            log_event(AIR_DEVICE, "WINDOW_CLOSED", f"after {minutes:.0f} min ({why}), inside {inside}")
+            set_state("air:window", "")
+            set_state("air:window_closed", stamp)
+        return
+    closed = get_state("air:window_closed", "")
+    # The readings from before a short opening stay in the window for a while: don't
+    # count the same fall twice
+    if closed and now - parse_ts(closed) < timedelta(minutes=WINDOW_MINUTES):
+        return
+    if co2_drop <= -WINDOW_CO2_DROP or temp_drop <= -WINDOW_TEMP_DROP:
+        set_state("air:window", f"{stamp}|{max(temps) if temps else ''}")
+        log_event(AIR_DEVICE, "WINDOW_OPEN",
+                  f"CO₂ {co2_drop:+.0f} ppm, {temp_drop:+.1f} °C in {WINDOW_MINUTES} min; "
+                  f"{outside_text(weather())}")
+
+
+def air_verdict(temp, humidity):
+    """What #245's push would do now: "would push", or why it would be held back."""
+    w = weather()
+    if w is not None:
+        if w["precipitation"] > 0:
+            return "would hold back (raining)"
+        if temp is not None and humidity is not None:
+            out_ah = absolute_humidity(w["temp"], w["humidity"])
+            in_ah = absolute_humidity(temp, humidity)
+            if out_ah >= in_ah:
+                return f"would hold back (outside {out_ah:.1f} g/m³, inside {in_ah:.1f})"
+    return "would push, but quiet hours" if in_quiet_hours() else "would push"
+
+
+def check_co2(now, rows, co2s):
+    """CO₂ above AIR_CO2_HIGH for the whole window while someone is home. Once per
+    excursion: it ends below AIR_CO2_OK."""
+    high = get_state("air:co2_high", "")
+    if high:
+        if co2s and co2s[-1] < AIR_CO2_OK:
+            minutes = (now - parse_ts(high)).total_seconds() / 60
+            log_event(AIR_DEVICE, "AIR_OK", f"CO₂ {co2s[-1]:.0f} ppm, {minutes:.0f} min after AIR_HIGH")
+            set_state("air:co2_high", "")
+        return
+    covered = rows[0][0] <= now - timedelta(minutes=WINDOW_MINUTES - 1)
+    if not (covered and len(co2s) >= 5 and min(co2s) >= AIR_CO2_HIGH):
+        return
+    set_state("air:co2_high", now.strftime("%Y-%m-%d %H:%M:%S"))
+    _, temp, humidity, _ = rows[-1]
+    if any_radar_quiet_minutes() >= QUIET_MINUTES_BEFORE_ALERT:
+        verdict = "nobody home: no push"
+    else:
+        verdict = air_verdict(temp, humidity)
+    log_event(AIR_DEVICE, "AIR_HIGH",
+              f"CO₂ {co2s[-1]:.0f} ppm for {WINDOW_MINUTES} min, {outside_text(weather())}: {verdict}")
+
+
+def check_air(now=None):
+    now = now or utcnow()
+    rows = recent_readings(now)
+    # Nothing recent (node down, sensor warming up): no verdict either way
+    if not rows or now - rows[-1][0] > timedelta(minutes=3):
+        return
+    temps = [t for _, t, _, _ in rows if t is not None]
+    co2s = [c for _, _, _, c in rows if c is not None]
+    check_window(now, temps, co2s)
+    check_co2(now, rows, co2s)
+
+
+def air_loop():
+    while True:
+        time.sleep(AIR_CHECK_INTERVAL)
+        update_weather()
+        try:
+            check_air()
+        except Exception as e:
+            log.warning("air check failed: %s", e)
