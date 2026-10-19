@@ -18,6 +18,13 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     
+    <!-- Home/away for the occupancy alert (#239): this phone only, never sent to the server.
+         Background location is requested separately, at the point the user turns auto-arm on -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:name=".HomeEnvApp"   
         android:allowBackup="false"
@@ -47,6 +54,20 @@
             android:name=".NotificationSettingsActivity"
             android:exported="false" />
         
+        <!-- Home geofence crossed (#239); not exported, only Play services sends to it -->
+        <receiver
+            android:name=".GeofenceReceiver"
+            android:exported="false" />
+
+        <!-- Geofences are dropped on reboot: registered again here (#239) -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Channel FCM uses when it shows a notification message itself (app in background) -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
