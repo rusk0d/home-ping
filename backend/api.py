@@ -481,9 +481,13 @@ def occupancy_arm():
     data = json_body()
     if not isinstance(data.get("armed"), bool):
         return jsonify({"error": '"armed" (true/false) required'}), 400
+    # Who changed it (#238): "manual" (the switch, the default) or "location" (the phone's geofence)
+    source = data.get("source", "manual")
+    if source not in ("manual", "location"):
+        return jsonify({"error": '"source" must be "manual" or "location"'}), 400
     armed = "1" if data["armed"] else "0"
     set_state("occupancy_armed", armed)
-    log_event("system", "OCCUPANCY_ARMED", armed)
+    log_event("system", "OCCUPANCY_ARMED", f"{armed} ({source})")
     return jsonify({"armed": armed == "1"})
 
 
