@@ -1,5 +1,7 @@
 package com.david.homeenv
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -16,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.david.homeenv.databinding.FragmentHomeBinding
@@ -23,6 +26,9 @@ import com.david.homeenv.ui.AccentCard
 import com.david.homeenv.ui.Level
 import com.david.homeenv.ui.Levels
 import com.david.homeenv.ui.SparklineView
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.material.snackbar.Snackbar
 import org.json.JSONArray
 import org.json.JSONObject
@@ -100,12 +106,20 @@ class HomeFragment : Fragment() {
         b.swipeRefresh.setOnRefreshListener { loadDashboardData() }
         b.historyButton.setOnClickListener { startActivity(Intent(requireContext(), HistoryActivity::class.java)) }
         b.occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
+        b.autoLocationSwitch.setOnCheckedChangeListener { _, isChecked -> onAutoSwitchChanged(isChecked) }
+        b.setHomeButton.setOnClickListener { onSetHomeClicked() }
+        b.resumeAutoButton.setOnClickListener { onResumeAutoClicked() }
     }
 
     override fun onResume() {
         super.onResume()
         // Also on resume, so a change made elsewhere (another phone, the API) shows up
         loadOccupancyArmedState()
+        setAutoSwitchSilently(HomeLocation.autoEnabled(requireContext()))
+        // Re-add the geofence each time (it replaces itself): Play services can drop it, e.g.
+        // after its data is cleared or location was off, and nothing else would notice (#239)
+        HomeGeofence.register(requireContext())
+        showAutoStatus()
         handler.post(refreshLoop)
         handler.postDelayed(ageLoop, AGE_TICK_MS)
     }
@@ -160,10 +174,15 @@ class HomeFragment : Fragment() {
     private fun setOccupancyArmed(armed: Boolean) {
         viewLifecycleOwner.lifecycleScope.launch {
             val ok = withContext(Dispatchers.IO) {
-                Api.post("/api/occupancy_arm", JSONObject().put("armed", armed)) in 200..299
+                Api.post("/api/occupancy_arm", JSONObject().put("armed", armed).put("source", "manual")) in 200..299
             }
             if (ok) {
+                // A manual flip holds until the next home/away change (#240), and beats a
+                // location arm that is still retrying
+                HomeLocation.setManualOverride(requireContext(), true)
+                ArmWorker.cancel(requireContext())
                 showArmed(armed)
+                showAutoStatus()
             } else {
                 setSwitchSilently(!armed)
                 Snackbar.make(requireView(), "Couldn't change occupancy alerts. Check the connection.", Snackbar.LENGTH_LONG).show()
@@ -191,8 +210,141 @@ class HomeFragment : Fragment() {
         b.occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
     }
 
+    // Last state shown, so "Resume auto" can redraw the same value
+    private var lastArmed = false
+
     private fun showArmed(armed: Boolean) {
-        b.occupancyStatus.text = if (armed) "Armed – push on arrival" else "Off"
+        lastArmed = armed
+        val mode = when {
+            !HomeLocation.autoEnabled(requireContext()) -> ""
+            HomeLocation.manualOverride(requireContext()) -> " (manual)"
+            else -> " (auto · location)"
+        }
+        b.occupancyStatus.text = (if (armed) "Armed – push on arrival" else "Off") + mode
+        b.resumeAutoButton.visibility =
+            if (HomeLocation.autoEnabled(requireContext()) && HomeLocation.manualOverride(requireContext())) View.VISIBLE else View.GONE
+    }
+
+    /** Hands control back to the location: the state follows the phone's position again (#240). */
+    private fun onResumeAutoClicked() {
+        val ctx = requireContext()
+        HomeLocation.setManualOverride(ctx, false)
+        HomeGeofence.syncToCurrentLocation(ctx)
+        showArmed(lastArmed)
+        // The arm state is set by the server after the location check; read it back shortly
+        handler.postDelayed({ if (_b != null) loadOccupancyArmedState() }, 2_000)
+    }
+
+    // ---------- location auto-arm (#239) ----------
+
+    // Set when the user asked for something that needs fine location first
+    private var pendingHome = false
+
+    private val fineLocationRequest = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) {
+            pendingHome = false
+            setAutoSwitchSilently(false)
+            showAutoStatus("Location permission was refused")
+        } else if (pendingHome) {
+            pendingHome = false
+            setHomeHere()
+        } else {
+            continueAutoOn()
+        }
+    }
+
+    private val backgroundLocationRequest = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            continueAutoOn()
+        } else {
+            setAutoSwitchSilently(false)
+            showAutoStatus("Allow location “All the time” for the auto-arm")
+        }
+    }
+
+    private fun onAutoSwitchChanged(on: Boolean) {
+        val ctx = requireContext()
+        if (!on) {
+            HomeLocation.setAutoEnabled(ctx, false)
+            HomeGeofence.unregister(ctx)
+            showAutoStatus()
+            return
+        }
+        if (HomeLocation.get(ctx) == null) {
+            setAutoSwitchSilently(false)
+            showAutoStatus("Set this place as home first")
+            return
+        }
+        continueAutoOn()
+    }
+
+    /** Asks for the permissions one at a time, then turns auto-arm on. */
+    private fun continueAutoOn() {
+        val ctx = requireContext()
+        if (!HomeGeofence.granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION)) {
+            fineLocationRequest.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            return
+        }
+        if (!HomeGeofence.hasLocationPermissions(ctx)) {
+            backgroundLocationRequest.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            return
+        }
+        HomeLocation.setAutoEnabled(ctx, true)
+        HomeLocation.setManualOverride(ctx, false)
+        HomeGeofence.register(ctx)
+        HomeGeofence.syncToCurrentLocation(ctx)   // away right now? arm straight away
+        showAutoStatus()
+    }
+
+    private fun onSetHomeClicked() {
+        val ctx = requireContext()
+        if (!HomeGeofence.granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION)) {
+            pendingHome = true
+            fineLocationRequest.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        } else {
+            setHomeHere()
+        }
+    }
+
+    /** The phone's current position becomes the home point. Only this phone keeps it. */
+    @SuppressLint("MissingPermission")   // fine location is checked by onSetHomeClicked()
+    private fun setHomeHere() {
+        val ctx = requireContext()
+        LocationServices.getFusedLocationProviderClient(ctx)
+            .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+            .addOnSuccessListener { here ->
+                if (here == null) {
+                    showAutoStatus("Couldn't get the location, try again outside")
+                    return@addOnSuccessListener
+                }
+                HomeLocation.set(ctx, here.latitude, here.longitude)
+                if (HomeLocation.autoEnabled(ctx)) {
+                    HomeGeofence.register(ctx)   // replaces the old home geofence
+                    HomeGeofence.syncToCurrentLocation(ctx)
+                }
+                showAutoStatus("Home point saved")
+            }
+            .addOnFailureListener { showAutoStatus("Couldn't get the location, try again") }
+    }
+
+    /** Sets the auto switch without its listener firing (it would post a change). */
+    private fun setAutoSwitchSilently(on: Boolean) {
+        b.autoLocationSwitch.setOnCheckedChangeListener(null)
+        b.autoLocationSwitch.isChecked = on
+        b.autoLocationSwitch.setOnCheckedChangeListener { _, isChecked -> onAutoSwitchChanged(isChecked) }
+    }
+
+    private fun showAutoStatus(note: String? = null) {
+        // Also called from location callbacks, which can arrive after the view is gone
+        val ctx = context ?: return
+        if (_b == null) return
+        val state = when {
+            HomeLocation.get(ctx) == null -> "No home point set"
+            HomeLocation.autoEnabled(ctx) -> "Home point set · auto on"
+            else -> "Home point set · auto off"
+        }
+        b.autoLocationStatus.text = if (note == null) state else "$state · $note"
+        b.setHomeButton.text = if (HomeLocation.get(ctx) == null) "Set this place as home" else "Update home point"
     }
 
     // ---------- rendering ----------
