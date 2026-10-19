@@ -24,7 +24,7 @@ def test_issue73_import_does_no_work(env):
     check("start: MQTT connected and looping", paho.Client.called and state.mqttc.connect.called and state.mqttc.loop_start.called)
     check("start: callbacks set", state.mqttc.on_message is ingest.on_message and state.mqttc.on_connect is ingest.on_connect)
     check("start: Firebase initialised", fa.initialize_app.call_count == 1)
-    check("start: 2 background threads", threading.active_count() == threads_before + 2)
+    check("start: 3 background threads", threading.active_count() == threads_before + 3)
 
     # db() closes the connection also when a query raises
     import sqlite3

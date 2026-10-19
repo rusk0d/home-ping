@@ -76,6 +76,25 @@ TEMP_HYSTERESIS = 0.5
 PRESSURE_DROP_THRESHOLD = -3.0  # hPa
 PRESSURE_HYSTERESIS = 1.0       # hPa
 PRESSURE_WINDOW_HOURS = 3
+# Air-out helper (#245), observe-only: logs events, no pushes yet. First guesses from the
+# main node's readings of 2026-10-17..19 (a window opening fell 250-1000 ppm and 0.8-1.7 °C
+# in 10 min; closing it brought the temperature back +0.3-1.5 °C within 10 min).
+AIR_DEVICE = PRESENCE_DEVICE      # the node with the CO₂ sensor (main node)
+AIR_CHECK_INTERVAL = 60           # seconds
+WINDOW_MINUTES = 10               # the changes below are over this many minutes
+WINDOW_CO2_DROP = 200             # ppm fall that means a window opened...
+WINDOW_TEMP_DROP = 0.8            # ...or this °C fall
+WINDOW_TEMP_FALLING = 0.3         # °C below the pre-opening value: the temperature fell, so its rise marks the close
+WINDOW_CLOSE_TEMP_RISE = 0.3      # °C rise that means the window was closed again...
+WINDOW_CLOSE_CO2_RISE = 50        # ...or ppm rise (10+ min in), when the temperature didn't fall (warm outside)
+WINDOW_MAX_MINUTES = 180          # give up on a spell without a close
+AIR_CO2_HIGH = 1200               # ppm for the whole window while someone is home -> AIR_HIGH
+AIR_CO2_OK = 900                  # ...and the excursion ends below this
+# Outdoor weather from Open-Meteo (no key). WEATHER_LAT/WEATHER_LON in .env; empty = no weather.
+WEATHER_LAT = os.environ.get("WEATHER_LAT", "")
+WEATHER_LON = os.environ.get("WEATHER_LON", "")
+WEATHER_INTERVAL = 15 * 60        # seconds between fetches (Open-Meteo's update interval)
+WEATHER_MAX_AGE = 60 * 60         # older than this counts as no weather
 # Mould risk hint (#177): each of the last MOULD_HOURS complete hours averaged above this
 MOULD_HUMIDITY = 60   # %RH, the top of the "Comfortable" band
 MOULD_HOURS = 3
