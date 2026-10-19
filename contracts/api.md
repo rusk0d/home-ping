@@ -352,11 +352,11 @@ Which alerts send a push, and quiet hours. Stored in `system_state` (see `db-sch
 so the settings apply to every phone. Behaviour: `notifications.md` → "Settings".
 
 ```json
-{"humidity":true,"temperature":true,"radar":true,"nodes":true,
+{"humidity":true,"temperature":true,"radar":true,"nodes":true,"pressure":true,
  "quiet_hours":{"enabled":false,"start":"22:00","end":"07:00"}}
 ```
 
-- `humidity`, `temperature`, `radar`, `nodes`: bool, default `true`. `false` mutes that alert type.
+- `humidity`, `temperature`, `radar`, `nodes`, `pressure` (#237): bool, default `true`. `false` mutes that alert type.
 - `quiet_hours.enabled`: bool, default `false`. `start`/`end`: `"HH:MM"` (24 h, server
   local time = Budapest), defaults `22:00`/`07:00`. The window may cross midnight.
 - Occupancy alerts are not in here: they keep their own switch (`/api/occupancy_arm`)
@@ -429,3 +429,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #172: `POST /api/register_token` removed (legacy since #153; no app version that calls it is left).
 - #227: `/api/stats24h_combined` `coverage_hours` comes from the same radar as `avg_occupancy`/`occupied_hours`.
 - #228: `/api/restarts` (and `/api/dashboard` `restarts`) adds `last_reason`.
+- #237: `/api/notification_settings` has a `pressure` switch.

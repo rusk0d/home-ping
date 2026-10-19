@@ -47,7 +47,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 - One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
   `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
   and back online; also the server watchdog, WATCHDOG, #176, and silent sensors, SENSOR_STATUS,
-  #224). All on by default.
+  #224), `pressure` (PRESSURE, #237). All on by default.
 - **Quiet hours**: off by default. When on, the alert types above are muted between
   `start` and `end` (server local time, Budapest; the window may cross midnight,
   `start` inclusive, `end` exclusive).
@@ -219,6 +219,21 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   **replaces** the warning in the app (one slot per sensor). Only pushed if the warning was;
   logs `SENSOR_OK_ENV` / `SENSOR_OK_CO2`.
 
+### 9. Pressure falling fast: `PRESSURE` (since #237)
+
+- Trigger: `check_pressure()` in the summaries loop, every 5 min right after the hourly rollup
+  (`ingest.py`). Change = `pressure_avg` of the newest complete hour in `hourly` minus the hour
+  `PRESSURE_WINDOW_HOURS` (**3**) before it. No check when either hour has no pressure or the
+  newest is more than 2 h old (node down, fresh start).
+- Push at a change ≤ `PRESSURE_DROP_THRESHOLD` (**−3.0 hPa**), a storm sign. A rise doesn't push.
+- **Once per excursion** (#117 pattern): `system_state` `env_alerted:PRESSURE` = `falling` while
+  pushed or muted; cleared once the change is back above threshold + `PRESSURE_HYSTERESIS`
+  (**−2.0 hPa**). Cooldown key `PRESSURE` (15 min).
+- Switch `pressure`; **quiet hours mute it** like the other environment alerts (not postponed).
+- Push: title `Pressure falling fast`, body `{change:+.1f} hPa in 3 h: storm likely, bring things in from outside`,
+  data `{"event": "PRESSURE", "device": "pressure"}`. Logs `PRESSURE_FALLING` (device `pressure`).
+- Thresholds are conventional barometer rules (maritime climates); review after a winter of data.
+
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
 ## Summary table
@@ -233,6 +248,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 | `NODE_STATUS` | Node offline / Node back online | no data for 5 min / data again | once per outage | 30 s check |
 | `WATCHDOG` | Backup failed / Disk almost full / Certificate expires soon, Certificate problem (+ "OK again", "Certificate renewed") | newest backup > 26 h old / < 1 GB free / certificate < 14 days or invalid | once per excursion | 5 min check (certificates hourly) |
 | `SENSOR_STATUS` | Sensor not reporting / Sensor reporting again | node online, no valid BME280 / CO₂ value for 15 min / valid again | once per excursion | 30 s check |
+| `PRESSURE` | Pressure falling fast | hourly pressure average −3.0 hPa or more below 3 h earlier | once per excursion (until > −2.0), 15 min | 5 min check after the hourly rollup |
 
 ## Mismatches and issues
 
@@ -254,3 +270,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #153: the app registers with FCM by FID (`register()`) and no longer sends a token; `/api/register_token` is legacy.
 - #172: `POST /api/register_token` removed.
 - #224: push when a sensor on a live node goes silent (`SENSOR_STATUS`).
+- #237: pressure-falling push (`PRESSURE`), switch `pressure`.
