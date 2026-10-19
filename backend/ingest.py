@@ -1,17 +1,18 @@
-"""MQTT ingestion: message callbacks, presence + arrival alert, hourly occupancy publish.
+"""MQTT ingestion: message callbacks, presence + arrival alert, hourly occupancy publish,
+pressure-falling alert (#237).
 """
 
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import state
 from config import (
     ARRIVAL_CONFIRM_SECONDS, ENV_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
     HISTORY_24H_TOPIC, NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
-    PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD,
-    TOPIC,
+    PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, PRESSURE_DROP_THRESHOLD, PRESSURE_HYSTERESIS,
+    PRESSURE_WINDOW_HOURS, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD, TOPIC,
 )
 from store import (
     db, get_last_occupancy, get_state, log_event, log_presence, log_to_db, note_uptime,
@@ -318,6 +319,51 @@ def publish_summaries():
             log.warning("%s publish failed: %s", name, e)
 
 
+# -------------------------
+# PRESSURE FALLING FAST (#237)
+# -------------------------
+# From the hourly averages (less jumpy than two raw samples, and kept for good): the newest
+# complete hour against the one PRESSURE_WINDOW_HOURS before it. Checked after each rollup;
+# the value only changes once an hour. No check while either hour is missing or the newest
+# is old (node down, fresh start): None.
+def pressure_change(now=None):
+    with db() as conn:
+        row = conn.execute("""
+            SELECT hour, pressure_avg FROM hourly
+            WHERE pressure_avg IS NOT NULL ORDER BY hour DESC LIMIT 1
+        """).fetchone()
+        if row is None:
+            return None
+        hour, newest = row
+        # The newest complete hour starts at most 2 h ago: anything older is stale
+        if (now or utcnow()) - parse_ts(hour) > timedelta(hours=2):
+            return None
+        before = conn.execute("""
+            SELECT pressure_avg FROM hourly
+            WHERE hour = datetime(?, ?) AND pressure_avg IS NOT NULL
+        """, (hour, f"-{PRESSURE_WINDOW_HOURS} hours")).fetchone()
+    return None if before is None else newest - before[0]
+
+
+def check_pressure(now=None):
+    change = pressure_change(now)
+    if change is None:
+        return
+    key = "PRESSURE"
+    alerted = env_alerted(key)
+    if alerted and change > PRESSURE_DROP_THRESHOLD + PRESSURE_HYSTERESIS:
+        set_env_alerted(key, None)
+        alerted = None
+    if (change <= PRESSURE_DROP_THRESHOLD and not alerted
+            and time.time() - state.LAST_NOTIFICATION.get(key, 0) > NOTIFICATION_COOLDOWN):
+        if alert("pressure", "PRESSURE_FALLING", f"change={change:.1f} hPa/{PRESSURE_WINDOW_HOURS}h",
+                 title="Pressure falling fast",
+                 body=f"{change:+.1f} hPa in {PRESSURE_WINDOW_HOURS} h: storm likely, bring things in from outside",
+                 data={"event": "PRESSURE", "device": "pressure"},
+                 cooldown_key=key, kind="pressure"):
+            set_env_alerted(key, "falling")
+
+
 def summaries_loop():
     while True:
         time.sleep(OCCUPANCY_HOURLY_INTERVAL)
@@ -325,6 +371,10 @@ def summaries_loop():
             rollup_hourly()   # only does work once another hour has completed (#129)
         except Exception as e:
             log.warning("hourly rollup failed: %s", e)
+        try:
+            check_pressure()   # after the rollup: it reads the newest complete hour (#237)
+        except Exception as e:
+            log.warning("pressure check failed: %s", e)
         publish_summaries()
         try:
             check_watchdogs()   # backup overdue, disk almost full (#176), certificates (#206)

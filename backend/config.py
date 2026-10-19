@@ -70,6 +70,12 @@ HUMIDITY_HYSTERESIS = 2
 # disconnected sensor) is dropped as a whole (#57)
 ENV_VALID = {"temp_c": (-40, 85), "humidity": (0, 100), "pressure": (300, 1100)}
 TEMP_HYSTERESIS = 0.5
+# Pressure falling fast (#237): the hourly average dropped this much over the window, a storm
+# sign. Once per excursion; it ends when the change is back above threshold + hysteresis (-2.0).
+# Conventional barometer rules from maritime climates: worth reviewing after a winter.
+PRESSURE_DROP_THRESHOLD = -3.0  # hPa
+PRESSURE_HYSTERESIS = 1.0       # hPa
+PRESSURE_WINDOW_HOURS = 3
 # Mould risk hint (#177): each of the last MOULD_HOURS complete hours averaged above this
 MOULD_HUMIDITY = 60   # %RH, the top of the "Comfortable" band
 MOULD_HOURS = 3
@@ -88,6 +94,6 @@ CERT_CHECK = [t.strip() for t in os.environ.get("CERT_CHECK", "").split(",") if 
 CERT_MIN_DAYS = 14               # push when a certificate expires sooner (renewal runs at 30)
 CERT_CHECK_INTERVAL = 3600       # seconds between certificate checks
 # Notification settings (#82)
-NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes")
+NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes", "pressure")
 QUIET_DEFAULTS = {"start": "22:00", "end": "07:00"}
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")

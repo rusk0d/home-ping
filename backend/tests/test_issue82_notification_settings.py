@@ -25,7 +25,7 @@ def test_issue82_notification_settings(env):
 
     # --- API
     d = get()
-    check("defaults: all on, quiet off 22:00-07:00", d == {"humidity": True, "temperature": True, "radar": True, "nodes": True,
+    check("defaults: all on, quiet off 22:00-07:00", d == {"humidity": True, "temperature": True, "radar": True, "nodes": True, "pressure": True,
                                                            "quiet_hours": {"enabled": False, "start": "22:00", "end": "07:00"}})
     r = post({"humidity": False, "quiet_hours": {"start": "23:30"}})
     check("partial POST returns full settings", r.status_code == 200 and r.get_json()["humidity"] is False and r.get_json()["quiet_hours"]["start"] == "23:30" and r.get_json()["temperature"] is True)
