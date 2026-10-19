@@ -38,10 +38,10 @@ inferred then and hasn't been confirmed since.
 
 | Client | Endpoints used |
 |---|---|
-| Android `HomeFragment` | `/api/dashboard` (since #128; falls back to `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`), `POST /api/occupancy_arm`, `/api/occupancy_status` |
+| Android `HomeFragment` | `/api/dashboard` (since #128; falls back to `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`) |
 | Android `MainActivity` (FCM) | none since #153 (registers with FCM itself) |
 | Android `HistoryActivity` | `/api/hourly?days=7` |
-| Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings` |
+| Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings`, `POST /api/occupancy_arm`, `/api/occupancy_status` (since #236; before on the home screen) |
 | Android `HomeEnvWidget` | `/api/latest`, `/api/air` |
 | Web (`web/index.html`) | none (MQTT only) |
 | Firmware | none (eink_node's unused `API_URL` config was removed in #16) |
@@ -58,8 +58,8 @@ inferred then and hasn't been confirmed since.
 | GET | `/api/air` | Basic | Android Home, widget |
 | GET | `/api/devices` | Basic | Android Home |
 | GET | `/api/restarts` | Basic | Android Home |
-| POST | `/api/occupancy_arm` | Basic | Android Home |
-| GET | `/api/occupancy_status` | Basic | Android Home |
+| POST | `/api/occupancy_arm` | Basic | Android notification settings |
+| GET | `/api/occupancy_status` | Basic | Android notification settings |
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
 | GET | `/api/health` | **none** | external uptime monitor (#77) |
 | GET | `/api/dashboard` | Basic | Android Home (#128) |
@@ -328,7 +328,8 @@ Restart counts per device from `events` where `type='RESTART'`.
 
 Devices with no restart ever are absent. `last_reason` (#228): the reset reason of the newest
 restart (`power-on`, `software`, `panic`, `task watchdog`, `brownout`, …; `code` for an unknown
-code), null when that restart had none (older firmware). Client: Android Home sums `last_24h`.
+code), null when that restart had none (older firmware). Client: Android Home sums `last_24h`
+and shows the newest restart's device and `last_reason` (#235).
 
 ### POST `/api/occupancy_arm`
 
@@ -430,3 +431,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #227: `/api/stats24h_combined` `coverage_hours` comes from the same radar as `avg_occupancy`/`occupied_hours`.
 - #228: `/api/restarts` (and `/api/dashboard` `restarts`) adds `last_reason`.
 - #237: `/api/notification_settings` has a `pressure` switch.
+- #236: the occupancy arm switch moved from the Android home screen to its notification settings (no API change).
