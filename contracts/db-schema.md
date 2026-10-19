@@ -177,7 +177,7 @@ Event types written by `server.py`:
 | `STATUS` | node ID | `online` / `offline` | live message on `home/esp32/<device>/status` (#13) |
 | `NODE_OFFLINE` | node ID | `sent, last seen 2026-10-16 06:12:40` (UTC) | node-offline push attempted (#13) |
 | `NODE_ONLINE` | node ID | `sent, data again` | back-online push attempted (#13); `no push (offline alert was muted), data again` when the offline alert was muted (#82) |
-| `OCCUPANCY_ARMED` | `system` | `1` / `0` | `POST /api/occupancy_arm` |
+| `OCCUPANCY_ARMED` | `system` | `1 (manual)` / `0 (location)` etc.: the new state and the source (#238; before that a bare `1` / `0`) | `POST /api/occupancy_arm` |
 | `NOTIFICATION_SETTINGS` | `system` | `notify:humidity=0, quiet_start=23:00` | `POST /api/notification_settings` changed something (#82) |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12), or

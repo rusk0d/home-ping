@@ -332,11 +332,12 @@ code), null when that restart had none (older firmware). Client: Android Home su
 
 ### POST `/api/occupancy_arm`
 
-Request: `{"armed": true|false}`. `armed` must be a JSON boolean; a missing or
-non-boolean `armed`, or a missing/non-JSON body, is a `400` and leaves the state unchanged.
+Request: `{"armed": true|false, "source": "manual"|"location"}`. `armed` must be a JSON
+boolean; a missing or non-boolean `armed`, or a missing/non-JSON body, is a `400` and leaves
+the state unchanged. `source` is optional (#238): missing = `"manual"`; any other value is a `400`.
 Sets `system_state.occupancy_armed` to `'1'`/`'0'` and logs event
-`OCCUPANCY_ARMED` (device `"system"`). Response: `{"armed": true|false}`.
-Client: Android Home toggle switch.
+`OCCUPANCY_ARMED` (device `"system"`, value `1 (manual)`, `0 (location)` etc.). Response: `{"armed": true|false}`.
+Clients: Android Home toggle switch (manual); the phone's home/away geofence sends `"source": "location"` (#239).
 
 ### GET `/api/occupancy_status`
 
