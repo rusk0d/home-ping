@@ -71,6 +71,8 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:35.0.2"))
     implementation("com.google.firebase:firebase-messaging")
     implementation("com.google.android.material:material:1.14.0")
+    // Geofence (home/away for the occupancy alert, #239) and the current location for "set home"
+    implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0")
     // Coroutines tied to a screen's lifecycle instead of raw threads (#125)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
