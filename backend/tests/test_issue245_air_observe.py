@@ -47,6 +47,8 @@ def test_issue245_air_observe(env):
     opened = events("WINDOW_OPEN")
     check("a fast fall opens a window spell, once", len(opened) == 1 and "no weather" in opened[0])
     check("...remembering the temperature from before", store.get_state("air:window", "").endswith("|23.9"))
+    check("...starting where the fall started, not when it crossed the threshold",
+          store.get_state("air:window", "").startswith((t0 + timedelta(seconds=19 * 30)).strftime("%Y-%m-%d %H:%M:%S")))
     run(t0 + timedelta(seconds=30 * 30), open_ + closing)
     closed = events("WINDOW_CLOSED")
     check("the temperature climbing back closes it", len(closed) == 1 and "temperature rising" in closed[0])
@@ -83,6 +85,27 @@ def test_issue245_air_observe(env):
     check("1000 ppm: same excursion", len(events("AIR_HIGH")) == 3 and len(events("AIR_OK")) == oks)
     run(t2 + timedelta(seconds=30 * 30), [(23.0, 50, 850)])
     check("below 900: AIR_OK", len(events("AIR_OK")) == oks + 1)
+
+    # The node sends CO₂ and temperature/humidity as separate messages (separate rows): the
+    # verdict still compares the indoor air with outside
+    conn.execute("DELETE FROM readings"); conn.commit()
+    store.set_state("air:co2_high", "")
+    air.WEATHER = {"at": time.time(), "temp": 24.0, "humidity": 90, "precipitation": 0}
+    t3 = store.utcnow().replace(microsecond=0) - timedelta(minutes=12)
+    conn = sqlite3.connect(config.DB)
+    for i in range(24):
+        ts = (t3 + timedelta(seconds=i * 30)).strftime("%Y-%m-%d %H:%M:%S")
+        if i % 3:
+            conn.execute("INSERT INTO readings (device, ts, temp, humidity) VALUES (?, ?, 23.0, 50)",
+                         (config.AIR_DEVICE, ts))
+        else:
+            conn.execute("INSERT INTO readings (device, ts, co2, co2_ok) VALUES (?, ?, 1300, 1)",
+                         (config.AIR_DEVICE, ts))
+    conn.commit()
+    air.check_air(t3 + timedelta(seconds=23 * 30))
+    check("CO₂ and temperature in separate rows: humidity still compared",
+          "would hold back (outside" in events("AIR_HIGH")[-1])
+    air.WEATHER = None
 
     # Weather: parsing, the verdicts, and the "no coordinates = no fetch" default
     body = json.dumps({"current": {"temperature_2m": 9.8, "relative_humidity_2m": 80, "precipitation": 0.0}})
