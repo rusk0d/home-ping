@@ -11,6 +11,7 @@ leak into each other.
 import logging
 import os
 import sys
+import time
 from unittest import mock
 
 import pytest
@@ -20,6 +21,14 @@ from support import BACKEND
 BACKEND_MODULES = ("server", "config", "state", "store", "alerts", "nodes", "server_checks", "ingest", "api")
 STUBBED = ("firebase_admin", "firebase_admin.credentials", "firebase_admin.messaging",
            "paho", "paho.mqtt", "paho.mqtt.client")
+
+# The backend uses the machine's local time, like the server (Budapest): the migration test
+# (#65) converts local-time rows, and "today" and quiet hours are local. Set it here so the
+# tests don't depend on the shell's TZ. time.tzset() is Unix-only; on Windows the PC's own
+# time zone applies (Budapest on the dev machine).
+if hasattr(time, "tzset"):
+    os.environ["TZ"] = "Europe/Budapest"
+    time.tzset()
 
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
