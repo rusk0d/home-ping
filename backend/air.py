@@ -93,11 +93,19 @@ def recent_readings(now):
     return [(parse_ts(ts), t, h, c if ok == 1 else None) for ts, t, h, c, ok in rows]
 
 
-def check_window(now, temps, co2s):
+def peak_time(series):
+    """When the newest maximum of [(ts, value)] was read: where a fall started."""
+    top = max(v for _, v in series)
+    return [ts for ts, v in series if v == top][-1]
+
+
+def check_window(now, temp_series, co2_series):
     """A window opening is a fast fall of CO₂ and/or temperature. When the temperature fell
     too, it is also what shows the window closing again: it climbs back within minutes,
     while CO₂ can already rise with the window still open (people next to the sensor)."""
     stamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    temps = [v for _, v in temp_series]
+    co2s = [v for _, v in co2_series]
     co2_drop = co2s[-1] - max(co2s) if co2s else 0
     temp_drop = temps[-1] - max(temps) if temps else 0
     spell = get_state("air:window", "")
@@ -129,7 +137,10 @@ def check_window(now, temps, co2s):
     if closed and now - parse_ts(closed) < timedelta(minutes=WINDOW_MINUTES):
         return
     if co2_drop <= -WINDOW_CO2_DROP or temp_drop <= -WINDOW_TEMP_DROP:
-        set_state("air:window", f"{stamp}|{max(temps) if temps else ''}")
+        # The spell starts where the fall that crossed the threshold started, not when it
+        # crossed it (a few minutes later), so WINDOW_CLOSED's duration is the real one
+        started = peak_time(temp_series if temp_drop <= -WINDOW_TEMP_DROP else co2_series)
+        set_state("air:window", f"{started:%Y-%m-%d %H:%M:%S}|{max(temps) if temps else ''}")
         log_event(AIR_DEVICE, "WINDOW_OPEN",
                   f"CO₂ {co2_drop:+.0f} ppm, {temp_drop:+.1f} °C in {WINDOW_MINUTES} min; "
                   f"{outside_text(weather())}")
@@ -151,7 +162,8 @@ def air_verdict(temp, humidity):
 
 def check_co2(now, rows, co2s):
     """CO₂ above AIR_CO2_HIGH for the whole window while someone is home. Once per
-    excursion: it ends below AIR_CO2_OK."""
+    excursion: it ends below AIR_CO2_OK. [rows] are recent_readings(); the node sends
+    CO₂ and temperature/humidity in separate messages, so separate rows."""
     high = get_state("air:co2_high", "")
     if high:
         if co2s and co2s[-1] < AIR_CO2_OK:
@@ -163,7 +175,8 @@ def check_co2(now, rows, co2s):
     if not (covered and len(co2s) >= 5 and min(co2s) >= AIR_CO2_HIGH):
         return
     set_state("air:co2_high", now.strftime("%Y-%m-%d %H:%M:%S"))
-    _, temp, humidity, _ = rows[-1]
+    env = [(t, h) for _, t, h, _ in rows if t is not None and h is not None]
+    temp, humidity = env[-1] if env else (None, None)
     if any_radar_quiet_minutes() >= QUIET_MINUTES_BEFORE_ALERT:
         verdict = "nobody home: no push"
     else:
@@ -178,10 +191,10 @@ def check_air(now=None):
     # Nothing recent (node down, sensor warming up): no verdict either way
     if not rows or now - rows[-1][0] > timedelta(minutes=3):
         return
-    temps = [t for _, t, _, _ in rows if t is not None]
-    co2s = [c for _, _, _, c in rows if c is not None]
-    check_window(now, temps, co2s)
-    check_co2(now, rows, co2s)
+    temp_series = [(ts, t) for ts, t, _, _ in rows if t is not None]
+    co2_series = [(ts, c) for ts, _, _, c in rows if c is not None]
+    check_window(now, temp_series, co2_series)
+    check_co2(now, rows, [c for _, c in co2_series])
 
 
 def air_loop():
