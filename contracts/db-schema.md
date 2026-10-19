@@ -130,6 +130,9 @@ Known keys:
 | `quiet_hours` | `'1'` / `'0'`; missing = `'0'` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 | `quiet_start` / `quiet_end` | `"HH:MM"`, server local time; missing = `22:00` / `07:00` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 | `hourly_until` | `"YYYY-MM-DD HH:00:00"` UTC: the hour `rollup_hourly()` last stopped at (the then-current, incomplete hour); missing = never ran | no | `rollup_hourly()` (#129) | `rollup_hourly()` |
+| `air:window` | `"<UTC ts>\|<°C before the opening>"` while a window-open spell runs (a fall of the temperature below that makes its rise mark the close, otherwise CO₂'s), `''` after it |\|temp"` / `"<UTC ts>\|co2"` while a window-open spell runs (what fell, so what marks the close), `''` after it | no | `air.check_window()` (#245) | `air.check_window()` |
+| `air:window_closed` | UTC ts of the last close: a fall within `WINDOW_MINUTES` after it isn't a new opening | no | `air.check_window()` (#245) | `air.check_window()` |
+| `air:co2_high` | UTC ts while a CO₂ excursion (`AIR_HIGH`) runs, `''` after it | no | `air.check_co2()` (#245) | `air.check_co2()` |
 
 ### `hourly` (long-term history, since #129)
 
@@ -179,6 +182,10 @@ Event types written by `server.py`:
 | `NODE_ONLINE` | node ID | `sent, data again` | back-online push attempted (#13); `no push (offline alert was muted), data again` when the offline alert was muted (#82) |
 | `OCCUPANCY_ARMED` | `system` | `1 (manual)` / `0 (location)` etc.: the new state and the source (#238; before that a bare `1` / `0`) | `POST /api/occupancy_arm` |
 | `NOTIFICATION_SETTINGS` | `system` | `notify:humidity=0, quiet_start=23:00` | `POST /api/notification_settings` changed something (#82) |
+| `WINDOW_OPEN` | CO₂ node ID | `CO₂ -690 ppm, -1.3 °C in 10 min; outside 9.8 °C 80 %` | CO₂ fell ≥ 200 ppm or the temperature ≥ 0.8 °C within 10 min (#245, `air.py`, no push) |
+| `WINDOW_CLOSED` | CO₂ node ID | `after 18 min (temperature rising), inside 21.6 °C, CO₂ 480 ppm` | the open spell ended: temperature (or, when it didn't fall, CO₂) climbing again, or `no close seen` after 180 min (#245) |
+| `AIR_HIGH` | CO₂ node ID | `CO₂ 1250 ppm for 10 min, outside 9.8 °C 80 %: would push` | CO₂ ≥ 1200 ppm for 10 min; the end says what #245's push would do (`nobody home: no push`, `would hold back (raining)`, …). Once per excursion |
+| `AIR_OK` | CO₂ node ID | `CO₂ 850 ppm, 95 min after AIR_HIGH` | that excursion ended (< 900 ppm) (#245) |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12), or
 `muted (off), ` / `muted (quiet hours), ` when the alert type is switched off or in quiet hours (#82).
@@ -225,3 +232,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #173: raw `readings`/`presence_readings` kept 2 days instead of 8; `/api/hourly`'s past days come from `hourly`.
 - #174: WAL journal mode and `synchronous=NORMAL`.
 - #228: `RESTART` event value ends with `, reason <name> (<code>)` when the node sends `reset_reason`.
+- #245: event types `WINDOW_OPEN`, `WINDOW_CLOSED`, `AIR_HIGH`, `AIR_OK` (observe-only) and `system_state` keys `air:window`, `air:window_closed`, `air:co2_high`.
