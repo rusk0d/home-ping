@@ -78,7 +78,7 @@ object HomeGeofence {
                 val metres = FloatArray(1)
                 Location.distanceBetween(here.latitude, here.longitude, lat, lng, metres)
                 val away = metres[0] > HomeLocation.RADIUS_M
-                Thread { postArm(away) }.start()
+                ArmWorker.enqueue(ctx, away)
             }
     }
 

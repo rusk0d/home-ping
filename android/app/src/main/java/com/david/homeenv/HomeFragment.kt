@@ -116,6 +116,9 @@ class HomeFragment : Fragment() {
         // Also on resume, so a change made elsewhere (another phone, the API) shows up
         loadOccupancyArmedState()
         setAutoSwitchSilently(HomeLocation.autoEnabled(requireContext()))
+        // Re-add the geofence each time (it replaces itself): Play services can drop it, e.g.
+        // after its data is cleared or location was off, and nothing else would notice (#239)
+        HomeGeofence.register(requireContext())
         showAutoStatus()
         handler.post(refreshLoop)
         handler.postDelayed(ageLoop, AGE_TICK_MS)
@@ -174,8 +177,10 @@ class HomeFragment : Fragment() {
                 Api.post("/api/occupancy_arm", JSONObject().put("armed", armed).put("source", "manual")) in 200..299
             }
             if (ok) {
-                // A manual flip holds until the next home/away change (#240)
+                // A manual flip holds until the next home/away change (#240), and beats a
+                // location arm that is still retrying
                 HomeLocation.setManualOverride(requireContext(), true)
+                ArmWorker.cancel(requireContext())
                 showArmed(armed)
                 showAutoStatus()
             } else {

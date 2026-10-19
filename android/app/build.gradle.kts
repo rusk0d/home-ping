@@ -73,6 +73,9 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
     // Geofence (home/away for the occupancy alert, #239) and the current location for "set home"
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // Retries a location arm/disarm until it reaches the server (#239): the post on leaving
+    // home often happens just as the phone drops WiFi
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0")
     // Coroutines tied to a screen's lifecycle instead of raw threads (#125)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
