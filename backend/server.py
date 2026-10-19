@@ -17,6 +17,7 @@ from config import BIND_HOST, PORT, LOG_LEVEL, FIREBASE_CRED, MQTT_HOST, MQTT_PA
 from store import init_db, load_alert_state, rollup_hourly
 from nodes import node_check_loop
 from ingest import summaries_loop, on_connect, on_disconnect, on_message
+from air import air_loop
 from api import app
 
 log = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ def start():
     state.mqttc.loop_start()
     threading.Thread(target=summaries_loop, daemon=True).start()
     threading.Thread(target=node_check_loop, daemon=True).start()
+    threading.Thread(target=air_loop, daemon=True).start()   # #245, observe-only
 
 
 def main():
