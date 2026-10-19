@@ -108,6 +108,7 @@ class HomeFragment : Fragment() {
         b.occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
         b.autoLocationSwitch.setOnCheckedChangeListener { _, isChecked -> onAutoSwitchChanged(isChecked) }
         b.setHomeButton.setOnClickListener { onSetHomeClicked() }
+        b.resumeAutoButton.setOnClickListener { onResumeAutoClicked() }
     }
 
     override fun onResume() {
@@ -170,10 +171,13 @@ class HomeFragment : Fragment() {
     private fun setOccupancyArmed(armed: Boolean) {
         viewLifecycleOwner.lifecycleScope.launch {
             val ok = withContext(Dispatchers.IO) {
-                Api.post("/api/occupancy_arm", JSONObject().put("armed", armed)) in 200..299
+                Api.post("/api/occupancy_arm", JSONObject().put("armed", armed).put("source", "manual")) in 200..299
             }
             if (ok) {
+                // A manual flip holds until the next home/away change (#240)
+                HomeLocation.setManualOverride(requireContext(), true)
                 showArmed(armed)
+                showAutoStatus()
             } else {
                 setSwitchSilently(!armed)
                 Snackbar.make(requireView(), "Couldn't change occupancy alerts. Check the connection.", Snackbar.LENGTH_LONG).show()
@@ -201,8 +205,29 @@ class HomeFragment : Fragment() {
         b.occupancySwitch.setOnCheckedChangeListener { _, isChecked -> setOccupancyArmed(isChecked) }
     }
 
+    // Last state shown, so "Resume auto" can redraw the same value
+    private var lastArmed = false
+
     private fun showArmed(armed: Boolean) {
-        b.occupancyStatus.text = if (armed) "Armed – push on arrival" else "Off"
+        lastArmed = armed
+        val mode = when {
+            !HomeLocation.autoEnabled(requireContext()) -> ""
+            HomeLocation.manualOverride(requireContext()) -> " (manual)"
+            else -> " (auto · location)"
+        }
+        b.occupancyStatus.text = (if (armed) "Armed – push on arrival" else "Off") + mode
+        b.resumeAutoButton.visibility =
+            if (HomeLocation.autoEnabled(requireContext()) && HomeLocation.manualOverride(requireContext())) View.VISIBLE else View.GONE
+    }
+
+    /** Hands control back to the location: the state follows the phone's position again (#240). */
+    private fun onResumeAutoClicked() {
+        val ctx = requireContext()
+        HomeLocation.setManualOverride(ctx, false)
+        HomeGeofence.syncToCurrentLocation(ctx)
+        showArmed(lastArmed)
+        // The arm state is set by the server after the location check; read it back shortly
+        handler.postDelayed({ if (_b != null) loadOccupancyArmedState() }, 2_000)
     }
 
     // ---------- location auto-arm (#239) ----------
@@ -260,6 +285,7 @@ class HomeFragment : Fragment() {
             return
         }
         HomeLocation.setAutoEnabled(ctx, true)
+        HomeLocation.setManualOverride(ctx, false)
         HomeGeofence.register(ctx)
         HomeGeofence.syncToCurrentLocation(ctx)   // away right now? arm straight away
         showAutoStatus()
