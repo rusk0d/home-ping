@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Notification settings (#82): GET/POST /api/notification_settings -->
+<!-- Notification settings (#82): GET/POST /api/notification_settings; the occupancy alert
+     (/api/occupancy_arm, location auto-arm #239/#240) since #236 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -215,11 +216,145 @@
                         android:enabled="false" />
                 </LinearLayout>
 
-                <TextView
-                    style="@style/HomeFoot"
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:text="Occupancy alerts are armed on the home screen." />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Pressure falling fast"
+                            android:textColor="@color/text"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            style="@style/HomeFoot"
+                            android:layout_marginTop="2dp"
+                            android:text="Down 3 hPa or more in 3 h: storm likely" />
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/pressure"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:enabled="false" />
+                </LinearLayout>
             </com.david.homeenv.ui.AccentCard>
+
+            <!-- Occupancy arrival alert (arm switch); moved here from the home screen (#236) -->
+            <com.david.homeenv.ui.AccentCard
+                style="@style/HomeCard"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingTop="12dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/HomeLabel"
+                        android:text="Occupancy alert" />
+
+                    <TextView
+                        android:id="@+id/occupancyStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Loading…"
+                        android:textColor="@color/text"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/occupancySwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </com.david.homeenv.ui.AccentCard>
+
+            <!-- Location auto-arm (#239): this phone's home/away arms the occupancy alert above -->
+            <com.david.homeenv.ui.AccentCard
+                style="@style/HomeCard"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:paddingTop="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            style="@style/HomeLabel"
+                            android:text="Arm when I leave home" />
+
+                        <TextView
+                            android:id="@+id/autoLocationStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="@color/muted"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/autoLocationSwitch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/setHomeButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="6dp"
+                    android:text="Set this place as home"
+                    android:textColor="@color/good"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <!-- Shown after a manual flip of the switch (#240): hands control back to location -->
+                <TextView
+                    android:id="@+id/resumeAutoButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="6dp"
+                    android:text="Resume auto (location)"
+                    android:textColor="@color/good"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+            </com.david.homeenv.ui.AccentCard>
+
 
             <com.david.homeenv.ui.AccentCard
                 style="@style/HomeCard"
