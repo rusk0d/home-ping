@@ -130,7 +130,7 @@ Known keys:
 | `quiet_hours` | `'1'` / `'0'`; missing = `'0'` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 | `quiet_start` / `quiet_end` | `"HH:MM"`, server local time; missing = `22:00` / `07:00` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 | `hourly_until` | `"YYYY-MM-DD HH:00:00"` UTC: the hour `rollup_hourly()` last stopped at (the then-current, incomplete hour); missing = never ran | no | `rollup_hourly()` (#129) | `rollup_hourly()` |
-| `air:window` | `"<UTC ts>\|<°C before the opening>"` while a window-open spell runs (a fall of the temperature below that makes its rise mark the close, otherwise CO₂'s), `''` after it |\|temp"` / `"<UTC ts>\|co2"` while a window-open spell runs (what fell, so what marks the close), `''` after it | no | `air.check_window()` (#245) | `air.check_window()` |
+| `air:window` | `"<UTC ts>\|<°C before the opening>"` (ts = the last reading before the fall, so the logged duration is the real one) while a window-open spell runs (a fall of the temperature below that makes its rise mark the close, otherwise CO₂'s), `''` after it |\|temp"` / `"<UTC ts>\|co2"` while a window-open spell runs (what fell, so what marks the close), `''` after it | no | `air.check_window()` (#245) | `air.check_window()` |
 | `air:window_closed` | UTC ts of the last close: a fall within `WINDOW_MINUTES` after it isn't a new opening | no | `air.check_window()` (#245) | `air.check_window()` |
 | `air:co2_high` | UTC ts while a CO₂ excursion (`AIR_HIGH`) runs, `''` after it | no | `air.check_co2()` (#245) | `air.check_co2()` |
 
