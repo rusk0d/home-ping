@@ -24,17 +24,10 @@ class GeofenceReceiver : BroadcastReceiver() {
             Geofence.GEOFENCE_TRANSITION_ENTER -> false
             else -> return
         }
+        if (!HomeLocation.autoEnabled(context)) return   // a leftover geofence after auto was turned off
         HomeLocation.setManualOverride(context, false)
-        // The post is blocking; keep the receiver alive until it's done
-        val pending = goAsync()
-        Thread {
-            try {
-                val status = HomeGeofence.postArm(armed)
-                if (status == null || status !in 200..299) Log.w(TAG, "arm not sent (status $status)")
-            } finally {
-                pending.finish()
-            }
-        }.start()
+        // Sent by WorkManager: retried until the server has it, even without a network right now
+        ArmWorker.enqueue(context, armed)
     }
 
     companion object {
