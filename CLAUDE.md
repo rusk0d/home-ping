@@ -9,7 +9,8 @@ notifications via Firebase. A small web page and an Android app display the data
 - /backend   Flask app: server.py (entry point), config, state, store (SQLite,
              creates the DB schema on start), alerts, nodes,
              server_checks (watchdog pushes), ingest (MQTT), air (weather,
-             window/CO₂ observation), api
+             window/CO₂ observation), api; tools/ has validation scripts against the
+             live DB and API (README there)
 - /web       HTML page (index.html + app.js + i18n.js for EN/HU, no inline scripts: CSP), connects to MQTT
              directly from the browser; nginx/ has the site's security headers
 - /android   Kotlin app, talks only to the backend's REST API
@@ -45,6 +46,8 @@ When a build or test needs these, use the example files with fake values.
   served by waitress on 127.0.0.1:5000 behind nginx (backend/systemd/).
 - Backend (local dev/tests): `python server.py` with a local .env and a temp SQLite file
 - Test push (on the server, in /opt/iot): `sudo -u iot venv/bin/python test_push.py ["Title" "Text"]`
+- Validation (on the server, in /opt/iot, never as root): `sudo -u iot venv/bin/python tools/validate_db.py`
+  (also validate_db_deep, validate_api, api_regressions; backend/tools/README.md)
 - Android: `./gradlew assembleDebug` in /android
 - Firmware: Arduino IDE, board ESP32 Dev Module, Partition Scheme "Minimal SPIFFS (1.9MB APP
   with OTA)"; first flash over USB, then over WiFi (Tools > Port > the node's network port,
