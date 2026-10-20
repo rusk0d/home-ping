@@ -36,7 +36,12 @@ def test_issue58_bad_payload(env):
             deliver(topic, payload); check(f"{label}: handled inside the callback", True)
         except Exception as e:
             check(f"{label}: escaped to paho ({type(e).__name__})", False)
-    check("errors are logged", any(l.startswith("MQTT error on ") for l in logged))
+    # Each is logged as an error, by name rather than the generic "MQTT error on" (bad UTF-8
+    # decodes to U+FFFD and then fails as JSON)
+    check("errors are logged", sum(l.startswith("Invalid JSON on ") for l in logged) == 3)
+    check("not JSON is named as such", any(l.startswith("Invalid JSON on home/esp32/bme280") for l in logged))
+    check("JSON that isn't an object is named as such",
+          any(l.startswith("Payload on home/esp32/bme280 is not a JSON object (list)") for l in logged))
     check("no row stored from bad payloads", rows() == 0)
     deliver("home/esp32/bme280", json.dumps({"device": "home_ping_esp32", "temp_c": 22.0, "humidity": 45.0, "uptime": 5}).encode())
     check("next valid message is still stored", rows() == 1)
