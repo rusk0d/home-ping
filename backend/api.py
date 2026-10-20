@@ -20,6 +20,7 @@ from store import (
     get_state, log_event, occupancy_stats, parse_ts, set_state, utcnow,
 )
 from alerts import notification_settings
+import server_checks
 from ingest import hourly_occupancy_today
 
 log = logging.getLogger(__name__)
@@ -107,6 +108,14 @@ def health():
     ok = mqtt_ok and fresh and db_ok
     body = {"ok": ok, "mqtt_connected": mqtt_ok, "last_message_age_s": last_age, "db_ok": db_ok}
     return jsonify(body), 200 if ok else 503
+
+
+@app.route("/api/server_status")
+@require_auth
+def server_status():
+    """The server watchdog's view for the app's Server card (#260); behind auth, unlike
+    /api/health: disk space and host names are nobody else's business."""
+    return jsonify(server_checks.status())
 
 
 @app.route("/api/latest")
