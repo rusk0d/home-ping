@@ -103,7 +103,10 @@ WEATHER_MAX_AGE = 60 * 60         # older than this counts as no weather
 MOULD_HUMIDITY = 60   # %RH, the top of the "Comfortable" band
 MOULD_HOURS = 3
 NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
-PUSH_RETRY_SECONDS = 60          # retry a failed push after this, not after the full cooldown
+# Retry a failed push after these delays (1st, 2nd, ... failure in a row of that alert key),
+# then every NOTIFICATION_COOLDOWN: an outage without network used to retry every minute
+# and log ~130 failed NODE_OFFLINE events an hour (#251). A success starts over.
+PUSH_RETRY_SECONDS = (60, 120, 300, 600)
 QUIET_MINUTES_BEFORE_ALERT = 30   # flat must be quiet this long before an arrival alerts (60 until 2026-10-17)
 ARRIVAL_CONFIRM_SECONDS = 120     # movement this soon after the quiet spell ends confirms the arrival
 # Server watchdog pushes (#176), checked every OCCUPANCY_HOURLY_INTERVAL

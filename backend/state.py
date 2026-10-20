@@ -11,6 +11,7 @@ import threading
 LAST_UPTIME = {}        # device -> last reported uptime
 RADAR_FAIL_COUNT = {}   # consecutive radar_connected=false messages (12 needed to alert)
 LAST_NOTIFICATION = {}  # cooldown key -> unix time its cooldown started
+PUSH_FAILURES = {}      # cooldown key -> failed sends in a row (retry back-off, #251)
 RADAR_ALERTED = set()   # radars whose current outage has been handled
 NODE_OFFLINE = {}       # device -> whether its offline push was sent (False: muted)
 NODE_LOCK = threading.Lock()  # offline checks (own thread) vs. messages (MQTT thread)
