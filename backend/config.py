@@ -112,6 +112,11 @@ ARRIVAL_CONFIRM_SECONDS = 120     # movement this soon after the quiet spell end
 # Server watchdog pushes (#176), checked every OCCUPANCY_HOURLY_INTERVAL
 BACKUP_DIR = "backups"           # backup_db.py's folder; no folder = no backup check (dev)
 BACKUP_MAX_AGE_HOURS = 26        # nightly at 03:30, plus slack for a slow or late run
+# Off-site copy to S3 (#122): backup_db.py uploads when .env sets BACKUP_S3_BUCKET and touches
+# backups/OFFSITE_MARKER; no bucket = no upload and no check
+BACKUP_S3_BUCKET = os.environ.get("BACKUP_S3_BUCKET", "")
+OFFSITE_MARKER = ".offsite-ok"
+OFFSITE_MAX_AGE_HOURS = 26
 DISK_MIN_FREE_MB = 1024          # push below this much free space on the database's disk
 DISK_FREE_HYSTERESIS_MB = 256    # ...and "OK again" only above min + this
 # TLS certificates to watch (#206): comma-separated host:port in .env CERT_CHECK, one host per

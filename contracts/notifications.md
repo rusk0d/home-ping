@@ -174,18 +174,22 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 - Trigger: `check_watchdogs()` in the summaries loop, every 5 min (`server_checks.py`).
 - `device` = the check: `backup` when the newest `backups/data-*.db.gz` is older than
   `BACKUP_MAX_AGE_HOURS` (**26 h**; no `backups` folder = no check), `disk` when less than
-  `DISK_MIN_FREE_MB` (**1024 MB**) is free on the database's disk.
+  `DISK_MIN_FREE_MB` (**1024 MB**) is free on the database's disk, `offsite` (since #122)
+  when `backups/.offsite-ok` (touched by `backup_db.py` after each upload to S3) is older than
+  `OFFSITE_MAX_AGE_HOURS` (**26 h**) or missing; no `BACKUP_S3_BUCKET` in `.env` = no check.
 - **Once per excursion**, persisted as `system_state` `watchdog:<check>` (`'1'` pushed,
   `'m'` muted by the `nodes` switch, `'0'` fine). A failed send is retried at the next check.
 - Switch `nodes`. **Quiet hours postpone it** to the first check after they end, instead
   of muting it (the backup runs at 03:30); turning the switch off mutes it like other alerts.
 - Push: title `Backup failed`, body `No database backup for over 26 h (last: …)`, or title
-  `Disk almost full`, body `Only {N} MB free on the server`;
-  data `{"event": "WATCHDOG", "device": "backup" | "disk" | "cert_<port>"}`. Logs `WATCHDOG_BACKUP` / `WATCHDOG_DISK`
-  (device `server`).
-- Over (a backup newer than 26 h; free space ≥ 1024 + 256 MB): title `Backup OK again` /
-  `Disk space OK again`, same `event`/`device`, so it **replaces** the warning in the app.
-  Only sent if the warning was. Logs `WATCHDOG_BACKUP_OK` / `WATCHDOG_DISK_OK`.
+  `Disk almost full`, body `Only {N} MB free on the server`, or title `Off-site backup failed`,
+  body `No backup uploaded to S3 for over 26 h (last: …)`;
+  data `{"event": "WATCHDOG", "device": "backup" | "disk" | "offsite" | "cert_<port>"}`. Logs `WATCHDOG_BACKUP` /
+  `WATCHDOG_DISK` / `WATCHDOG_OFFSITE` (device `server`).
+- Over (a backup newer than 26 h; free space ≥ 1024 + 256 MB; an upload newer than 26 h):
+  title `Backup OK again` / `Disk space OK again` / `Off-site backup OK again` (body `The database
+  backup reached S3 again`), same `event`/`device`, so it **replaces** the warning in the app.
+  Only sent if the warning was. Logs `WATCHDOG_BACKUP_OK` / `WATCHDOG_DISK_OK` / `WATCHDOG_OFFSITE_OK`.
 - Certificates (since #206): every `host:port` in `.env` `CERT_CHECK` (none = no check), at
   most once an hour (`CERT_CHECK_INTERVAL`). The backend connects like a client (trusted chain,
   host name) and reads the certificate's expiry. `device` = `cert_<port>` (one host per port).
@@ -268,7 +272,7 @@ own app/email, not by FCM.
 | `RADAR_DISCONNECTED` | Radar Disconnected | ≥12 consecutive `radar_connected=false` | once per outage | presence msg |
 | `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥30 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
 | `NODE_STATUS` | Node offline / Node back online | no data for 5 min / data again | once per outage | 30 s check |
-| `WATCHDOG` | Backup failed / Disk almost full / Certificate expires soon, Certificate problem (+ "OK again", "Certificate renewed") | newest backup > 26 h old / < 1 GB free / certificate < 14 days or invalid | once per excursion | 5 min check (certificates hourly) |
+| `WATCHDOG` | Backup failed / Disk almost full / Off-site backup failed / Certificate expires soon, Certificate problem (+ "OK again", "Certificate renewed") | newest backup > 26 h old / < 1 GB free / no S3 upload for 26 h / certificate < 14 days or invalid | once per excursion | 5 min check (certificates hourly) |
 | `SENSOR_STATUS` | Sensor not reporting / Sensor reporting again | node online, no valid BME280 / CO₂ value for 15 min / valid again | once per excursion | 30 s check |
 | `PRESSURE` | Pressure falling fast | hourly pressure average −3.0 hPa or more below 3 h earlier | once per excursion (until > −2.0), 15 min | 5 min check after the hourly rollup |
 
@@ -294,4 +298,5 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #224: push when a sensor on a live node goes silent (`SENSOR_STATUS`).
 - #237: pressure-falling push (`PRESSURE`), switch `pressure`.
 - #250: outside uptime monitor (UptimeRobot on `/` and `/api/health`), documented here; no code change.
+- #122: watchdog push when the nightly backup wasn't uploaded to S3 for 26 h (`offsite`).
 - #251: failed pushes back off (1, 2, 5, 10, then every 15 min per key) instead of retrying every 60 s.

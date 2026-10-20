@@ -89,8 +89,42 @@ Check with `systemctl list-timers iot-backup.timer` and `journalctl -u iot-backu
 The backend checks it too (#176): when the newest backup is over 26 h old, or less than
 1 GB is free on the disk, the app gets a push (see `contracts/notifications.md`, "Server
 watchdog").
-To keep a copy off the server, pull the folder now and then, e.g.
-`scp -r root@<server>:/opt/iot/backups ./iot-backups`.
+
+**Off-site copy (#122).** With `BACKUP_S3_BUCKET` in `.env`, each nightly backup is also
+uploaded to S3 (a few MB a day, cents a month). The server's key may only add files: a
+compromised server can't read, list or delete the copies there, and versioning keeps an
+overwritten one. The watchdog pushes `Off-site backup failed` when no upload succeeded for
+26 h (`backups/.offsite-ok`). One-time setup in the AWS console:
+
+1. S3 → Create bucket, e.g. `homeping-backup-<something unique>`, region `eu-central-1`;
+   keep "Block all public access" on, ACLs disabled, default encryption (SSE-S3).
+   Then Properties → Bucket Versioning → Enable.
+2. Management → Create lifecycle rule `expire-backups`, prefix `backups/`: "Expire current
+   versions" after 90 days, "Permanently delete noncurrent versions" after 30 days, and
+   "Delete expired object delete markers".
+3. IAM → Users → Create user `homeping-backup` (no console access). Permissions → Add
+   inline policy (JSON), with your bucket name:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{
+       "Effect": "Allow",
+       "Action": "s3:PutObject",
+       "Resource": "arn:aws:s3:::<bucket>/backups/*"
+     }]
+   }
+   ```
+   Security credentials → Create access key ("Application running outside AWS").
+4. On the server, add to `/opt/iot/.env` (template in `.env.example`): `BACKUP_S3_BUCKET`,
+   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION=eu-central-1`. Install
+   boto3 (`sudo -u iot venv/bin/pip install -r requirements.txt`), restart the backend, and
+   run a backup once: `systemctl start iot-backup.service && journalctl -u iot-backup -n 5`
+   should say `uploaded to s3://…`.
+
+Getting a copy back needs your own AWS login (the server's key can't read): download it
+from the S3 console, or `aws s3 cp s3://<bucket>/backups/data-<date>.db.gz .`, then
+`scp` it to `/opt/iot/backups/` and restore as below. Older versions of a file are under
+"Show versions" in the console.
 Looking into the database by hand: `sudo -u iot sqlite3 /opt/iot/data.db`, not as root
 (WAL mode, #174: root would create `data.db-shm`/`-wal` that the backend can't write).
 Restore: `systemctl stop iot-backend`, `rm -f data.db-wal data.db-shm` (WAL files of the
