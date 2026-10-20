@@ -128,9 +128,10 @@ for f in "${changed[@]}"; do
   esac
 done
 
-# Copy: git archive of HEAD with LF endings, unpacked as root, then owned by iot
+# Copy: git archive of HEAD with LF endings and 644/755 modes (its default umask 002 would make
+# them group-writable; tar as root keeps the archive's modes), unpacked as root, owned by iot
 paths=("${changed[@]/#/backend/}")
-git -c core.autocrlf=false -c core.eol=lf archive --format=tar HEAD -- "${paths[@]}" \
+git -c core.autocrlf=false -c core.eol=lf -c tar.umask=022 archive --format=tar HEAD -- "${paths[@]}" \
   | ssh "$host" "tar -x --no-same-owner --strip-components=1 -C $APP -f - && cd $APP && chown iot:iot ${changed[*]}"
 echo "Copied ${#changed[@]} file(s)."
 
