@@ -16,8 +16,10 @@
     <!-- Required for Android 13+ notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
-    <!-- Required for widget background updates on Android 12+ -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- The widget's 2-minute alarm is exact (#80): USE_EXACT_ALARM is granted at install on
+         Android 13+; on 12 it doesn't exist and SCHEDULE_EXACT_ALARM is granted by default.
+         Without either the widget falls back to an inexact alarm. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     
     <!-- Home/away for the occupancy alert (#239): this phone only, never sent to the server.
