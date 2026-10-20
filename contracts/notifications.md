@@ -17,7 +17,8 @@ inferred then and hasn't been confirmed since.
 - `android.priority = "high"`, so data messages are delivered while the phone is in Doze.
 - `send_push()` returns whether FCM accepted the message. `alert()` logs the matching
   `events` row as `sent, ...` or `failed, ...`. The cooldown only starts after a
-  successful send; a failed send is retried after `PUSH_RETRY_SECONDS` (60 s).
+  successful send; a failed send is retried after `PUSH_RETRY_SECONDS`: 1, 2, 5, 10 min for
+  the 1st..4th failure in a row of that key, then every 15 min; a success starts over (#251).
 - A muted alert (see "Settings") is logged as `muted (off), ...` or
   `muted (quiet hours), ...` and sends nothing (since #82).
 
@@ -64,7 +65,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 
 - `NOTIFICATION_COOLDOWN = 15 * 60` = **900 s (15 min)**, per alert key, in `LAST_NOTIFICATION`
   and persisted as `system_state` `cooldown:<key>` (#5), so a backend restart doesn't reset it.
-  Starts only after a successful send (failed sends retry after 60 s).
+  Starts only after a successful send (failed sends retry after 1, 2, 5, 10, then every 15 min).
 - The radar "outage already pushed" flags (`RADAR_ALERTED`) are persisted the same way
   (`radar_alerted:<device>`).
 - Cooldown keys: `HUMIDITY_<device>` (shared by high and low), `TEMP_<device>`,
@@ -74,7 +75,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
   (`low`). While it is set, no further push for that condition. It is cleared when the value is
   back in range by the hysteresis margin (`HUMIDITY_HYSTERESIS` 2 %RH, `TEMP_HYSTERESIS` 0.5 °C):
   humidity < 63 after high, > 27 after low, temperature > 18.5. The 15-min cooldown still applies
-  on top, against flapping around the threshold. A failed send sets nothing (retried after 60 s).
+  on top, against flapping around the threshold. A failed send sets nothing (retried with the back-off above).
 
 ## Notifications
 
@@ -157,7 +158,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   drop doesn't alert. Decided on data age, not on the MQTT last will (see `mqtt.md`).
 - **Once per outage:** after a successful (or muted, #82) push the device is in `NODE_OFFLINE`
   (persisted as `system_state` `node_offline:<device>`: `'1'` pushed, `'m'` muted) until it sends data again.
-  Cooldown key `NODE_<device>` (15 min, also limits flapping; failed sends retry after 60 s).
+  Cooldown key `NODE_<device>` (15 min, also limits flapping; failed sends retry with the back-off above).
 - No checks during the first 300 s after a backend start (every `last_seen` is old then).
 - Offline: title `Node offline`, body `{device}: no data for {N} min`,
   data `{"event": "NODE_STATUS", "status": "offline", "device": "<device>"}`. Logs `NODE_OFFLINE`.
@@ -293,3 +294,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #224: push when a sensor on a live node goes silent (`SENSOR_STATUS`).
 - #237: pressure-falling push (`PRESSURE`), switch `pressure`.
 - #250: outside uptime monitor (UptimeRobot on `/` and `/api/health`), documented here; no code change.
+- #251: failed pushes back off (1, 2, 5, 10, then every 15 min per key) instead of retrying every 60 s.
