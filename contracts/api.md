@@ -38,7 +38,7 @@ inferred then and hasn't been confirmed since.
 
 | Client | Endpoints used |
 |---|---|
-| Android `HomeFragment` | `/api/dashboard` (since #128; falls back to `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`) |
+| Android `HomeFragment` | `/api/dashboard` (since #128; falls back to `/api/latest_all`, `/api/devices`, `/api/stats24h_combined`, `/api/restarts`, `/api/air`, `/api/hourly`), `/api/server_status` (#260) |
 | Android `MainActivity` (FCM) | none since #153 (registers with FCM itself) |
 | Android `HistoryActivity` | `/api/hourly?days=7` |
 | Android `NotificationSettingsActivity` | `GET`/`POST /api/notification_settings`, `POST /api/occupancy_arm`, `/api/occupancy_status` (since #236; before on the home screen) |
@@ -63,6 +63,7 @@ inferred then and hasn't been confirmed since.
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
 | GET | `/api/health` | **none** | external uptime monitor (#77) |
 | GET | `/api/dashboard` | Basic | Android Home (#128) |
+| GET | `/api/server_status` | Basic | Android Home, Server card (#260) |
 
 ---
 
@@ -394,6 +395,39 @@ Status **200** when `ok`, else **503** with the same body. Stale means no live m
 publish every 5 s, so a stale feed means ingestion stopped (backend, broker or all nodes).
 Client: an external monitor (UptimeRobot or similar) checking the status code.
 
+### GET `/api/server_status` (since #260)
+
+The server watchdog's view (`server_checks.status()`, see `notifications.md` "Server
+watchdog") for the Server card on the Android home screen. Behind auth, unlike `/api/health`.
+Reading it sends no pushes and runs no check of its own.
+
+```json
+{"backend":{"started":"2026-10-20T18:06:10Z","mqtt_connected":true,"last_message_age_s":2},
+ "backup":{"last":"2026-10-20T01:30:02Z","size_bytes":2486563,"count":7,"ok":true},
+ "offsite":{"last":"2026-10-20T01:30:04Z","ok":true},
+ "disk":{"free_mb":12034,"ok":true},
+ "certs":[{"target":"www.example.com:443","expires":"2027-01-10T12:00:00Z","error":null,"ok":true}]}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `backend.started` | string | when the backend process started |
+| `backend.mqtt_connected`, `backend.last_message_age_s` | bool, int or null | as in `/api/health` |
+| `backup` | object or null | null without a `backups` folder (dev) |
+| `backup.last`, `backup.size_bytes` | string, int, or null | newest `data-*.db.gz`; null when there is none |
+| `backup.count` | int | backups kept on the server |
+| `backup.ok` | bool | newest backup at most `BACKUP_MAX_AGE_HOURS` (26 h) old |
+| `offsite` | object or null | null when no `BACKUP_S3_BUCKET` is set (#122) |
+| `offsite.last` | string or null | last successful upload to S3; null = never |
+| `offsite.ok` | bool | last upload at most `OFFSITE_MAX_AGE_HOURS` (26 h) ago |
+| `disk.free_mb`, `disk.ok` | int, bool | free space on the database's disk; ok = at least `DISK_MIN_FREE_MB` (1024) |
+| `certs` | array | one entry per `CERT_CHECK` target (#206), in that order; `[]` when none |
+| `certs[].expires` | string or null | from the hourly check; null before the first one (5 min after start) or when it failed |
+| `certs[].error` | string or null | `unreachable`, or why the certificate failed verification |
+| `certs[].ok` | bool or null | valid for at least `CERT_MIN_DAYS` (14); null = not checked yet |
+
+Client: Android Home, Server card at the bottom (#260).
+
 ## Mismatches and issues between components
 
 1. **`ts`/`uptime` in `/api/latest_all` are silently overwritten** for devices that send both env
@@ -431,4 +465,5 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #227: `/api/stats24h_combined` `coverage_hours` comes from the same radar as `avg_occupancy`/`occupied_hours`.
 - #228: `/api/restarts` (and `/api/dashboard` `restarts`) adds `last_reason`.
 - #237: `/api/notification_settings` has a `pressure` switch.
+- #260: `GET /api/server_status` added (the watchdog's view for the app's Server card).
 - #236: the occupancy arm switch moved from the Android home screen to its notification settings (no API change).

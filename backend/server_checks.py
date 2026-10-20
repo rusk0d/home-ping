@@ -7,7 +7,7 @@ excursion and once more when it's over, under the "nodes" notification switch (#
 Quiet hours postpone the push to the next check after they end instead of dropping it:
 nothing here is urgent, but it mustn't get lost (the backup runs at 03:30, inside the
 default quiet hours). State in system_state `watchdog:<name>`: '1' pushed, 'm' muted
-(switch off), '0' fine.
+(switch off), '0' fine. status() is the same view for the app's Server card (#260).
 """
 
 import logging
@@ -20,21 +20,29 @@ from pathlib import Path
 from config import (BACKUP_DIR, BACKUP_MAX_AGE_HOURS, BACKUP_S3_BUCKET, OFFSITE_MARKER, OFFSITE_MAX_AGE_HOURS,
                     CERT_CHECK, CERT_CHECK_INTERVAL, CERT_MIN_DAYS, DB,
                     DISK_FREE_HYSTERESIS_MB, DISK_MIN_FREE_MB)
+import state
 from store import get_state, set_state
 from alerts import alert, alert_muted
 
 log = logging.getLogger(__name__)
 
 
-def backup_age_hours(now=None):
-    """Hours since the newest backup; None when there is no backup folder (dev, tests)."""
+def backups():
+    """The backup files' stats, newest last; None when there is no backup folder (dev, tests)."""
     folder = Path(BACKUP_DIR)
     if not folder.is_dir():
         return None
-    times = [f.stat().st_mtime for f in folder.glob("data-*.db.gz")]
-    if not times:
+    return sorted((f.stat() for f in folder.glob("data-*.db.gz")), key=lambda s: s.st_mtime)
+
+
+def backup_age_hours(now=None):
+    """Hours since the newest backup; None when there is no backup folder (dev, tests)."""
+    files = backups()
+    if files is None:
+        return None
+    if not files:
         return float("inf")
-    return ((now or time.time()) - max(times)) / 3600
+    return ((now or time.time()) - files[-1].st_mtime) / 3600
 
 
 def offsite_age_hours(now=None):
@@ -71,6 +79,7 @@ def cert_expiry(host, port, timeout=10):
 
 
 _certs_checked = 0.0   # a TLS handshake per target, so once an hour rather than every 5 min
+CERT_STATUS = {}       # target -> {"expires": epoch or None, "error": text or None}, for status()
 
 
 def check_certs(now=None):
@@ -86,10 +95,13 @@ def check_certs(now=None):
         except (OSError, ValueError) as e:
             # Unreachable: nginx/Mosquitto down is UptimeRobot's and the nodes' job; no change here
             log.warning("certificate check %s failed: %s", target, e)
+            CERT_STATUS[target] = {"expires": None, "error": "unreachable"}
             continue
         if isinstance(expires, str):
+            CERT_STATUS[target] = {"expires": None, "error": expires}
             _watch(f"cert_{port}", True, False, "Certificate problem", f"{target}: {expires}", "", "")
             continue
+        CERT_STATUS[target] = {"expires": expires, "error": None}
         days = (expires - now) / 86400
         until = time.strftime("%Y-%m-%d", time.localtime(expires))
         _watch(f"cert_{port}", days < CERT_MIN_DAYS, days >= CERT_MIN_DAYS,
@@ -113,6 +125,44 @@ def _watch(name, bad, recovered, title, body, back_title, back_body):
         set_state(key, "0")
         if status == "1":   # only clear a notification that was actually shown
             alert("server", f"WATCHDOG_{name.upper()}_OK", back_body, back_title, back_body, data, kind="nodes")
+
+
+def _iso(t):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t)) if t is not None else None
+
+
+def status(now=None):
+    """What the watchdog sees, for GET /api/server_status (#260). "ok" uses the push thresholds
+    (without the disk hysteresis); null where a check isn't configured or hasn't run yet."""
+    now = now or time.time()
+    files = backups()
+    backup = None
+    if files is not None:
+        age = backup_age_hours(now)
+        backup = {"last": _iso(files[-1].st_mtime) if files else None,
+                  "size_bytes": files[-1].st_size if files else None,
+                  "count": len(files), "ok": age <= BACKUP_MAX_AGE_HOURS}
+    offsite = None
+    age = offsite_age_hours(now)
+    if age is not None:
+        last = None if age == float("inf") else now - age * 3600
+        offsite = {"last": _iso(last), "ok": age <= OFFSITE_MAX_AGE_HOURS}
+    free = disk_free_mb()
+    certs = []
+    for target in CERT_CHECK:
+        c = CERT_STATUS.get(target)
+        expires = c and c["expires"]
+        certs.append({"target": target, "expires": _iso(expires), "error": c and c["error"],
+                      "ok": None if c is None else expires is not None and (expires - now) / 86400 >= CERT_MIN_DAYS})
+    mqtt_ok = state.mqttc is not None and state.mqttc.is_connected()
+    return {
+        "backend": {"started": _iso(state.STARTED_AT), "mqtt_connected": mqtt_ok,
+                    "last_message_age_s": int(now - state.LAST_MESSAGE_AT) if state.LAST_MESSAGE_AT else None},
+        "backup": backup,
+        "offsite": offsite,
+        "disk": {"free_mb": int(free), "ok": free >= DISK_MIN_FREE_MB},
+        "certs": certs,
+    }
 
 
 def check_watchdogs(now=None):
