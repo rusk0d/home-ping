@@ -18,11 +18,12 @@ def test_issue170(env):
     db = lambda: sqlite3.connect(config.DB)
 
     # Env payloads without a usable device
-    for bad in ({"temp_c": 21.0, "humidity": 40.0}, {"device": "", "temp_c": 21.0}, {"device": 7, "co2": 800}):
+    for bad in ({"temp_c": 21.0, "humidity": 40.0}, {"device": "", "temp_c": 21.0}, {"device": 7, "co2": 800},
+                {"device": "x" * 256, "co2": 800}):
         mqtt("home/esp32/bme280", bad)
     check("no rows stored", db().execute("SELECT COUNT(*) FROM readings").fetchone()[0] == 0)
     check("no phantom device", db().execute("SELECT COUNT(*) FROM devices").fetchone()[0] == 0)
-    check("each logged as a warning", sum("without a device" in w for w in warnings) == 3)
+    check("each logged as a warning", sum("without a device" in w for w in warnings) == 4)
     mqtt("home/esp32/bme280", {"device": "home_ping_esp32", "temp_c": 21.0, "humidity": 40.0, "uptime": 5})
     check("a normal payload is still stored", db().execute("SELECT device FROM readings").fetchall() == [("home_ping_esp32",)])
 
