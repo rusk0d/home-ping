@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 import state
 from config import (
-    ARRIVAL_CONFIRM_SECONDS, ENV_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
+    ARRIVAL_CONFIRM_SECONDS, CO2_VALID, DEVICE_ID_MAX, ENV_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
     HISTORY_24H_TOPIC, NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
     PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, PRESSURE_DROP_THRESHOLD, PRESSURE_HYSTERESIS,
     PRESSURE_WINDOW_HOURS, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD, TOPIC,
@@ -162,7 +162,17 @@ def on_message(client, userdata, msg):
             handle_status(parts[2], payload.strip())
             return
 
-        data = json.loads(payload)
+        # Name the problem in the log instead of the generic "MQTT error" below: a firmware
+        # bug (not JSON, or JSON but not an object) reads differently from an ingest bug
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError as e:
+            log.error("Invalid JSON on %s: %s, dropped: %.100s", msg.topic, e, payload)
+            return
+        if not isinstance(data, dict):
+            log.error("Payload on %s is not a JSON object (%s), dropped: %.100s",
+                      msg.topic, type(data).__name__, payload)
+            return
 
         if "presence" in data:
             handle_presence_data(data)
@@ -172,8 +182,9 @@ def on_message(client, userdata, msg):
         # Every sketch sends its device ID; without one there's no device to store it
         # under (the old default "esp32" made a phantom device and an offline push, #170)
         device = data.get("device")
-        if not isinstance(device, str) or not device:
-            log.warning("payload on %s without a device, dropped: %.200s", msg.topic, payload)
+        if not isinstance(device, str) or not device or len(device) > DEVICE_ID_MAX:
+            log.warning("payload on %s without a device (or an ID over %d characters), dropped: %.200s",
+                        msg.topic, DEVICE_ID_MAX, payload)
             return
         temp = data.get("temp_c")
         hum = data.get("humidity")
@@ -189,6 +200,14 @@ def on_message(client, userdata, msg):
         if bad:
             log.warning("%s: implausible env reading %s, dropped", device, bad)
             temp = hum = pressure = None
+
+        lo, hi = CO2_VALID
+        if isinstance(co2, (int, float)) and not lo <= co2 <= hi:
+            # Warm-up or a sensor error already says so with co2_ok=false; only a value the
+            # sender called good is worth a warning
+            (log.warning if data.get("co2_ok", True) else log.debug)(
+                "%s: implausible CO2 %s ppm, stored as null", device, co2)
+            co2 = None
 
         # co2_ok is stored with the reading so it survives a backend restart
         co2_ok = (1 if data["co2_ok"] else 0) if "co2_ok" in data else None

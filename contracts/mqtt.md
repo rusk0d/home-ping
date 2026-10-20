@@ -103,8 +103,10 @@ Other messages are routed on payload keys (`server.py` `on_message`), in this or
 soil feature because no soil node exists.)
 
 So the topic names are informational only for the backend. A payload's key set
-decides how it is stored. Malformed payloads (not valid UTF-8, not JSON, not a JSON
-object) are logged as `MQTT error: …` and dropped. Nothing may escape `on_message`:
+decides how it is stored. Malformed payloads are dropped and logged as errors: not JSON
+(including bytes that aren't valid UTF-8, which decode to U+FFFD) as `Invalid JSON on <topic>`,
+JSON that isn't an object as `Payload on <topic> is not a JSON object (<type>)`, anything
+else that goes wrong as `MQTT error on <topic>`. Nothing may escape `on_message`:
 paho re-raises callback exceptions, which would end its network thread and stop all
 ingestion (#58).
 
@@ -112,7 +114,7 @@ ingestion (#58).
 
 | Field | Type | Unit | Notes |
 |---|---|---|---|
-| `device` | string | n/a | Fixed per sketch (`DEVICE_NAME`). Used by the backend as the device ID everywhere. **Required** on `bme280` and `co2`: without it (or not a non-empty string) the backend logs a warning and drops the message (#170; before, it stored it as device `"esp32"`). |
+| `device` | string | n/a | Fixed per sketch (`DEVICE_NAME`). Used by the backend as the device ID everywhere. **Required** on `bme280` and `co2`: without it (or not a non-empty string, or longer than 255 characters, `config.DEVICE_ID_MAX`) the backend logs a warning and drops the message (#170; before, it stored it as device `"esp32"`). |
 | `uptime` | integer | seconds | Seconds since boot, from the 64-bit `esp_timer_get_time()` (`hpUptimeSeconds()` in the shared HomePing library), so it doesn't wrap (#8, #50, #75). Before: `millis() / 1000`, which wrapped after ~49.7 days. |
 | `rssi` | integer | dBm | `WiFi.RSSI()`. Sent on presence and co2, **not** on bme280. |
 | `reset_reason` | integer | n/a | Why the node last booted (#228): ESP-IDF `esp_reset_reason()` (`esp_reset_reason_t`), the same for every message until the next boot. 1 power-on, 3 software (`ESP.restart()`: WiFi timeout, OTA), 4 panic, 5 interrupt watchdog, 6 task watchdog, 7 other watchdog, 9 brownout, 14 power glitch, 15 CPU lockup (full list: `RESET_REASONS` in `backend/store.py`). On presence, bme280 and co2. Optional: nodes on older firmware don't send it. |
@@ -217,7 +219,7 @@ checks (see `notifications.md`). Missing fields default to: `presence`/`stationa
 | `err` | integer | n/a | yes | MH-Z19 library `errorCode`; `RESULT_OK` = 1 (WifWaf MHZ19 1.5.4 header; a valid reading needs it, #19) |
 | `rssi` | integer | dBm | yes | |
 | `uptime` | integer | s | yes | |
-| `co2` | integer | ppm | only if valid | 1–5000 |
+| `co2` | integer | ppm | only if valid | 1–5000. The backend stores a value outside 0…5000 (`config.CO2_VALID`) as null, keeping the rest of the payload, with a warning unless `co2_ok` is false |
 | `sensor_tmp` | integer | °C | only if valid | MH-Z19 internal temperature, coarse, not room temperature |
 
 Example (valid):
@@ -396,3 +398,4 @@ Fixed mismatches, oldest first (issue number: what changed).
   longer wraps after ~49.7 days (needs the nodes reflashed); eink_node no longer reboots every 12 h.
 - #132: retained `home/backend/history_24h` (hourly averages of the last 24 complete hours) for the web sparklines.
 - #228: `reset_reason` (ESP-IDF reset reason code) on presence, bme280 and co2; the backend adds it to `RESTART` events.
+- Payload validation: CO₂ outside 0…5000 ppm stored as null; device IDs over 255 characters dropped; non-JSON and non-object payloads logged by name.
