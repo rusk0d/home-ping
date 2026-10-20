@@ -8,23 +8,11 @@ A test suite and implementation can share assumptions—this catches bugs where
 both are wrong in the same way by computing answers a different route.
 """
 
-import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-try:
-    import requests
-    from requests.auth import HTTPBasicAuth
-except ImportError:
-    print("❌ requests module required: pip install requests", file=sys.stderr)
-    sys.exit(1)
-
-# Config
-DB_PATH = Path("data.db")
-API_BASE = "http://localhost:5000/api"
-PRESENCE_DEVICE = "home_ping_esp32"
-CONFIDENCE_MINUTES = 15
+from _common import API_BASE, api_get, connect_ro
+from config import CONFIDENCE_MINUTES
 
 
 def utcnow():
@@ -39,8 +27,7 @@ def parse_ts(ts_str):
 
 def load_db():
     """Load raw tables from production database."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = connect_ro()
 
     presence = [dict(row) for row in conn.execute("SELECT * FROM presence_readings ORDER BY ts")]
     readings = [dict(row) for row in conn.execute("SELECT * FROM readings ORDER BY ts")]
@@ -185,39 +172,13 @@ def pressure_3h_change(readings):
     return round(current - past, 1)
 
 
-# ---- API communication ----
-
-def get_api_auth():
-    """Load AUTH_USER and AUTH_PASS from .env."""
-    creds = {}
-    env_file = Path(".env")
-
-    if env_file.exists():
-        for line in env_file.read_text().split("\n"):
-            if "=" in line and not line.strip().startswith("#"):
-                k, v = line.split("=", 1)
-                creds[k] = v.strip('"').strip("'")
-
-    return creds.get("DASH_USER"), creds.get("DASH_PASS")
-
-
-def api_get(endpoint, auth):
-    """Fetch JSON from API endpoint, or None on error."""
-    try:
-        resp = requests.get(f"{API_BASE}/{endpoint}", auth=auth, timeout=5)
-        return resp.json() if resp.status_code == 200 else None
-    except Exception:
-        return None
-
-
 # ---- Validation and reporting ----
 
 class Validator:
-    def __init__(self, presence, readings, hourly, auth):
+    def __init__(self, presence, readings, hourly):
         self.presence = presence
         self.readings = readings
         self.hourly = hourly
-        self.auth = auth
         self.failures = []
         self.passed = 0
 
@@ -252,7 +213,7 @@ class Validator:
         """Run all validations."""
         print("📊 occupancy_stats(24)")
         reimp = occupancy_stats(self.presence, 24)
-        api = api_get("stats24h_combined", self.auth)
+        api = api_get("stats24h_combined")
 
         if api:
             for key in ["avg_occupancy", "occupied_hours", "coverage_hours"]:
@@ -260,7 +221,7 @@ class Validator:
 
         print("\n📊 calculate_combined_confidence(15)")
         reimp = calculate_combined_confidence(self.presence, CONFIDENCE_MINUTES)
-        api = api_get("latest", self.auth)
+        api = api_get("latest")
         self.check("confidence", reimp, api.get("confidence") if api else None, precision=0)
 
         print("\n📊 get_combined_occupancy()")
@@ -269,16 +230,16 @@ class Validator:
 
         print("\n📊 pressure_3h_change")
         reimp = pressure_3h_change(self.readings)
-        api_air = api_get("air", self.auth)
+        api_air = api_get("air")
         self.check("pressure_3h_change", reimp, api_air.get("pressure_3h_change") if api_air else None, precision=1)
 
         print("\n📊 hourly structure")
-        api_hourly = api_get("hourly?days=1", self.auth)
+        api_hourly = api_get("hourly?days=1")
         if api_hourly:
             print(f"  ✓ API hourly: {len(api_hourly)} hours")
             self.passed += 1
         else:
-            print(f"  ✗ Could not fetch hourly data")
+            print("  ✗ Could not fetch hourly data")
             self.failures.append("hourly: API fetch failed")
 
     def report(self):
@@ -298,18 +259,10 @@ class Validator:
 def main():
     print("🔍 IoT API Validation\n")
 
-    # Auth
-    user, password = get_api_auth()
-    if not user or not password:
-        print("❌ DASH_USER/DASH_PASS not found in .env")
-        return False
-
-    auth = HTTPBasicAuth(user, password)
-
     # Check API
     print("🌐 Checking API...")
-    if not api_get("devices", auth):
-        print("❌ API unreachable at http://localhost:5000/api")
+    if not api_get("devices"):
+        print(f"❌ API unreachable at {API_BASE}")
         print("   Start with: python server.py")
         return False
     print("  ✓ API reachable\n")
@@ -329,7 +282,7 @@ def main():
 
     # Validate
     print("="*60 + "\n")
-    v = Validator(presence, readings, hourly, auth)
+    v = Validator(presence, readings, hourly)
     v.validate_all()
     return v.report()
 
