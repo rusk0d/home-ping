@@ -236,6 +236,27 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
+## Outside the backend: uptime monitor (since #250)
+
+Everything above is sent by the backend, so none of it can say that the server itself is
+down or unreachable: on 2026-10-19 the VPS lost its network for 80 min (22:13-23:33, on the
+host's side) and the only trace was failed `NODE_OFFLINE` pushes in the server's own log.
+
+An outside check covers that: **UptimeRobot** (free plan, the user's account), alerts by its
+own app/email, not by FCM.
+
+| Monitor | Request | Every | Down when |
+|---|---|---|---|
+| web page | `HEAD https://<site>/` | 5 min | no answer, TLS error, non-2xx/3xx (nginx, certificate) |
+| backend | `HEAD https://<site>/api/health` | 5 min | no answer, or 502 (backend not running) / 503 (`/api/health` not ok: MQTT down, DB error, no node message for 5 min, #77) |
+
+- `/api/health` needs no login and its status code carries the result, so a plain HTTP
+  monitor is enough (no keyword check on the body).
+- Requests show in the nginx log as `UptimeRobot/2.0`; they come from changing IPs, so
+  nothing in ufw/fail2ban is specific to them (they get 200s, nothing to ban).
+- A backend restart shows as one failed check (502) when it lands on the check; that's
+  expected, not an outage.
+
 ## Summary table
 
 | `data.event` | Title | Condition | Cooldown | Source |
@@ -271,3 +292,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #172: `POST /api/register_token` removed.
 - #224: push when a sensor on a live node goes silent (`SENSOR_STATUS`).
 - #237: pressure-falling push (`PRESSURE`), switch `pressure`.
+- #250: outside uptime monitor (UptimeRobot on `/` and `/api/health`), documented here; no code change.
