@@ -1,4 +1,4 @@
-"""Server watchdog pushes (#176): the nightly backup is overdue, the disk is nearly full, or a
+"""Server watchdog pushes (#176): the nightly backup (or its S3 copy, #122) is overdue, the disk is nearly full, or a
 TLS certificate is about to expire (#206; renewal was broken for weeks without anyone noticing).
 
 UptimeRobot only sees /api/health, so these would otherwise go unnoticed until data is lost.
@@ -17,7 +17,8 @@ import ssl
 import time
 from pathlib import Path
 
-from config import (BACKUP_DIR, BACKUP_MAX_AGE_HOURS, CERT_CHECK, CERT_CHECK_INTERVAL, CERT_MIN_DAYS, DB,
+from config import (BACKUP_DIR, BACKUP_MAX_AGE_HOURS, BACKUP_S3_BUCKET, OFFSITE_MARKER, OFFSITE_MAX_AGE_HOURS,
+                    CERT_CHECK, CERT_CHECK_INTERVAL, CERT_MIN_DAYS, DB,
                     DISK_FREE_HYSTERESIS_MB, DISK_MIN_FREE_MB)
 from store import get_state, set_state
 from alerts import alert, alert_muted
@@ -34,6 +35,21 @@ def backup_age_hours(now=None):
     if not times:
         return float("inf")
     return ((now or time.time()) - max(times)) / 3600
+
+
+def offsite_age_hours(now=None):
+    """Hours since the last upload to S3 (#122); None when no bucket is set or there is no
+    backup folder."""
+    marker = Path(BACKUP_DIR) / OFFSITE_MARKER
+    if not BACKUP_S3_BUCKET or not marker.parent.is_dir():
+        return None
+    if not marker.exists():
+        return float("inf")
+    return ((now or time.time()) - marker.stat().st_mtime) / 3600
+
+
+def _ago(hours):
+    return "never" if hours == float("inf") else f"{hours / 24:.1f} days ago" if hours >= 48 else f"{hours:.0f} h ago"
 
 
 def disk_free_mb():
@@ -102,10 +118,14 @@ def _watch(name, bad, recovered, title, body, back_title, back_body):
 def check_watchdogs(now=None):
     age = backup_age_hours(now)
     if age is not None:
-        last = "never" if age == float("inf") else f"{age / 24:.1f} days ago" if age >= 48 else f"{age:.0f} h ago"
         _watch("backup", age > BACKUP_MAX_AGE_HOURS, age <= BACKUP_MAX_AGE_HOURS,
-               "Backup failed", f"No database backup for over {BACKUP_MAX_AGE_HOURS} h (last: {last})",
+               "Backup failed", f"No database backup for over {BACKUP_MAX_AGE_HOURS} h (last: {_ago(age)})",
                "Backup OK again", "The nightly database backup ran again")
+    age = offsite_age_hours(now)
+    if age is not None:
+        _watch("offsite", age > OFFSITE_MAX_AGE_HOURS, age <= OFFSITE_MAX_AGE_HOURS,
+               "Off-site backup failed", f"No backup uploaded to S3 for over {OFFSITE_MAX_AGE_HOURS} h (last: {_ago(age)})",
+               "Off-site backup OK again", "The database backup reached S3 again")
     free = disk_free_mb()
     _watch("disk", free < DISK_MIN_FREE_MB, free >= DISK_MIN_FREE_MB + DISK_FREE_HYSTERESIS_MB,
            "Disk almost full", f"Only {free:.0f} MB free on the server",
