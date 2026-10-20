@@ -9,21 +9,10 @@ These tests validate edge cases, boundary conditions, and common failure modes:
 - Stale data vs. fresh data
 """
 
-import sqlite3
 import sys
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import datetime, timezone
 
-try:
-    import requests
-    from requests.auth import HTTPBasicAuth
-except ImportError:
-    print("❌ requests module required", file=sys.stderr)
-    sys.exit(1)
-
-DB_PATH = Path("data.db")
-API_BASE = "http://localhost:5000/api"
-PRESENCE_DEVICE = "home_ping_esp32"
+from _common import api_get, connect_ro
 
 
 def utcnow():
@@ -35,36 +24,15 @@ def parse_ts(ts_str):
 
 
 def load_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = connect_ro()
     presence = [dict(row) for row in conn.execute("SELECT * FROM presence_readings ORDER BY ts")]
     conn.close()
     return presence
 
 
-def api_auth():
-    creds = {}
-    env_file = Path(".env")
-    if env_file.exists():
-        for line in env_file.read_text().split("\n"):
-            if "=" in line and not line.strip().startswith("#"):
-                k, v = line.split("=", 1)
-                creds[k] = v.strip('"').strip("'")
-    return creds.get("DASH_USER"), creds.get("DASH_PASS")
-
-
-def api_get(endpoint, auth):
-    try:
-        resp = requests.get(f"{API_BASE}/{endpoint}", auth=auth, timeout=5)
-        return resp.json() if resp.status_code == 200 else None
-    except Exception:
-        return None
-
-
 class RegressionTests:
-    def __init__(self, presence, auth):
+    def __init__(self, presence):
         self.presence = presence
-        self.auth = auth
         self.passed = 0
         self.failed = 0
         self.warnings = 0
@@ -108,7 +76,7 @@ class RegressionTests:
     def test_latest_endpoint_shape(self):
         """Test /api/latest returns expected fields."""
         print("\n🧪 Test: /api/latest shape")
-        data = api_get("latest", self.auth)
+        data = api_get("latest")
         self.assert_not_none("latest fetches", data)
 
         if data:
@@ -119,7 +87,7 @@ class RegressionTests:
     def test_stats24h_values_in_range(self):
         """Test /api/stats24h_combined returns reasonable values."""
         print("\n🧪 Test: /api/stats24h_combined value ranges")
-        data = api_get("stats24h_combined", self.auth)
+        data = api_get("stats24h_combined")
         self.assert_not_none("stats24h_combined fetches", data)
 
         if data:
@@ -142,14 +110,14 @@ class RegressionTests:
         print("\n🧪 Test: confidence in [0,100]")
 
         # Check /api/latest
-        data = api_get("latest", self.auth)
+        data = api_get("latest")
         if data and data.get("confidence") is not None:
             conf = data["confidence"]
             self.warn("latest.confidence in [0,100]", conf < 0 or conf > 100,
                      f"value {conf}")
 
         # Check /api/latest_all per device
-        data = api_get("latest_all", self.auth)
+        data = api_get("latest_all")
         if data:
             for device, entry in data.items():
                 if device == "combined":
@@ -163,7 +131,7 @@ class RegressionTests:
         """Test occupied is 0, 1, or None."""
         print("\n🧪 Test: occupied in {0, 1, None}")
 
-        data = api_get("latest", self.auth)
+        data = api_get("latest")
         if data and data.get("occupied") is not None:
             occ = data["occupied"]
             self.assert_eq("occupied value", occ in (0, 1), True)
@@ -172,7 +140,7 @@ class RegressionTests:
         """Test /api/air pressure_3h_change is reasonable."""
         print("\n🧪 Test: /api/air pressure_3h_change")
 
-        data = api_get("air", self.auth)
+        data = api_get("air")
         if data and data.get("pressure_3h_change") is not None:
             trend = data["pressure_3h_change"]
             # Pressure typically doesn't change more than ±5 hPa in 3 hours
@@ -183,7 +151,7 @@ class RegressionTests:
         """Test hourly temperature bounds."""
         print("\n🧪 Test: /api/hourly temp bounds")
 
-        data = api_get("hourly?days=1", self.auth)
+        data = api_get("hourly?days=1")
         if data:
             for hour in data:
                 avg = hour.get("avg_temp")
@@ -210,7 +178,7 @@ class RegressionTests:
                      f"latest data {age_mins:.0f} min old")
 
         # Check API
-        data = api_get("latest", self.auth)
+        data = api_get("latest")
         if data and data.get("ts"):
             # API returns ISO 8601, strip Z
             ts_str = data["ts"].rstrip("Z")
@@ -224,7 +192,6 @@ class RegressionTests:
 
     def report(self):
         """Print summary."""
-        total = self.passed + self.failed + self.warnings
         print("\n" + "="*60)
         print(f"Results: {self.passed} passed, {self.failed} failed, {self.warnings} warnings")
         print()
@@ -234,17 +201,9 @@ class RegressionTests:
 def main():
     print("🔍 IoT API Regression Tests\n")
 
-    # Setup
-    user, password = api_auth()
-    if not user or not password:
-        print("❌ DASH_USER/DASH_PASS not found in .env")
-        return False
-
-    auth = HTTPBasicAuth(user, password)
-
     # Check API
     print("🌐 Checking API...")
-    if not api_get("devices", auth):
+    if not api_get("devices"):
         print("❌ API unreachable")
         return False
     print("  ✓ API reachable\n")
@@ -260,7 +219,7 @@ def main():
 
     # Run tests
     print("="*60 + "\n")
-    tests = RegressionTests(presence, auth)
+    tests = RegressionTests(presence)
     tests.test_latest_endpoint_shape()
     tests.test_stats24h_values_in_range()
     tests.test_confidence_is_0_to_100()
