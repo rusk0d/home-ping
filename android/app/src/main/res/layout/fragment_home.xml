@@ -448,6 +448,19 @@
                 android:textColor="@color/text"
                 app:strokeColor="@color/card_edge" />
 
+            <!-- Server (#260): the backend watchdog's view, from /api/server_status; hidden
+                 until it loads (e.g. a backend without the endpoint) -->
+            <TextView
+                android:id="@+id/server_section"
+                style="@style/HomeSection"
+                android:text="Server"
+                android:visibility="gone" />
+
+            <com.david.homeenv.ui.AccentCard
+                android:id="@+id/server_card"
+                style="@style/HomeCard"
+                android:visibility="gone" />
+
         </LinearLayout>
     </ScrollView>
 </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
