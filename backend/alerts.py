@@ -42,7 +42,8 @@ def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind
     """Send a push and record it in events as "sent, ...", "failed, ..." or "muted (...), ...".
 
     The cooldown only starts after a successful send; a failed one is retried
-    after PUSH_RETRY_SECONDS instead of being silenced for the whole cooldown.
+    after PUSH_RETRY_SECONDS (longer each time in a row, #251) instead of being
+    silenced for the whole cooldown.
     [kind] (one of NOTIFY_KINDS) can be switched off or muted by quiet hours (#82);
     a muted alert is handled like a sent one (cooldown, once per outage) without a push.
     Returns "sent", "muted", or False when the send failed.
@@ -52,6 +53,7 @@ def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind
         log.info("%s %s muted (%s): %s", device, event_type, muted, detail)
         log_event(device, event_type, f"muted ({muted}), {detail}")
         if cooldown_key:
+            state.PUSH_FAILURES.pop(cooldown_key, None)
             set_cooldown(cooldown_key, time.time())
         return "muted"
     ok = send_push(title, body, data)
@@ -59,8 +61,24 @@ def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind
     log_event(device, event_type, f"{status}, {detail}")
     if cooldown_key:
         now = time.time()
-        set_cooldown(cooldown_key, now if ok else now - NOTIFICATION_COOLDOWN + PUSH_RETRY_SECONDS)
+        if ok:
+            state.PUSH_FAILURES.pop(cooldown_key, None)
+            set_cooldown(cooldown_key, now)
+        else:
+            # Back-dated cooldown start, so the usual cooldown check lets it through again
+            # after the delay
+            delay = retry_delay(cooldown_key)
+            log.info("%s %s: push failed, retry in %d s", device, event_type, delay)
+            set_cooldown(cooldown_key, now - NOTIFICATION_COOLDOWN + delay)
     return "sent" if ok else False
+
+
+def retry_delay(key):
+    """Seconds until a failed push of [key] is retried: PUSH_RETRY_SECONDS by how many
+    failed in a row, then NOTIFICATION_COOLDOWN. Counts this failure."""
+    n = state.PUSH_FAILURES.get(key, 0)
+    state.PUSH_FAILURES[key] = n + 1
+    return PUSH_RETRY_SECONDS[n] if n < len(PUSH_RETRY_SECONDS) else NOTIFICATION_COOLDOWN
 
 
 # -------------------------
