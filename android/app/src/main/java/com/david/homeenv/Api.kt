@@ -9,7 +9,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 /**
  * The backend's REST API (contracts/api.md): one HTTP client, base URL and Basic auth
@@ -32,6 +38,38 @@ object Api {
     } catch (e: Exception) {
         Log.w(TAG, "GET $path failed: $e")
         null
+    }
+
+    /** A JSON object from [fetchObject], or why there is none ([error], short, for the UI). */
+    class Fetched(val json: JSONObject?, val error: String?)
+
+    /**
+     * Like [getObject], but keeps the reason of a failure (#252): "timeout (8 s)", "DNS failed",
+     * "no connection", "TLS error", "HTTP 401", "bad response", ...
+     */
+    fun fetchObject(path: String, timeoutS: Long? = null): Fetched = try {
+        execute(Request.Builder().url(url(path)).get(), timeoutS).use { r ->
+            if (!r.isSuccessful) {
+                Log.w(TAG, "GET $path: HTTP ${r.code}")
+                Fetched(null, "HTTP ${r.code}")
+            } else {
+                val json = r.body?.string()?.let { runCatching { JSONObject(it) }.getOrNull() }
+                Fetched(json, if (json == null) "bad response" else null)
+            }
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "GET $path failed: $e")
+        Fetched(null, reason(e, timeoutS))
+    }
+
+    private fun reason(e: Exception, timeoutS: Long?): String = when (e) {
+        is UnknownHostException -> "DNS failed"
+        is SocketTimeoutException -> "timeout"                 // connect or read timeout
+        is InterruptedIOException -> if (timeoutS != null) "timeout (${timeoutS} s)" else "timeout"   // call timeout
+        is ConnectException -> "no connection"
+        is SSLException -> "TLS error"
+        is IOException -> "network error"
+        else -> e.javaClass.simpleName
     }
 
     // Unexpected bodies (e.g. an HTML error page) become null instead of an exception
