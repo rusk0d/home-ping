@@ -44,3 +44,6 @@ backend/token.json
 web/config.js
 # Test runs
 .pytest_cache/
+
+# Deploy target for backend/deploy.sh (user@host)
+backend/.deploy-host
