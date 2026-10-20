@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -189,14 +190,17 @@ class HomeEnvWidget : AppWidgetProvider() {
 
         // Fetch data async (run by onReceive under goAsync)
         fetches += {
+            var error: String? = null
             val fresh = try {
                 // CO2 comes from /api/air; fetched alongside so both fit in the time budget
                 var air: JSONObject? = null
                 val airFetch = thread { air = Api.getObject("/api/air", FETCH_TIMEOUT_S) }
-                val latest = Api.getObject("/api/latest", FETCH_TIMEOUT_S)
+                val latest = Api.fetchObject("/api/latest", FETCH_TIMEOUT_S)
                 airFetch.join(FETCH_TIMEOUT_S * 1000)
-                latest?.let { render(context, manager, widgetId, it, air) }
-            } catch (_: Exception) {
+                error = latest.error
+                latest.json?.let { render(context, manager, widgetId, it, air) }
+            } catch (e: Exception) {
+                error = e.javaClass.simpleName
                 null // widgets must NEVER crash
             }
 
@@ -205,7 +209,7 @@ class HomeEnvWidget : AppWidgetProvider() {
                     fresh.attachClicks()
                     manager.updateAppWidget(widgetId, fresh)
                 } else {
-                    val views = offline(context)
+                    val views = offline(context, error)
                     views.attachClicks()
                     manager.partiallyUpdateAppWidget(widgetId, views)
                 }
@@ -266,14 +270,30 @@ class HomeEnvWidget : AppWidgetProvider() {
         return views
     }
 
-    /** Server unreachable: keep the values, flag the status line. */
-    private fun offline(context: Context): RemoteViews {
+    /**
+     * Server unreachable: keep the values, flag the status line with the reason (#252) — the
+     * phone's side when it explains it (no network, Data Saver), else the request's error.
+     */
+    private fun offline(context: Context, error: String?): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_homeenv)
         views.setInt(R.id.w_online_dot, "setColorFilter", Levels.color(context, R.color.bad))
-        views.setTextViewText(R.id.w_online, "Server unreachable")
+        views.setTextViewText(R.id.w_online, phoneSideReason(context) ?: "Server: ${error ?: "unreachable"}")
         views.setTextColor(R.id.w_online, Levels.color(context, R.color.bad))
         views.setTextViewText(R.id.w_updated, "tried " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()))
         return views
+    }
+
+    private fun phoneSideReason(context: Context): String? = try {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        when {
+            cm.activeNetwork == null -> "No network"
+            // Data Saver only blocks background data on metered networks (mobile data)
+            cm.isActiveNetworkMetered &&
+                cm.restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED -> "Data Saver blocks it"
+            else -> null
+        }
+    } catch (_: Exception) {
+        null
     }
 
     private fun setLevel(context: Context, views: RemoteViews, id: Int, level: Level?) {
