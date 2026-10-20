@@ -69,6 +69,10 @@ HUMIDITY_HYSTERESIS = 2
 # BME280 operating range: a reading outside it (e.g. 178 °C / 100 % / -121 hPa from a
 # disconnected sensor) is dropped as a whole (#57)
 ENV_VALID = {"temp_c": (-40, 85), "humidity": (0, 100), "pressure": (300, 1100)}
+# MH-Z19C range, ppm: a CO₂ value outside it is stored as null on its own (a different chip
+# from the BME280). The firmware already sends co2_ok=false there; this guards other senders.
+CO2_VALID = (0, 5000)
+DEVICE_ID_MAX = 255   # longer device IDs are dropped, not stored
 TEMP_HYSTERESIS = 0.5
 # Pressure falling fast (#237): the hourly average dropped this much over the window, a storm
 # sign. Once per excursion; it ends when the change is back above threshold + hysteresis (-2.0).
