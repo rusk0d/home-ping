@@ -158,6 +158,24 @@ systemctl status iot-backend --no-pager; curl -s https://<your domain>/api/healt
 Both units run with `UMask=0077` (#169), so `data.db`, its WAL files and the backups are
 readable only by `iot`.
 
+### Updating the server
+
+`backend/deploy.sh` (#259), run from the repo on your PC (Git Bash on Windows), with the
+server as `user@host` in `DEPLOY_HOST` or in `backend/.deploy-host` (not committed):
+
+```
+backend/deploy.sh --check   # compare /opt/iot with main, change nothing
+backend/deploy.sh           # list the differences, ask, deploy
+```
+
+It only deploys a clean `main` that matches `origin/main`, and copies what git has (LF line
+endings), not the working copy. It copies the backend files that differ, then `chown iot:iot`.
+It runs `pip install -r requirements.txt` when that file changed, and restarts `iot-backend`
+when a module it loads changed, then waits for `/api/health`. `.env`, the Firebase JSON,
+`data.db` and the backups are never touched. The systemd units and fail2ban files are only
+compared with the installed ones, and installing them stays manual. `.py` files that exist
+only on the server are listed, not deleted.
+
 ### Ports
 
 Public (ufw): 22 (SSH), 80/443 (nginx: the web page, `/api/` and `/mqtt`), 8883 (MQTT
