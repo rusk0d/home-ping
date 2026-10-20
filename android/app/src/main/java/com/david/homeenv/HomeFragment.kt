@@ -129,9 +129,13 @@ class HomeFragment : Fragment() {
         val restarts: JSONObject?,
         val air: JSONObject?,
         val hourly: JSONArray?,
+        val server: JSONObject?,
     )
 
-    /** One request to /api/dashboard (#128); all null when it fails. Blocking: call it on Dispatchers.IO. */
+    /**
+     * /api/dashboard (#128), then /api/server_status (#260) only if that worked; all null when
+     * it fails. Blocking: call it on Dispatchers.IO.
+     */
     private fun loadSnapshot(): Snapshot {
         val d = Api.getObject("/api/dashboard")
         return Snapshot(
@@ -141,6 +145,7 @@ class HomeFragment : Fragment() {
             restarts = d?.optJSONObject("restarts"),
             air = d?.optJSONObject("air"),
             hourly = d?.optJSONArray("hourly"),
+            server = d?.let { Api.getObject("/api/server_status") },
         )
     }
 
@@ -168,6 +173,7 @@ class HomeFragment : Fragment() {
         renderDevices(s.devices, s.latest)
         s.restarts?.let { renderRestarts(it) }
         s.stats?.let { renderStats(it) }
+        s.server?.let { renderServer(it) }
         updateAges()
     }
 
@@ -298,19 +304,27 @@ class HomeFragment : Fragment() {
     }
 
     private fun deviceRow(name: String, meta: String, online: Boolean?): View {
-        val ctx = requireContext()
         val d = resources.displayMetrics.density
-        val card = AccentCard(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        return AccentCard(requireContext()).apply {
             setPadding((16 * d).toInt(), (12 * d).toInt(), (16 * d).toInt(), (12 * d).toInt())
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 .apply { bottomMargin = (8 * d).toInt() }
+            addView(statusLine(name, meta, online))
+        }
+    }
+
+    /** A dot (good / bad, faint for null) and a bold name over a muted line; devices and Server card. */
+    private fun statusLine(name: String, meta: String, ok: Boolean?): LinearLayout {
+        val ctx = requireContext()
+        val d = resources.displayMetrics.density
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
         val dot = View(ctx).apply {
             setBackgroundResource(R.drawable.dot)
             backgroundTintList = android.content.res.ColorStateList.valueOf(
-                Levels.color(ctx, when (online) { true -> R.color.good; false -> R.color.bad; null -> R.color.faint })
+                Levels.color(ctx, when (ok) { true -> R.color.good; false -> R.color.bad; null -> R.color.faint })
             )
             layoutParams = LinearLayout.LayoutParams((8 * d).toInt(), (8 * d).toInt()).apply { marginEnd = (12 * d).toInt() }
         }
@@ -326,9 +340,71 @@ class HomeFragment : Fragment() {
             setTextColor(Levels.color(ctx, R.color.muted))
             textSize = 12f
         })
-        card.addView(dot)
-        card.addView(texts)
-        return card
+        row.addView(dot)
+        row.addView(texts)
+        return row
+    }
+
+    /** Server card (#260): one line per check of /api/server_status, red where it fails. */
+    private fun renderServer(json: JSONObject) {
+        val d = resources.displayMetrics.density
+        val lines = mutableListOf<Triple<String, String, Boolean?>>()
+
+        json.optJSONObject("backend")?.let { be ->
+            val mqtt = be.optBoolean("mqtt_connected")
+            val up = be.optTs("started")?.let { "up ${formatUptime(((System.currentTimeMillis() - it.time) / 1000).toInt())}" }
+            lines += Triple("Backend", listOfNotNull(up, if (mqtt) "MQTT connected" else "MQTT disconnected").joinToString(" · "), mqtt)
+        }
+        json.optJSONObject("backup")?.let { bk ->
+            val last = bk.optTs("last")
+            val meta = if (last == null) "none yet" else listOfNotNull(
+                formatWhen(last),
+                bk.optNum("size_bytes")?.let { "%.1f MB".format(Locale.US, it / 1_000_000) },
+                "${bk.optInt("count")} kept",
+            ).joinToString(" · ")
+            lines += Triple("Backup", meta, bk.optBoolean("ok"))
+        }
+        json.optJSONObject("offsite")?.let { off ->
+            val meta = off.optTs("last")?.let { "uploaded ${formatWhen(it)}" } ?: "never uploaded"
+            lines += Triple("S3 copy", meta, off.optBoolean("ok"))
+        }
+        json.optJSONObject("disk")?.let { disk ->
+            val mb = disk.optInt("free_mb")
+            val free = if (mb >= 1024) "%.1f GB free".format(Locale.US, mb / 1024.0) else "$mb MB free"
+            lines += Triple("Disk", free, disk.optBoolean("ok"))
+        }
+        json.optJSONArray("certs")?.let { certs ->
+            for (i in 0 until certs.length()) {
+                val c = certs.optJSONObject(i) ?: continue
+                val expires = c.optTs("expires")
+                val error = if (c.isNull("error")) null else c.optString("error")
+                val detail = when {
+                    error != null -> error
+                    expires != null -> {
+                        val days = (expires.time - System.currentTimeMillis()) / 86_400_000
+                        "until ${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(expires)} ($days d)"
+                    }
+                    else -> "not checked yet"
+                }
+                val ok = if (c.isNull("ok")) null else c.optBoolean("ok")
+                lines += Triple("Certificate", "${c.optString("target")} · $detail", ok)
+            }
+        }
+
+        b.serverCard.removeAllViews()
+        lines.forEachIndexed { i, (name, meta, ok) ->
+            val line = statusLine(name, meta, ok)
+            if (i > 0) {
+                line.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    .apply { topMargin = (10 * d).toInt() }
+            }
+            b.serverCard.addView(line)
+        }
+        // Red strip when anything fails, as the watchdog would push
+        val anyBad = lines.any { it.third == false }
+        b.serverCard.accentColor = Levels.color(requireContext(), if (anyBad) R.color.bad else R.color.good)
+        b.serverSection.visibility = View.VISIBLE
+        b.serverCard.visibility = View.VISIBLE
     }
 
     private fun renderRestarts(json: JSONObject) {
@@ -435,6 +511,20 @@ class HomeFragment : Fragment() {
         seconds < 60 -> "${seconds}s ago"
         seconds < 3600 -> "${seconds / 60}m ago"
         else -> "${seconds / 3600}h ago"
+    }
+
+    /** "today 03:30", "yesterday 03:30" or "Oct 18 03:30", local time. */
+    private fun formatWhen(t: Date): String {
+        val then = Calendar.getInstance().apply { time = t }
+        val now = Calendar.getInstance()
+        val daysAgo = (now.get(Calendar.YEAR) - then.get(Calendar.YEAR)) * 365 +
+            now.get(Calendar.DAY_OF_YEAR) - then.get(Calendar.DAY_OF_YEAR)
+        val hhmm = SimpleDateFormat("HH:mm", Locale.getDefault()).format(t)
+        return when (daysAgo) {
+            0 -> "today $hhmm"
+            1 -> "yesterday $hhmm"
+            else -> SimpleDateFormat("MMM d", Locale.US).format(t) + " $hhmm"
+        }
     }
 
     private fun formatUptime(seconds: Int): String {
