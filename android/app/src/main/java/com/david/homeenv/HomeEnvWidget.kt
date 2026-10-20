@@ -29,7 +29,9 @@ class HomeEnvWidget : AppWidgetProvider() {
     companion object {
         private const val TAG = "HomeEnvWidget"
         private const val ACTION_AUTO_UPDATE = "com.david.homeenv.AUTO_UPDATE"
-        private const val UPDATE_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes
+        // 2 minutes while the screen is on. The alarm doesn't wake the phone: with the screen
+        // off it waits, and fires as soon as the screen comes on (fresh values on unlock).
+        private const val UPDATE_INTERVAL_MS = 2 * 60 * 1000L
         private const val FETCH_TIMEOUT_S = 8L  // stay well inside goAsync's ~10 s budget
         private const val GAUGE_GAP_DP = 12     // layout: marginStart between the metric columns
         private const val CO2_GAUGE_HEIGHT_DP = 10f   // layout: w_co2_gauge height (thinner than the 16dp ones)
@@ -118,20 +120,21 @@ class HomeEnvWidget : AppWidgetProvider() {
 
         val triggerAtMillis = SystemClock.elapsedRealtime() + UPDATE_INTERVAL_MS
 
-        // Exact when allowed: always below Android 12, on 12+ with the exact-alarm
-        // permission. Otherwise inexact. Both still fire while the phone is idle.
+        // ELAPSED_REALTIME, not _WAKEUP: no refreshes nobody sees while the screen is off
+        // (up to 720 wakeups a day with the radio before). Exact when allowed: always below
+        // Android 12, on 12+ with the exact-alarm permission. Otherwise inexact.
         val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
         try {
             if (exact) {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAtMillis, pendingIntent)
+                alarmManager.setExact(AlarmManager.ELAPSED_REALTIME, triggerAtMillis, pendingIntent)
             } else {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAtMillis, pendingIntent)
+                alarmManager.set(AlarmManager.ELAPSED_REALTIME, triggerAtMillis, pendingIntent)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Exact alarm failed, using an inexact one: $e")
             // Last resort (e.g. the exact-alarm permission was revoked in between)
             try {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAtMillis, pendingIntent)
+                alarmManager.set(AlarmManager.ELAPSED_REALTIME, triggerAtMillis, pendingIntent)
             } catch (e2: Exception) {
                 Log.w(TAG, "Couldn't schedule the widget update: $e2")
             }
