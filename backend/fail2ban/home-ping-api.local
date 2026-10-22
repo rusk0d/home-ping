@@ -7,6 +7,10 @@ filter   = home-ping-api
 port     = http,https
 # The access log nginx writes for the site (check: grep access_log /etc/nginx/sites-enabled/*)
 logpath  = /var/log/nginx/access.log
+# Read that file. Ubuntu 24.04 sets "backend = systemd" by default (jail.d/defaults-debian.conf),
+# which ignores logpath and watches the journal, where nginx doesn't log: the jail would
+# silently never ban (found after the 2026-10-22 upgrade)
+backend  = auto
 maxretry = 10
 findtime = 10m
 bantime  = 1h
