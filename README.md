@@ -231,5 +231,10 @@ fail2ban-regex /var/log/nginx/access.log /etc/fail2ban/filter.d/home-ping-api.co
 systemctl reload fail2ban && fail2ban-client status home-ping-api
 ```
 
+The status must list `File list: /var/log/nginx/access.log`. "Journal matches" instead means
+the jail watches the systemd journal, where nginx doesn't log, so it never bans. The jail sets
+`backend = auto` against the Ubuntu 24.04 default of `systemd`; other jails that read log files
+need the same line.
+
 A ban covers the whole site (ports 80/443) for that IP. To lift one:
 `fail2ban-client set home-ping-api unbanip <ip>`.
