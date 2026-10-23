@@ -35,7 +35,6 @@ jobs:
         working-directory: android
         run: |
           cp local.properties.example local.properties
-          chmod +x gradlew
           ./gradlew assemblePreview lintPreview --console=plain
       - name: Upload the lint report
         if: failure()
