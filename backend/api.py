@@ -22,6 +22,7 @@ from store import (
 from alerts import notification_settings
 import server_checks
 from ingest import hourly_occupancy_today
+from air import window_open_on_leave
 
 log = logging.getLogger(__name__)
 
@@ -497,6 +498,11 @@ def occupancy_arm():
     armed = "1" if data["armed"] else "0"
     set_state("occupancy_armed", armed)
     log_event("system", "OCCUPANCY_ARMED", f"{armed} ({source})")
+    if armed == "1" and source == "location":   # the phone just left home (#245)
+        try:
+            window_open_on_leave()
+        except Exception as e:
+            log.warning("window check on leaving failed: %s", e)
     return jsonify({"armed": armed == "1"})
 
 
