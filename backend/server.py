@@ -59,7 +59,7 @@ def start():
     state.mqttc.loop_start()
     threading.Thread(target=summaries_loop, daemon=True).start()
     threading.Thread(target=node_check_loop, daemon=True).start()
-    threading.Thread(target=air_loop, daemon=True).start()   # #245, observe-only
+    threading.Thread(target=air_loop, daemon=True).start()   # #245
 
 
 def main():

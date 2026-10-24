@@ -1,5 +1,5 @@
-"""#245 (observe-only): window openings from the CO₂/temperature readings, CO₂ excursions
-while someone is home, and the Open-Meteo weather. Events only, no pushes.
+"""#245: window openings from the CO₂/temperature readings, CO₂ excursions while someone is
+home, and the Open-Meteo weather. The pushes themselves are in test_issue245_air_pushes.py.
 """
 
 import io
@@ -16,6 +16,9 @@ def test_issue245_air_observe(env):
     import server
     import config, store, air
     server.prepare()
+    import alerts
+    pushes = []
+    alerts.send_push = lambda title, body, data=None: pushes.append(body) or True
 
     t0 = store.utcnow().replace(microsecond=0) - timedelta(hours=3)
 
@@ -78,13 +81,15 @@ def test_issue245_air_observe(env):
     run(t2, [(23.0, 50, 1250)] * 25)
     high = events("AIR_HIGH")
     check("the window scenarios above were high too, nobody home then",
-          len(high) == 3 and all(h.endswith("nobody home: no push") for h in high[:2]))
-    check("CO₂ ≥ 1200 for 10 min, someone home: AIR_HIGH once", high[2].endswith("would push"))
+          len(high) == 3 and all(h.startswith("no push yet (nobody home)") for h in high[:2]))
+    check("CO₂ ≥ 1200 for 10 min, someone home: AIR_HIGH pushed once",
+          high[2].startswith("sent, CO₂ 1250 ppm") and pushes == ["CO₂ 1250 ppm: open a window for 5-10 minutes."])
     oks = len(events("AIR_OK"))
     run(t2 + timedelta(seconds=25 * 30), [(23.0, 50, 1000)] * 5)
     check("1000 ppm: same excursion", len(events("AIR_HIGH")) == 3 and len(events("AIR_OK")) == oks)
     run(t2 + timedelta(seconds=30 * 30), [(23.0, 50, 850)])
-    check("below 900: AIR_OK", len(events("AIR_OK")) == oks + 1)
+    check("below 900: AIR_OK, replacing the push", len(events("AIR_OK")) == oks + 1
+          and events("AIR_OK")[-1].startswith("sent, ") and pushes[-1] == "CO₂ is down to 850 ppm.")
 
     # The node sends CO₂ and temperature/humidity as separate messages (separate rows): the
     # verdict still compares the indoor air with outside
@@ -104,7 +109,7 @@ def test_issue245_air_observe(env):
     conn.commit()
     air.check_air(t3 + timedelta(seconds=23 * 30))
     check("CO₂ and temperature in separate rows: humidity still compared",
-          "would hold back (outside" in events("AIR_HIGH")[-1])
+          "the outside air is humid" in events("AIR_HIGH")[-1])
     air.WEATHER = None
 
     # Weather: parsing, the verdicts, and the "no coordinates = no fetch" default
@@ -117,11 +122,11 @@ def test_issue245_air_observe(env):
         check("no WEATHER_LAT/LON: no fetch", get.call_count == 1 and air.weather() is None)
     air.WEATHER = dict(w)
     check("weather in the text", air.outside_text(air.weather()) == "outside 9.8 °C 80 %")
-    check("cold outside air is drier: would push", air.air_verdict(23.0, 50) == "would push")
+    check("cold outside air is drier: just air", air.air_advice(23.0, 50) == "open a window for 5-10 minutes")
     air.WEATHER["precipitation"] = 0.4
-    check("raining: held back", air.air_verdict(23.0, 50) == "would hold back (raining)")
+    check("raining: tilt", air.air_advice(23.0, 50) == "it's raining, tilt a window for a while")
     air.WEATHER.update(temp=24.0, humidity=90, precipitation=0)
-    check("muggy outside: held back", air.air_verdict(23.0, 50).startswith("would hold back (outside"))
+    check("muggy outside: keep it short", air.air_advice(23.0, 50) == "the outside air is humid, keep it short")
     air.WEATHER["at"] = time.time() - config.WEATHER_MAX_AGE - 1
     check("stale weather counts as none", air.weather() is None)
     check("absolute humidity", abs(air.absolute_humidity(22, 50) - 9.7) < 0.1
