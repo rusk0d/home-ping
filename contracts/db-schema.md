@@ -126,13 +126,16 @@ Known keys:
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
 | `ts_utc` | `'1'` once the timestamps were converted to UTC | no | `init_db()` (#65) | `init_db()` |
 | `node_offline:<device>` | `'1'` while that node's current outage has been pushed, `'m'` while it is offline but the push was muted (#82), else `'0'` | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
-| `notify:<kind>` | `'1'` / `'0'` per alert type (`humidity`, `temperature`, `radar`, `nodes`); missing = `'1'` | no | `POST /api/notification_settings` (#82) | `alert()` via `alert_muted()`, `GET /api/notification_settings` |
+| `notify:<kind>` | `'1'` / `'0'` per alert type (`humidity`, `temperature`, `radar`, `nodes`, `pressure`, `air`); missing = `'1'` | no | `POST /api/notification_settings` (#82) | `alert()` via `alert_muted()`, `GET /api/notification_settings` |
 | `quiet_hours` | `'1'` / `'0'`; missing = `'0'` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 | `quiet_start` / `quiet_end` | `"HH:MM"`, server local time; missing = `22:00` / `07:00` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 | `hourly_until` | `"YYYY-MM-DD HH:00:00"` UTC: the hour `rollup_hourly()` last stopped at (the then-current, incomplete hour); missing = never ran | no | `rollup_hourly()` (#129) | `rollup_hourly()` |
-| `air:window` | `"<UTC ts>\|<°C before the opening>"` (ts = the last reading before the fall, so the logged duration is the real one) while a window-open spell runs (a fall of the temperature below that makes its rise mark the close, otherwise CO₂'s), `''` after it |\|temp"` / `"<UTC ts>\|co2"` while a window-open spell runs (what fell, so what marks the close), `''` after it | no | `air.check_window()` (#245) | `air.check_window()` |
+| `air:window` | `"<UTC ts>\|<°C before the opening>"` (ts = the last reading before the fall, so the logged duration is the real one) while a window-open spell runs (a fall of the temperature below that makes its rise mark the close, otherwise CO₂'s), `''` after it | no | `air.check_window()` (#245) | `air.check_window()` |
 | `air:window_closed` | UTC ts of the last close: a fall within `WINDOW_MINUTES` after it isn't a new opening | no | `air.check_window()` (#245) | `air.check_window()` |
 | `air:co2_high` | UTC ts while a CO₂ excursion (`AIR_HIGH`) runs, `''` after it | no | `air.check_co2()` (#245) | `air.check_co2()` |
+| `air:co2_push` | UTC ts of the excursion's last "Time to air out" push (sent or muted; after a failed one back-dated so it is retried in 15 min), `''` when none yet / after the excursion | no | `air.push_co2()` (#245 step 2) | `air.push_co2()` (reminder due after 3 h) |
+| `air:co2_shown` | `'1'` once a push of this excursion was sent, so `AIR_OK` replaces it on the phone; `''` otherwise | no | `air.push_co2()`, `air.check_co2()` | `air.check_co2()` |
+| `air:window_nudged` | the `air:window` start ts of the spell that got "Close the window?" (once per spell) | no | `air.nudge_close()` (#245 step 2) | `air.nudge_close()` |
 
 ### `hourly` (long-term history, since #129)
 
@@ -183,9 +186,11 @@ Event types written by `server.py`:
 | `OCCUPANCY_ARMED` | `system` | `1 (manual)` / `0 (location)` etc.: the new state and the source (#238; before that a bare `1` / `0`) | `POST /api/occupancy_arm` |
 | `NOTIFICATION_SETTINGS` | `system` | `notify:humidity=0, quiet_start=23:00` | `POST /api/notification_settings` changed something (#82) |
 | `WINDOW_OPEN` | CO₂ node ID | `CO₂ -690 ppm, -1.3 °C in 10 min; outside 9.8 °C 80 %` | CO₂ fell ≥ 200 ppm or the temperature ≥ 0.8 °C within 10 min (#245, `air.py`, no push) |
+| `WINDOW_CLOSE` | CO₂ node ID | `sent, open 27 min, CO₂ 500 ppm, inside 21.0 °C, outside 6.0 °C 60 %` | "Close the window?" push attempted, once per spell (#245 step 2) |
+| `WINDOW_LEFT_OPEN` | CO₂ node ID | `sent, open 12 min` | "Window still open?" push attempted when the geofence armed occupancy during a spell (#245 step 2) |
 | `WINDOW_CLOSED` | CO₂ node ID | `after 18 min (temperature rising), inside 21.6 °C, CO₂ 480 ppm` | the open spell ended: temperature (or, when it didn't fall, CO₂) climbing again, or `no close seen` after 180 min (#245) |
-| `AIR_HIGH` | CO₂ node ID | `CO₂ 1250 ppm for 10 min, outside 9.8 °C 80 %: would push` | CO₂ ≥ 1200 ppm for 10 min; the end says what #245's push would do (`nobody home: no push`, `would hold back (raining)`, …). Once per excursion |
-| `AIR_OK` | CO₂ node ID | `CO₂ 850 ppm, 95 min after AIR_HIGH` | that excursion ended (< 900 ppm) (#245) |
+| `AIR_HIGH` | CO₂ node ID | `sent, CO₂ 1250 ppm, outside 9.8 °C 80 %: open a window for 5-10 minutes` / `no push yet (nobody home), CO₂ 1250 ppm for 10 min, …` | "Time to air out" push attempted (CO₂ ≥ 1200 ppm for 10 min, again every 3 h while high: `CO₂ still … after N h`), or the excursion started without a push (`nobody home`, `quiet hours`; pushed later once that's over). Until 2026-10-24 (observe-only): `…: would push` / `nobody home: no push` / `would hold back (…)` |
+| `AIR_OK` | CO₂ node ID | `CO₂ 850 ppm, 95 min after AIR_HIGH`; `sent, …` when it replaced a push ("Air is fresh again") | that excursion ended (< 900 ppm) (#245) |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12), or
 `muted (off), ` / `muted (quiet hours), ` when the alert type is switched off or in quiet hours (#82).
@@ -233,3 +238,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #174: WAL journal mode and `synchronous=NORMAL`.
 - #228: `RESTART` event value ends with `, reason <name> (<code>)` when the node sends `reset_reason`.
 - #245: event types `WINDOW_OPEN`, `WINDOW_CLOSED`, `AIR_HIGH`, `AIR_OK` (observe-only) and `system_state` keys `air:window`, `air:window_closed`, `air:co2_high`.
+- #245 step 2: `AIR_HIGH`/`AIR_OK` push (new values), event types `WINDOW_CLOSE`, `WINDOW_LEFT_OPEN`, keys `air:co2_push`, `air:co2_shown`, `air:window_nudged`, `notify:air`.

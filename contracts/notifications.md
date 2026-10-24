@@ -48,7 +48,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 - One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
   `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
   and back online; also the server watchdog, WATCHDOG, #176, and silent sensors, SENSOR_STATUS,
-  #224), `pressure` (PRESSURE, #237). All on by default.
+  #224), `pressure` (PRESSURE, #237), `air` (AIR, #245). All on by default.
 - **Quiet hours**: off by default. When on, the alert types above are muted between
   `start` and `end` (server local time, Budapest; the window may cross midnight,
   `start` inclusive, `end` exclusive).
@@ -239,6 +239,32 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   data `{"event": "PRESSURE", "device": "pressure"}`. Logs `PRESSURE_FALLING` (device `pressure`).
 - Thresholds are conventional barometer rules (maritime climates); review after a winter of data.
 
+### 10. Air: `AIR` (since #245 step 2)
+
+`air.py`, every 60 s (`air_loop`), from the CO₂ node's last 10 min of readings
+(`AIR_DEVICE`) and Open-Meteo's outside weather. Logs-only 2026-10-19..24, then pushes.
+Switch `air`; **quiet hours postpone** the pushes (they go out at the next check after
+quiet hours end, if still due), except "Window still open?", which they mute.
+Android: its own silent channel (no sound or vibration), from the app change of #245.
+
+| Push | `data.device` | When | Title / body |
+|---|---|---|---|
+| Time to air out | `co2` | CO₂ ≥ `AIR_CO2_HIGH` (**1200** ppm) for 10 min starts an excursion; pushed while the newest CO₂ is still ≥ 1200 and someone is home (a radar occupied within `QUIET_MINUTES_BEFORE_ALERT`, 30 min) | `Time to air out` / `CO₂ 1250 ppm: <advice>.`; later `CO₂ still 1300 ppm after 3 h: <advice>.` |
+| reminder | `co2` | the same, `AIR_REMINDER_HOURS` (**3 h**) after the last push (sent or muted) | same, replaces the previous |
+| Air is fresh again | `co2` | the excursion ends (CO₂ < `AIR_CO2_OK`, **900** ppm), only if a push of it was sent | `Air is fresh again` / `CO₂ is down to 850 ppm.` (replaces it) |
+| Close the window? | `window` | once per window spell: open ≥ **20** min, CO₂ < **600** ppm, outside ≥ **5 °C** colder than inside | `Close the window?` / `Open for 25 min, CO₂ is down to 520 ppm and it's 6 °C outside: …` |
+| Window still open? | `window` | `POST /api/occupancy_arm` with `armed: true, source: "location"` (geofence: left home) while a spell runs | `Window still open?` / `You left home and a window has been open for 12 min.` |
+
+- `<advice>`: `open a window for 5-10 minutes`; `it's raining, tilt a window for a while`
+  (precipitation > 0); `the outside air is humid, keep it short` (outside absolute humidity
+  ≥ inside). The weather changes the advice, it never holds the push back.
+- Nobody home or quiet hours at the start of an excursion: logged as `AIR_HIGH`
+  `no push yet (<why>), …`, pushed once that's over if CO₂ is still ≥ 1200.
+- A failed "Time to air out" is retried after `AIR_RETRY_MINUTES` (15); a failed
+  "Close the window?" isn't (it's a hint).
+- data `{"event": "AIR", "device": "co2" | "window"}`: one notification slot each.
+- Window spells (`WINDOW_OPEN`/`WINDOW_CLOSED`) and the state keys: `db-schema.md`.
+
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
 ## Outside the backend: uptime monitor (since #250)
@@ -275,6 +301,7 @@ own app/email, not by FCM.
 | `WATCHDOG` | Backup failed / Disk almost full / Off-site backup failed / Certificate expires soon, Certificate problem (+ "OK again", "Certificate renewed") | newest backup > 26 h old / < 1 GB free / no S3 upload for 26 h / certificate < 14 days or invalid | once per excursion | 5 min check (certificates hourly) |
 | `SENSOR_STATUS` | Sensor not reporting / Sensor reporting again | node online, no valid BME280 / CO₂ value for 15 min / valid again | once per excursion | 30 s check |
 | `PRESSURE` | Pressure falling fast | hourly pressure average −3.0 hPa or more below 3 h earlier | once per excursion (until > −2.0), 15 min | 5 min check after the hourly rollup |
+| `AIR` | Time to air out / Air is fresh again (`co2`); Close the window? / Window still open? (`window`) | CO₂ ≥ 1200 ppm for 10 min, someone home / < 900 again; spell ≥ 20 min with fresh air and cold outside; geofence left home during a spell | every 3 h while high; once per spell; once per leave | 60 s check; `POST /api/occupancy_arm` |
 
 ## Mismatches and issues
 
@@ -297,6 +324,7 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #172: `POST /api/register_token` removed.
 - #224: push when a sensor on a live node goes silent (`SENSOR_STATUS`).
 - #237: pressure-falling push (`PRESSURE`), switch `pressure`.
+- #245: air pushes (`AIR`), switch `air`, after five days logs-only.
 - #250: outside uptime monitor (UptimeRobot on `/` and `/api/health`), documented here; no code change.
 - #122: watchdog push when the nightly backup wasn't uploaded to S3 for 26 h (`offsite`).
 - #251: failed pushes back off (1, 2, 5, 10, then every 15 min per key) instead of retrying every 60 s.

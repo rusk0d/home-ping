@@ -339,6 +339,8 @@ boolean; a missing or non-boolean `armed`, or a missing/non-JSON body, is a `400
 the state unchanged. `source` is optional (#238): missing = `"manual"`; any other value is a `400`.
 Sets `system_state.occupancy_armed` to `'1'`/`'0'` and logs event
 `OCCUPANCY_ARMED` (device `"system"`, value `1 (manual)`, `0 (location)` etc.). Response: `{"armed": true|false}`.
+Arming with `"source": "location"` (the phone left home) also pushes "Window still open?" when a
+window-open spell is running (#245, `notifications.md` → `AIR`); that push never fails the request.
 Clients: Android Home toggle switch (manual); the phone's home/away geofence sends `"source": "location"` (#239).
 
 ### GET `/api/occupancy_status`
@@ -354,11 +356,11 @@ Which alerts send a push, and quiet hours. Stored in `system_state` (see `db-sch
 so the settings apply to every phone. Behaviour: `notifications.md` → "Settings".
 
 ```json
-{"humidity":true,"temperature":true,"radar":true,"nodes":true,"pressure":true,
+{"humidity":true,"temperature":true,"radar":true,"nodes":true,"pressure":true,"air":true,
  "quiet_hours":{"enabled":false,"start":"22:00","end":"07:00"}}
 ```
 
-- `humidity`, `temperature`, `radar`, `nodes`, `pressure` (#237): bool, default `true`. `false` mutes that alert type.
+- `humidity`, `temperature`, `radar`, `nodes`, `pressure` (#237), `air` (#245): bool, default `true`. `false` mutes that alert type.
 - `quiet_hours.enabled`: bool, default `false`. `start`/`end`: `"HH:MM"` (24 h, server
   local time = Budapest), defaults `22:00`/`07:00`. The window may cross midnight.
 - Occupancy alerts are not in here: they keep their own switch (`/api/occupancy_arm`)
@@ -466,4 +468,5 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #228: `/api/restarts` (and `/api/dashboard` `restarts`) adds `last_reason`.
 - #237: `/api/notification_settings` has a `pressure` switch.
 - #260: `GET /api/server_status` added (the watchdog's view for the app's Server card).
+- #245: `/api/notification_settings` has an `air` switch; `POST /api/occupancy_arm` from the geofence can push "Window still open?".
 - #236: the occupancy arm switch moved from the Android home screen to its notification settings (no API change).

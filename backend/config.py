@@ -80,8 +80,8 @@ TEMP_HYSTERESIS = 0.5
 PRESSURE_DROP_THRESHOLD = -3.0  # hPa
 PRESSURE_HYSTERESIS = 1.0       # hPa
 PRESSURE_WINDOW_HOURS = 3
-# Air-out helper (#245), observe-only: logs events, no pushes yet. First guesses from the
-# main node's readings of 2026-10-17..19 (a window opening fell 250-1000 ppm and 0.8-1.7 °C
+# Air-out helper (#245): window spells and CO₂ excursions, pushes under the "air" switch since
+# step 2 (logs-only 2026-10-19..24). Thresholds from the main node's readings of 2026-10-17..19 (a window opening fell 250-1000 ppm and 0.8-1.7 °C
 # in 10 min; closing it brought the temperature back +0.3-1.5 °C within 10 min).
 AIR_DEVICE = PRESENCE_DEVICE      # the node with the CO₂ sensor (main node)
 AIR_CHECK_INTERVAL = 60           # seconds
@@ -94,6 +94,11 @@ WINDOW_CLOSE_CO2_RISE = 50        # ...or ppm rise (10+ min in), when the temper
 WINDOW_MAX_MINUTES = 180          # give up on a spell without a close
 AIR_CO2_HIGH = 1200               # ppm for the whole window while someone is home -> AIR_HIGH
 AIR_CO2_OK = 900                  # ...and the excursion ends below this
+AIR_REMINDER_HOURS = 3            # push again while CO₂ is still above AIR_CO2_HIGH this long after the last one
+AIR_RETRY_MINUTES = 15            # a failed CO₂ push is tried again after this
+WINDOW_CLOSE_AFTER_MINUTES = 20   # "Close the window?" once a spell is this old...
+WINDOW_CLOSE_CO2_FRESH = 600      # ...CO₂ is below this (the sensor reads ~100 ppm low)...
+WINDOW_CLOSE_COLDER_OUTSIDE = 5   # ...and outside is this many °C colder than inside
 # Outdoor weather from Open-Meteo (no key). WEATHER_LAT/WEATHER_LON in .env; empty = no weather.
 WEATHER_LAT = os.environ.get("WEATHER_LAT", "")
 WEATHER_LON = os.environ.get("WEATHER_LON", "")
@@ -125,6 +130,6 @@ CERT_CHECK = [t.strip() for t in os.environ.get("CERT_CHECK", "").split(",") if 
 CERT_MIN_DAYS = 14               # push when a certificate expires sooner (renewal runs at 30)
 CERT_CHECK_INTERVAL = 3600       # seconds between certificate checks
 # Notification settings (#82)
-NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes", "pressure")
+NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes", "pressure", "air")
 QUIET_DEFAULTS = {"start": "22:00", "end": "07:00"}
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
