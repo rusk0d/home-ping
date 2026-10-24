@@ -18,6 +18,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         const val CHANNEL_SENSORS = "homeenv_channel"
         /** Arrival alerts, separate so they can stay on when sensor alerts are muted. */
         const val CHANNEL_OCCUPANCY = "occupancy"
+        /** Air-out hints (#245): no sound or vibration, they're not urgent. */
+        const val CHANNEL_AIR = "air"
 
         /** Creates the channels; called at app start so FCM can use them before the first message. */
         fun createChannels(context: Context) {
@@ -27,6 +29,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             )
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL_OCCUPANCY, "Occupancy alerts", NotificationManager.IMPORTANCE_HIGH)
+            )
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_AIR, "Air quality", NotificationManager.IMPORTANCE_LOW)
             )
         }
     }
@@ -52,7 +57,11 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         )
 
         createChannels(this)
-        val channelId = if (event == "OCCUPIED") CHANNEL_OCCUPANCY else CHANNEL_SENSORS
+        val channelId = when (event) {
+            "OCCUPIED" -> CHANNEL_OCCUPANCY
+            "AIR" -> CHANNEL_AIR
+            else -> CHANNEL_SENSORS
+        }
 
         val notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.drawable.ic_notification)   // white silhouette; a colour icon shows as a blob

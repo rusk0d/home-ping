@@ -36,7 +36,8 @@ inferred then and hasn't been confirmed since.
 - `onMessageReceived` reads `title`/`body`/`event`/`device` from `data`, falling back to
   a `notification` block (older backends). Tapping the notification opens `MainActivity`.
 - Channels (created at app start, IMPORTANCE_HIGH): `occupancy` ("Occupancy alerts") for
-  `OCCUPIED`, `homeenv_channel` ("Sensor alerts") for everything else. The manifest makes
+  `OCCUPIED`, `air` ("Air quality", IMPORTANCE_LOW: no sound or vibration, #245) for `AIR`,
+  `homeenv_channel` ("Sensor alerts") for everything else. The manifest makes
   `homeenv_channel` FCM's default channel for notification messages it shows itself.
 - Notification ID = hash of `event/device`: a repeat of the same alert replaces the
   previous one, different alerts stack.
