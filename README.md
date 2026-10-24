@@ -52,7 +52,9 @@ in its working directory.
   The sketches share code from `firmware/libraries/HomePing` (WiFi, MQTT with the status
   last will, uptime, radar presence). Make it visible to the IDE once by linking it into
   your Arduino libraries folder, e.g. on Windows (PowerShell):
-  `New-Item -ItemType Junction -Path "$HOME\Documents\Arduino\libraries\HomePing" -Target "<repo>\firmware\libraries\HomePing"`.
+  `New-Item -ItemType Junction -Path "$HOME\Documents\Arduino\libraries\HomePing" -Target "<repo>\firmware\libraries\HomePing"`,
+  or on Linux: `ln -s <repo>/firmware/libraries/HomePing ~/Arduino/libraries/HomePing`
+  (the folder is `arduino-cli config get directories.user` + `/libraries`).
   The link follows the repo, so a `git pull` updates it too.
 - **Backend:** `pip install -r backend/requirements.txt`, then `python server.py` in
   `backend/` with a `.env` next to it (serves the API on 127.0.0.1:5000 with waitress).
