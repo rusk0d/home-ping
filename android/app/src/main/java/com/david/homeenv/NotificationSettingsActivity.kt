@@ -38,7 +38,7 @@ class NotificationSettingsActivity : AppCompatActivity() {
 
     private val kindSwitches by lazy {
         mapOf("humidity" to b.humidity, "temperature" to b.temperature, "radar" to b.radar, "nodes" to b.nodes,
-              "pressure" to b.pressure)
+              "pressure" to b.pressure, "air" to b.air)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
