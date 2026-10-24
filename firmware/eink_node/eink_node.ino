@@ -224,22 +224,6 @@ bool routeWanted(const String &routeId) {
 bool fetchAllDepartures(TramDeparture departures[], int &count) {
   count = 0;
 
-  WiFiClientSecure tls;
-  tls.setCACert(BKK_ROOT_CA);
-  HTTPClient http;
-  http.begin(tls, bkkUrl);
-  http.setTimeout(10000);
-
-  int httpCode = http.GET();
-  if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("BKK API error: %d\n", httpCode);
-    http.end();
-    return false;
-  }
-
-  String payload = http.getString();
-  http.end();
-
   // Keep only the fields used below (#126): the full response holds much more (stops,
   // agencies, alerts, ...). "*" matches every trip/route id.
   JsonDocument filter;
@@ -252,8 +236,27 @@ bool fetchAllDepartures(TramDeparture departures[], int &count) {
   filter["data"]["references"]["trips"]["*"]["routeId"] = true;
   filter["data"]["references"]["routes"]["*"]["shortName"] = true;
 
+  WiFiClientSecure tls;
+  tls.setCACert(BKK_ROOT_CA);
+  HTTPClient http;
+  // HTTP/1.0: no chunked encoding, so the body can be parsed straight from the stream.
+  // Reading it into a String first (getString) needs it in one piece in RAM: with
+  // includeReferences=true it reached ~98 KB in 2026-10 (nearby stops, routes, a service
+  // alert), more than the free heap, and arrived cut off ("IncompleteInput").
+  http.useHTTP10(true);
+  http.begin(tls, bkkUrl);
+  http.setTimeout(10000);
+
+  int httpCode = http.GET();
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.printf("BKK API error: %d\n", httpCode);
+    http.end();
+    return false;
+  }
+
   JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
+  DeserializationError error = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+  http.end();
 
   if (error) {
     Serial.print("JSON parse error: ");
