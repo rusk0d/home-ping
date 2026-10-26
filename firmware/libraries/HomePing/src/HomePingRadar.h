@@ -37,8 +37,13 @@ inline void hpPublishPresence(PubSubClient& mqtt, ld2410& radar,
   // Why the node last booted (#228): the ESP-IDF esp_reset_reason_t code, e.g. 1 power-on,
   // 3 software (ESP.restart(): WiFi timeout, OTA), 4 panic, 6 task watchdog, 9 brownout
   doc["reset_reason"]    = (int)esp_reset_reason();
+  // Memory health for the metrics: free heap now, the lowest it has been since boot, and
+  // the largest block that can still be allocated (fragmentation; TLS needs ~40 KB in one)
+  doc["heap_free"]       = ESP.getFreeHeap();
+  doc["heap_min"]        = ESP.getMinFreeHeap();
+  doc["heap_block"]      = ESP.getMaxAllocHeap();
 
-  char payload[256];
+  char payload[HP_MQTT_BUFFER - 64];   // room for the topic and the MQTT header
   serializeJson(doc, payload);
 
   if (mqtt.publish(topic, payload, true)) {

@@ -38,10 +38,15 @@ inline void hpConnectWiFi(const char* ssid, const char* pass) {
 // "offline" (retained) on home/esp32/<device>/status about 1.5 x keepalive later; on
 // connect the node publishes "online" there (#13).
 const unsigned long HP_MQTT_RETRY_MS = 5000;
+// PubSubClient's default 256-byte buffer holds the whole packet (header, topic, payload);
+// a bigger packet isn't sent, and publish() just returns false. The presence message
+// with the heap fields is ~250 bytes on its own.
+const uint16_t HP_MQTT_BUFFER = 512;
 
 inline bool hpConnectMQTT(PubSubClient& mqtt, const char* device,
                           const char* user, const char* pass) {
   if (mqtt.connected()) return true;
+  if (mqtt.getBufferSize() < HP_MQTT_BUFFER) mqtt.setBufferSize(HP_MQTT_BUFFER);
   static uint32_t lastAttempt = 0;   // uint32_t like millis() on the ESP32, so the wrap works the same in the host test
   static bool attempted = false;
   uint32_t now = millis();
