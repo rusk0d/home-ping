@@ -9,7 +9,8 @@ notifications via Firebase. A small web page and an Android app display the data
 - /backend   Flask app: server.py (entry point), config, state, store (SQLite,
              creates the DB schema on start), alerts, nodes,
              server_checks (watchdog pushes), ingest (MQTT), air (weather,
-             window/CO₂ observation), api; tools/ has validation scripts against the
+             window/CO₂ observation), metrics (Prometheus), api; nginx/ the Tailscale-only
+             metrics site; tools/ has validation scripts against the
              live DB and API (README there)
 - /web       HTML page (index.html + app.js + i18n.js for EN/HU, no inline scripts: CSP), connects to MQTT
              directly from the browser; nginx/ has the site's security headers

@@ -18,7 +18,7 @@ import pytest
 
 from support import BACKEND
 
-BACKEND_MODULES = ("server", "config", "state", "store", "alerts", "nodes", "server_checks", "ingest", "air", "api")
+BACKEND_MODULES = ("server", "config", "state", "store", "alerts", "nodes", "server_checks", "metrics", "ingest", "air", "api")
 STUBBED = ("firebase_admin", "firebase_admin.credentials", "firebase_admin.messaging",
            "paho", "paho.mqtt", "paho.mqtt.client")
 

@@ -8,7 +8,7 @@
 #
 # The server (user@host) comes from $DEPLOY_HOST or backend/.deploy-host (not committed).
 # Copies what git has at HEAD (LF line endings), never the working copy, and never touches
-# .env, the Firebase JSON, data.db or backups. The systemd units and fail2ban files are copied
+# .env, the Firebase JSON, data.db or backups. The systemd units, fail2ban and nginx files are copied
 # to /opt/iot too, but installing them stays manual: the script only says when the installed
 # ones differ. Files only on the server are listed, not deleted.
 set -euo pipefail
@@ -59,6 +59,7 @@ installed_path() {
     systemd/*) echo "/etc/systemd/system/${1#systemd/}" ;;
     fail2ban/*.conf) echo "/etc/fail2ban/filter.d/${1#fail2ban/}" ;;
     fail2ban/*.local) echo "/etc/fail2ban/jail.d/${1#fail2ban/}" ;;
+    nginx/*) echo "/etc/nginx/sites-available/${1#nginx/}" ;;
   esac
 }
 
@@ -159,4 +160,4 @@ EOF
 else
   echo "No backend module changed: no restart."
 fi
-for h in "${install_hints[@]}"; do echo "Install by hand (then systemctl daemon-reload / fail2ban reload): $h"; done
+for h in "${install_hints[@]}"; do echo "Install by hand (then systemctl daemon-reload / fail2ban reload / nginx -t and reload): $h"; done

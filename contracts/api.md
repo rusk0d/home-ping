@@ -64,6 +64,7 @@ inferred then and hasn't been confirmed since.
 | GET | `/api/health` | **none** | external uptime monitor (#77) |
 | GET | `/api/dashboard` | Basic | Android Home (#128) |
 | GET | `/api/server_status` | Basic | Android Home, Server card (#260) |
+| GET | `/api/metrics` | **Bearer** (`METRICS_TOKEN`) | Prometheus on the home server, over Tailscale |
 
 ---
 
@@ -376,6 +377,52 @@ or time change is one POST; on failure the screen goes back to the last confirme
 
 ---
 
+### GET `/api/metrics`
+
+Prometheus metrics, text exposition format (`text/plain; version=0.0.4`), all gauges.
+Auth: `Authorization: Bearer <METRICS_TOKEN>` (`.env`), its own token, not the app's login.
+No `METRICS_TOKEN` configured → `404`; missing or wrong token → `401`.
+
+Reached at `http://<VPS Tailscale IP>:9105/metrics`: an nginx server block on port 9105 that
+only allows `100.64.0.0/10`, with its own access log (`backend/nginx/home-ping-metrics.conf`;
+ufw opens 9105 on `tailscale0` only). Also behind the public `/api/` proxy, where the token
+is all that guards it.
+
+| Metric | Labels | From |
+|---|---|---|
+| `homeping_node_last_seen_age_seconds` | `device` | `devices.last_seen` (every node, also offline ones) |
+| `homeping_node_uptime_seconds` | `device` | presence `uptime` |
+| `homeping_node_wifi_rssi_dbm` | `device` | presence `rssi` |
+| `homeping_node_reset_reason` | `device` | presence `reset_reason` (`esp_reset_reason_t`) |
+| `homeping_node_heap_free_bytes` | `device` | presence `heap_free` |
+| `homeping_node_heap_min_free_bytes` | `device` | presence `heap_min` |
+| `homeping_node_heap_max_block_bytes` | `device` | presence `heap_block` |
+| `homeping_radar_connected` | `device` | presence `radar_connected` (1/0) |
+| `homeping_occupied` | `device` | derived `occupied` (1/0) |
+| `homeping_temperature_celsius`, `homeping_humidity_percent`, `homeping_pressure_hpa` | `device` | newest non-null `readings` value |
+| `homeping_co2_ppm` | `device` | newest `readings.co2` with `co2_ok = 1` |
+| `homeping_backend_uptime_seconds` | none | since the backend started |
+| `homeping_mqtt_connected` | none | 1/0 |
+| `homeping_mqtt_last_message_age_seconds` | none | last live MQTT message (absent before the first) |
+
+- The presence values are kept in memory (`state.NODE_HEALTH`), the newest per node; sensor
+  values come from `readings`. Both are left out once older than `METRICS_FRESH_SECONDS`
+  (600 s), so a dead node's last numbers don't stay on the graphs (`last_seen_age` keeps growing).
+- A sample is missing when the node didn't send that field (older firmware: no heap fields).
+- `device` label values are escaped (`\`, `"`, newline) as the format requires.
+
+Prometheus scrape config (on the home server):
+
+```yaml
+- job_name: home-ping
+  scrape_interval: 30s
+  metrics_path: /metrics
+  authorization:
+    credentials_file: /etc/prometheus/home-ping-token   # the METRICS_TOKEN value
+  static_configs:
+    - targets: ["<VPS Tailscale IP>:9105"]
+```
+
 ### GET `/api/health` (since #77)
 
 For an external uptime monitor. **No auth**, so the monitor needs no password and failed
@@ -468,5 +515,6 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #228: `/api/restarts` (and `/api/dashboard` `restarts`) adds `last_reason`.
 - #237: `/api/notification_settings` has a `pressure` switch.
 - #260: `GET /api/server_status` added (the watchdog's view for the app's Server card).
+- Metrics: `GET /api/metrics` (Prometheus) added, with its own bearer token.
 - #245: `/api/notification_settings` has an `air` switch; `POST /api/occupancy_arm` from the geofence can push "Window still open?".
 - #236: the occupancy arm switch moved from the Android home screen to its notification settings (no API change).

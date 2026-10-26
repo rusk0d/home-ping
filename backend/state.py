@@ -17,13 +17,14 @@ NODE_OFFLINE = {}       # device -> whether its offline push was sent (False: mu
 NODE_LOCK = threading.Lock()  # offline checks (own thread) vs. messages (MQTT thread)
 STARTED_AT = time.time()      # reset by start(); the offline check and health count from it
 LAST_MESSAGE_AT = None  # last live (non-retained) MQTT message, for /api/health (#77)
+NODE_HEALTH = {}        # device -> newest presence health values + "at" (unix time), for /api/metrics
 mqttc = None            # MQTT client, created by start()
 
 
 def reset():
     """Back to a fresh process (prepare() calls it before loading the saved alert state)."""
     global STARTED_AT, LAST_MESSAGE_AT
-    for d in (LAST_UPTIME, RADAR_FAIL_COUNT, LAST_NOTIFICATION, RADAR_ALERTED, NODE_OFFLINE):
+    for d in (LAST_UPTIME, RADAR_FAIL_COUNT, LAST_NOTIFICATION, RADAR_ALERTED, NODE_OFFLINE, NODE_HEALTH):
         d.clear()
     STARTED_AT = time.time()
     LAST_MESSAGE_AT = None
