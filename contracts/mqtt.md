@@ -181,11 +181,18 @@ Backend handling: env handler. Stores `temp_c` → `readings.temp`, `humidity`,
 | `signal` | integer | 0–100 energy (checked on hardware 2026-10-17, #19) | Same selection rule as `distance` |
 | `rssi` | integer | dBm | |
 | `uptime` | integer | s | |
+| `reset_reason` | integer | n/a | see Common fields (#228) |
+| `heap_free` | integer | bytes | `ESP.getFreeHeap()`: free heap now (since the metrics change; older firmware doesn't send the three heap fields) |
+| `heap_min` | integer | bytes | `ESP.getMinFreeHeap()`: the lowest free heap since boot |
+| `heap_block` | integer | bytes | `ESP.getMaxAllocHeap()`: the largest block that can be allocated (fragmentation; a TLS connection needs ~40 KB in one piece) |
+
+The message is ~250 bytes with the heap fields, over PubSubClient's default 256-byte packet
+buffer (header and topic included), so `hpConnectMQTT()` raises it to `HP_MQTT_BUFFER` (512).
 
 Example:
 
 ```json
-{"device":"hallway_presence_esp32","radar_connected":true,"presence":true,"stationary":true,"moving":false,"distance":142,"signal":37,"rssi":-61,"uptime":3605}
+{"device":"hallway_presence_esp32","radar_connected":true,"presence":true,"stationary":true,"moving":false,"distance":142,"signal":37,"rssi":-61,"uptime":3605,"reset_reason":1,"heap_free":148220,"heap_min":121884,"heap_block":110580}
 ```
 
 Backend handling: presence handler (key `presence` present). Derives
@@ -398,4 +405,5 @@ Fixed mismatches, oldest first (issue number: what changed).
   longer wraps after ~49.7 days (needs the nodes reflashed); eink_node no longer reboots every 12 h.
 - #132: retained `home/backend/history_24h` (hourly averages of the last 24 complete hours) for the web sparklines.
 - #228: `reset_reason` (ESP-IDF reset reason code) on presence, bme280 and co2; the backend adds it to `RESTART` events.
+- Metrics: `heap_free`, `heap_min`, `heap_block` on presence (both nodes, shared library); MQTT packet buffer 512 bytes.
 - Payload validation: CO₂ outside 0…5000 ppm stored as null; device IDs over 255 characters dropped; non-JSON and non-object payloads logged by name.

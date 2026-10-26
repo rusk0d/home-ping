@@ -16,6 +16,7 @@ int main() {
   CHECK("broker down: returns false", !ok);
   CHECK("broker down: one attempt", mqtt.attempts == 1);
   CHECK("never waits (no delay)", fakeDelayed == 0);
+  CHECK("buffer raised for the presence message with heap fields", mqtt.getBufferSize() == HP_MQTT_BUFFER);
 
   // Calls inside the retry window don't hit the broker
   for (int i = 0; i < 100; ++i) { fakeMillis += 40; hpConnectMQTT(mqtt, "node1", "u", "p"); }
@@ -47,6 +48,7 @@ int main() {
   mqtt.isConnected = false;
   fakeMillis += 5000; ok = hpConnectMQTT(mqtt, "node1", "u", "p");
   CHECK("dropped: reconnects", ok && mqtt.attempts == 4);
+  CHECK("buffer set once, not on every attempt", mqtt.bufferResizes == 1);
 
   // millis() wrap: the retry window still works (unsigned subtraction)
   mqtt.up = false; mqtt.isConnected = false;

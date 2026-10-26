@@ -1,5 +1,6 @@
 // Fake broker connection for test/test_homeping.cpp (#120)
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -25,4 +26,8 @@ struct PubSubClient {
     return isConnected;
   }
   int state() { return up ? 0 : -2; }
+  uint16_t bufferSize = 256;   // PubSubClient's default
+  int bufferResizes = 0;
+  uint16_t getBufferSize() { return bufferSize; }
+  bool setBufferSize(uint16_t size) { bufferSize = size; ++bufferResizes; return true; }
 };
