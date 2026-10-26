@@ -118,6 +118,7 @@ PubSubClient mqttClient(espClient);
 // ========================
 struct TramDeparture {
   String route;
+  bool bus;          // route type BUS (e.g. the 223E while the 2B is replaced): bus icon
   String headsign;
   int minutes;
   bool valid;
@@ -181,6 +182,18 @@ void drawTramIcon(int x, int y, int size) {
   display.drawCircle(x + 3 * size / 4, wheelY, 3, GxEPD_BLACK);
 }
 
+void drawBusIcon(int x, int y, int size) {
+  // Body: longer and lower than the tram, with a strip of windows
+  int h = size * 0.7;
+  display.drawRoundRect(x, y, size, h, 3, GxEPD_BLACK);
+  display.drawRoundRect(x + 1, y + 1, size - 2, h - 2, 2, GxEPD_BLACK);
+  display.fillRect(x + 3, y + 3, size - 6, h / 3, GxEPD_BLACK);
+
+  // Wheels
+  display.fillCircle(x + size / 4, y + h, 2, GxEPD_BLACK);
+  display.fillCircle(x + 3 * size / 4, y + h, 2, GxEPD_BLACK);
+}
+
 void drawWifiIcon(int x, int y) {
   int rssi = WiFi.RSSI();
   int bars = (rssi >= -55) ? 3 : (rssi >= -70) ? 2 : (rssi >= -85) ? 1 : 0;
@@ -235,6 +248,7 @@ bool fetchAllDepartures(TramDeparture departures[], int &count) {
   stopTimeFilter["stopHeadsign"] = true;
   filter["data"]["references"]["trips"]["*"]["routeId"] = true;
   filter["data"]["references"]["routes"]["*"]["shortName"] = true;
+  filter["data"]["references"]["routes"]["*"]["type"] = true;
 
   WiFiClientSecure tls;
   tls.setCACert(BKK_ROOT_CA);
@@ -302,6 +316,7 @@ bool fetchAllDepartures(TramDeparture departures[], int &count) {
     headsign = removeAccents(headsign);
 
     departures[count].route = routeText;
+    departures[count].bus = references["routes"][routeId]["type"] == "BUS";
     departures[count].headsign = headsign;
     departures[count].minutes = diff;
     departures[count].valid = true;
@@ -465,7 +480,7 @@ void render(const DepartureResult &r) {
     display.setFont(&FreeSans9pt7b);
     display.setTextColor(GxEPD_BLACK);
     display.setCursor(80, 15);
-    display.print("NEXT TRAMS");
+    display.print("DEPARTURES");
 
     // WiFi indicator
     drawWifiIcon(270, 15);
@@ -482,32 +497,44 @@ void render(const DepartureResult &r) {
       int yPos = 48 + (i * 35);
 
       if (departures[i].valid) {
-        // Tram icon
-        drawTramIcon(5, yPos - 15, 18);
+        if (departures[i].bus) {
+          drawBusIcon(5, yPos - 15, 18);
+        } else {
+          drawTramIcon(5, yPos - 15, 18);
+        }
 
-        // Route number
+        // Route number, then the separator after it: "223E" is twice as wide as "2B"
         display.setFont(&FreeSans9pt7b);
         display.setTextColor(GxEPD_BLACK);
         display.setCursor(30, yPos);
         display.print(departures[i].route);
-
-        // Separator
-        display.setCursor(50, yPos);
+        int16_t bx, by;
+        uint16_t bw, bh;
+        display.getTextBounds(departures[i].route, 30, yPos, &bx, &by, &bw, &bh);
+        int sepX = max(50, 30 + (int)bw + 5);
+        display.setCursor(sepX, yPos);
         display.print("-");
 
-        // Destination
-        display.setCursor(60, yPos);
+        // Destination, cut to fit before the minutes
+        int mins = departures[i].minutes;
+        int xPos = (mins < 10) ? 260 : 245;
+        int destX = sepX + 10;
         String dest = departures[i].headsign;
-        if (dest.length() > 16) {
-          dest = dest.substring(0, 13) + "...";
+        display.getTextBounds(dest, destX, yPos, &bx, &by, &bw, &bh);
+        if (destX + (int)bw > xPos - 6) {
+          while (dest.length() > 1) {
+            dest.remove(dest.length() - 1);
+            display.getTextBounds(dest + "...", destX, yPos, &bx, &by, &bw, &bh);
+            if (destX + (int)bw <= xPos - 6) break;
+          }
+          dest += "...";
         }
+        display.setCursor(destX, yPos);
         display.print(dest);
 
         // Departure time - medium size
         display.setFont(&FreeSans12pt7b);
         display.setTextColor(GxEPD_BLACK);
-        int mins = departures[i].minutes;
-        int xPos = (mins < 10) ? 260 : 245;
         display.setCursor(xPos, yPos);
         display.print(mins);
         display.print("'");
