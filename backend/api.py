@@ -13,13 +13,14 @@ from flask import Flask, jsonify, request, Response, abort
 import state
 from config import (
     AUTH_PASS, AUTH_USER, DAILY_MAX_DAYS, HEALTH_MAX_MESSAGE_AGE, HEARTBEAT_TIMEOUT, HHMM, HOURLY_MAX_DAYS,
-    MOULD_HOURS, MOULD_HUMIDITY, NOTIFY_KINDS,
+    METRICS_TOKEN, MOULD_HOURS, MOULD_HUMIDITY, NOTIFY_KINDS,
 )
 from store import (
     calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
     get_state, log_event, occupancy_stats, parse_ts, set_state, utcnow,
 )
 from alerts import notification_settings
+import metrics
 import server_checks
 from ingest import hourly_occupancy_today
 from air import window_open_on_leave
@@ -109,6 +110,19 @@ def health():
     ok = mqtt_ok and fresh and db_ok
     body = {"ok": ok, "mqtt_connected": mqtt_ok, "last_message_age_s": last_age, "db_ok": db_ok}
     return jsonify(body), 200 if ok else 503
+
+
+@app.route("/api/metrics")
+def metrics_api():
+    """Prometheus metrics: node health, the newest sensor values, the backend's state.
+    A bearer token of its own (.env METRICS_TOKEN), not the app's login, so the scraper
+    holds nothing that opens the rest of the API. No token configured: 404."""
+    if not METRICS_TOKEN:
+        abort(404)
+    given = request.headers.get("Authorization", "").removeprefix("Bearer ")
+    if not hmac.compare_digest(given.encode(), METRICS_TOKEN.encode()):
+        return Response("Authentication required", 401, {"WWW-Authenticate": "Bearer"})
+    return Response(metrics.render(), mimetype="text/plain", content_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 @app.route("/api/server_status")

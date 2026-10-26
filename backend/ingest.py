@@ -19,6 +19,7 @@ from store import (
     parse_ts, rollup_hourly, set_state, utcnow,
 )
 from alerts import alert, set_radar_alerted
+from metrics import note_node
 from nodes import handle_status, touch_device
 from server_checks import check_watchdogs
 
@@ -73,6 +74,9 @@ def handle_presence_data(data):
                  distance, signal, rssi, uptime, radar_connected)
     touch_device(device)
     note_uptime(device, uptime, read_int(data, "reset_reason"))
+    note_node(device, uptime=uptime, rssi=rssi, reset_reason=read_int(data, "reset_reason"),
+              heap_free=read_int(data, "heap_free"), heap_min=read_int(data, "heap_min"),
+              heap_block=read_int(data, "heap_block"), radar_connected=radar_connected, occupied=occupied)
 
     prev_occ = get_last_occupancy(device)
     if prev_occ is not None and prev_occ != occupied:
