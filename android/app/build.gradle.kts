@@ -66,9 +66,9 @@ tasks.matching { it.name == "processPreviewGoogleServices" }.configureEach { ena
 dependencies {
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.appcompat:appcompat:1.8.0")
-    implementation("com.squareup.okhttp3:okhttp:5.5.0")
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
     // Firebase versions come from the BoM; the -ktx artifacts are discontinued (#125)
-    implementation(platform("com.google.firebase:firebase-bom:35.0.2"))
+    implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
     implementation("com.google.firebase:firebase-messaging")
     implementation("com.google.android.material:material:1.14.0")
     // Geofence (home/away for the occupancy alert, #239) and the current location for "set home"
