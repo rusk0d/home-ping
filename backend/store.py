@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 import config
 import state
-from config import CONFIDENCE_MINUTES, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, RAW_RETENTION_DAYS, UPTIME_DROP_TOLERANCE
+from config import CONFIDENCE_MINUTES, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, RAW_RETENTION_DAYS, UPTIME_DROP_TOLERANCE, CO2_OFFSET
 
 log = logging.getLogger(__name__)
 
@@ -192,6 +192,8 @@ def init_db():
 
 
 def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None):
+    if co2 is not None:
+        co2 = co2 + CO2_OFFSET
     with db() as conn:
         c = conn.cursor()
 

@@ -77,6 +77,7 @@ ENV_VALID = {"temp_c": (-40, 85), "humidity": (0, 100), "pressure": (300, 1100)}
 # MH-Z19C range, ppm: a CO₂ value outside it is stored as null on its own (a different chip
 # from the BME280). The firmware already sends co2_ok=false there; this guards other senders.
 CO2_VALID = (0, 5000)
+CO2_OFFSET = 120  # ppm offset applied to all readings to correct sensor calibration (#167)
 DEVICE_ID_MAX = 255   # longer device IDs are dropped, not stored
 TEMP_HYSTERESIS = 0.5
 # Pressure falling fast (#237): the hourly average dropped this much over the window, a storm
