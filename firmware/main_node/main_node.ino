@@ -48,6 +48,7 @@ const int BME_MAX_READ_FAILURES = 3;
 #define CO2_RX   25     // <- sensor Tx
 #define CO2_TX   26     // <- sensor Rx
 #define CO2_BAUD 9600
+#define CO2_CALIB_PIN 0   // ESP32 BOOT button: hold at power-on to enter calibration mode (#167)
 // The sensor needs ~3 min after power-up before readings mean anything
 const uint32_t CO2_WARMUP_S = 180;
 
@@ -186,8 +187,27 @@ void setup() {
   // MH-Z19C: warms up for ~3 min, readings are flagged invalid until then
   Serial1.begin(CO2_BAUD, SERIAL_8N1, CO2_RX, CO2_TX);
   mhz.begin(Serial1);
-  mhz.autoCalibration(true);     // assumes the lowest reading in 24h is 400ppm
+  mhz.autoCalibration(false);    // ABC disabled; manual calibration via BOOT button (#167)
   Serial.println("MH-Z19C initialized (warming up ~3 min)");
+
+  // Check for calibration mode: BOOT button (GPIO 0) held at power-on (#167)
+  pinMode(CO2_CALIB_PIN, INPUT);
+  delay(100);   // settle
+  if (digitalRead(CO2_CALIB_PIN) == LOW) {
+    Serial.println("\n=== CO2 CALIBRATION MODE ===");
+    Serial.println("Release BOOT button. Sensor will warm up in fresh air...");
+    while (digitalRead(CO2_CALIB_PIN) == LOW) delay(10);  // wait for button release
+    Serial.println("Waiting 3 min for sensor to stabilize in fresh outdoor air...");
+    for (int i = 0; i < 180; i++) {  // 3 minutes
+      delay(1000);
+      if (i % 30 == 0) Serial.print(".");
+    }
+    Serial.println("\nRunning calibration...");
+    mhz.calibrate();
+    Serial.println("Calibration complete! Restarting...");
+    delay(2000);
+    ESP.restart();
+  }
 
   // Network next, so nothing blocks once the radar starts streaming
   hpConnectWiFi(WIFI_SSID, WIFI_PASS);
