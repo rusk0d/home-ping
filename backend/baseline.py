@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 MIN_ABS_DEV = {"temp": 1.5, "humidity": 5.0, "co2": 100, "pressure": 2.0}  # °C, %, ppm, hPa
 Z_THRESHOLD = 3.0  # Alert when |z| > this
 CONSECUTIVE_HOURS = 2  # Alert after this many consecutive anomalous hours
+UNITS = {"temp": "°C", "humidity": "%", "co2": "ppm", "pressure": "hPa"}
 
 
 def median(values):
@@ -67,13 +68,13 @@ def get_hour_of_day(ts_str):
         day_name = dt.strftime("%A")  # Monday, Tuesday, ...
         hour = dt.strftime("%H")
         return f"{day_name} {hour}:00"
-    except:
+    except Exception:
         return None
 
 
 def get_historical_values(metric_col, hour_of_day, lookback_days=28):
     """Query hourly table for same hour-of-day from the past N days."""
-    hour_key = f"{hour_of_day}"
+    hour_key = hour_of_day
 
     with db() as conn:
         cutoff = (utcnow() - timedelta(days=lookback_days)).strftime("%Y-%m-%d %H:%M:%S")
@@ -112,68 +113,61 @@ def check_baseline_deviations():
             return []
 
         alerts_to_send = []
+        metric_values = {"temp": temp, "humidity": humidity, "co2": co2, "pressure": pressure}
+        metric_scores = {}  # Cache z-scores to avoid recomputation
 
-        # Check each metric
-        for metric_name, value in [("temp", temp), ("humidity", humidity), ("co2", co2), ("pressure", pressure)]:
+        # Compute z-scores for all metrics once
+        for metric_name in ["temp", "humidity", "co2", "pressure"]:
+            value = metric_values[metric_name]
             if value is None:
+                metric_scores[metric_name] = (None, None, None)
                 continue
 
             history = get_historical_values(f"{metric_name}_avg", hour_of_day, lookback_days=28)
             z, med, dev = compute_robust_zscore(value, history, metric_name)
+            metric_scores[metric_name] = (z, med, dev)
 
-            if z is None or abs(z) <= Z_THRESHOLD:
-                continue  # Not anomalous
+        # Check for anomalies and ongoing excursions
+        for metric_name in ["temp", "humidity", "co2", "pressure"]:
+            z, med, dev = metric_scores[metric_name]
+            value = metric_values[metric_name]
 
-            # This metric is anomalous. Check excursion state.
+            if z is None or value is None:
+                continue
+
             state_key = f"baseline_excursion:{metric_name}"
             count_key = f"baseline_excursion_count:{metric_name}"
-
             excursion_start = get_state(state_key, None)
             excursion_count = int(get_state(count_key, "0"))
 
-            if excursion_start is None:
-                # First anomalous hour: initialize
-                set_state(state_key, hour_ts)
-                set_state(count_key, "1")
-                log.info(f"Baseline: {metric_name} anomaly started at {hour_ts}, z={z:.1f}")
-            else:
-                # Ongoing anomaly
-                excursion_count += 1
-                set_state(count_key, str(excursion_count))
+            if abs(z) > Z_THRESHOLD:
+                # Metric is anomalous
+                if excursion_start is None:
+                    # First anomalous hour: initialize
+                    set_state(state_key, hour_ts)
+                    set_state(count_key, "1")
+                    log.info(f"Baseline: {metric_name} anomaly started at {hour_ts}, z={z:.1f}")
+                else:
+                    # Ongoing anomaly
+                    excursion_count += 1
+                    set_state(count_key, str(excursion_count))
 
-                if excursion_count >= CONSECUTIVE_HOURS:
-                    # Alert on 2nd+ consecutive hour
-                    unit = {"temp": "°C", "humidity": "%", "co2": "ppm", "pressure": "hPa"}[metric_name]
-                    detail = f"{metric_name} z={z:.1f} (unusual for {hour_of_day}), {metric_name}={value:.1f} {unit}, typical {med:.1f} {unit}"
-                    alerts_to_send.append((metric_name, z, med, value, detail))
-                    log.info(f"Baseline alert: {detail}")
-
-        # Check for end of excursions (value back to normal)
-        for metric_name in ["temp", "humidity", "co2", "pressure"]:
-            state_key = f"baseline_excursion:{metric_name}"
-            count_key = f"baseline_excursion_count:{metric_name}"
-
-            excursion_start = get_state(state_key, None)
-            if excursion_start is None:
-                continue  # No excursion for this metric
-
-            value = {"temp": temp, "humidity": humidity, "co2": co2, "pressure": pressure}[metric_name]
-            if value is None:
-                continue
-
-            history = get_historical_values(f"{metric_name}_avg", hour_of_day, lookback_days=28)
-            z, med, dev = compute_robust_zscore(value, history, metric_name)
-
-            if z is not None and abs(z) <= Z_THRESHOLD:
-                # Back to normal
+                    if excursion_count >= CONSECUTIVE_HOURS:
+                        # Alert on 2nd+ consecutive hour
+                        unit = UNITS[metric_name]
+                        detail = f"{metric_name} z={z:.1f} (unusual for {hour_of_day}), {metric_name}={value:.1f} {unit}, typical {med:.1f} {unit}"
+                        alerts_to_send.append((metric_name, z, med, value, detail))
+                        log.info(f"Baseline alert: {detail}")
+            elif excursion_start is not None:
+                # Metric is back to normal and we had an active excursion
                 set_state(state_key, None)
                 set_state(count_key, "0")
                 log.info(f"Baseline: {metric_name} excursion ended, back to normal")
 
                 # Send "back to normal" notification
-                unit = {"temp": "°C", "humidity": "%", "co2": "ppm", "pressure": "hPa"}[metric_name]
+                unit = UNITS[metric_name]
                 detail = f"{metric_name} back to normal for {hour_of_day}, reading {value:.1f} {unit}"
-                alerts_to_send.append((metric_name, 0, med, value, f"sent, {detail}"))
+                alerts_to_send.append((metric_name, 0, med, value, detail))
 
         return alerts_to_send
 
@@ -185,13 +179,22 @@ def send_baseline_alerts():
     for metric_name, z, med, value, detail in deviations:
         cooldown_key = f"baseline:{metric_name}"
 
+        # Different title/body for anomaly vs recovery
+        is_recovery = z == 0
+        if is_recovery:
+            title = "Back to normal"
+            body = f"{metric_name.capitalize()} is back to normal"
+        else:
+            title = "Unusual reading"
+            body = f"{metric_name.capitalize()} is unusual for this time of day"
+
         # Use existing alert plumbing
         alerts.alert(
             device="system",
             event_type="BASELINE_DEVIATION",
             detail=detail,
-            title="Unusual reading",
-            body=f"{metric_name.capitalize()} is unusual for this time of day",
+            title=title,
+            body=body,
             data={"metric": metric_name, "z_score": str(z)},
             cooldown_key=cooldown_key,
             kind="baseline"
