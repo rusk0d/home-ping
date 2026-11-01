@@ -191,6 +191,7 @@ Event types written by `server.py`:
 | `WINDOW_CLOSED` | CO₂ node ID | `after 18 min (temperature rising), inside 21.6 °C, CO₂ 480 ppm` | the open spell ended: temperature (or, when it didn't fall, CO₂) climbing again, or `no close seen` after 180 min (#245) |
 | `AIR_HIGH` | CO₂ node ID | `sent, CO₂ 1250 ppm, outside 9.8 °C 80 %: open a window for 5-10 minutes` / `no push yet (nobody home), CO₂ 1250 ppm for 10 min, …` | "Time to air out" push attempted (CO₂ ≥ 1200 ppm for 10 min, again every 3 h while high: `CO₂ still … after N h`), or the excursion started without a push (`nobody home`, `quiet hours`; pushed later once that's over). Until 2026-10-24 (observe-only): `…: would push` / `nobody home: no push` / `would hold back (…)` |
 | `AIR_OK` | CO₂ node ID | `CO₂ 850 ppm, 95 min after AIR_HIGH`; `sent, …` when it replaced a push ("Air is fresh again") | that excursion ended (< 900 ppm) (#245) |
+| `BASELINE_DEVIATION` | `system` | `sent, temp z=3.1 (unusual for Monday 14:00), temp=25.5 °C, typical 22.3 °C` | reading is anomalous (|z| > 3) for 2+ consecutive hours, compared to historical hour-of-day (#229) |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12), or
 `muted (off), ` / `muted (quiet hours), ` when the alert type is switched off or in quiet hours (#82).
