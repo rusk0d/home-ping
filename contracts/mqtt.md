@@ -209,11 +209,12 @@ checks (see `notifications.md`). Missing fields default to: `presence`/`stationa
   MH-Z19C on UART1 (GPIO 25/26). Before: `firmware/co2_node` (`co2_sensor_esp32`), removed.
 - `warming` is true for the first 180 s of uptime (`CO2_WARMUP_S`, 64-bit uptime since #119).
 - Interval: every 60 s (`CO2_INTERVAL`). The first publish happens as soon as the loop starts.
-- Calibration: the sensor's automatic baseline correction (ABC) is **on**: it takes the lowest
-  reading of each 24 h as 400 ppm. The room is never aired that far, so the values read low:
-  outdoors on 2026-10-17 it showed 264–288 ppm against ~420 (#167). A manual zero-point
-  calibration (#217) was tried the same day and reverted: afterwards the readings dropped to
-  36–46 ppm indoors.
+- Calibration: the sensor's automatic baseline correction (ABC) is **disabled** (#167).
+  Manual zero-point calibration via serial console: type `calibrate` in the serial monitor
+  while the sensor is outside in fresh air (≥20 min), then wait 3 minutes for the sensor to
+  stabilize and run calibration. Readings should then reach ~420 ppm in fresh air and follow
+  realistic room levels (typically 800–1200 ppm, up to 1600+ when stuffy).
+  Recalibrate every 1–3 months to account for sensor drift.
 - Retained: yes. QoS 0.
 - `co2` and `sensor_tmp` are **only present when the reading is valid**
   (`err == RESULT_OK && !warming && 0 < co2 <= 5000`). Otherwise the keys are omitted.
