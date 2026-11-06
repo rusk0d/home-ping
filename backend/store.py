@@ -55,7 +55,8 @@ READINGS_COLUMNS = """
     uptime INTEGER,
     co2 INTEGER,
     pressure REAL,
-    co2_ok INTEGER
+    co2_ok INTEGER,
+    alert TEXT
 """
 
 
@@ -78,7 +79,8 @@ def init_db():
         # Add columns missing from older databases (including ones created by the
         # removed init_db.py, which had only id/ts/temp/humidity)
         for col, coltype in (("device", "TEXT"), ("uptime", "INTEGER"),
-                             ("co2", "INTEGER"), ("pressure", "REAL"), ("co2_ok", "INTEGER")):
+                             ("co2", "INTEGER"), ("pressure", "REAL"), ("co2_ok", "INTEGER"),
+                             ("alert", "TEXT")):
             try:
                 c.execute(f"ALTER TABLE readings ADD COLUMN {col} {coltype}")
             except sqlite3.OperationalError:
@@ -191,15 +193,15 @@ def init_db():
         c.execute("ANALYZE")
 
 
-def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None):
+def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None, alert=None):
     with db() as conn:
         c = conn.cursor()
 
         c.execute("""
             INSERT INTO readings
-            (device, ts, temp, humidity, uptime, co2, pressure, co2_ok)
-            VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?)
-        """, (device, temp, hum, uptime, co2, pressure, co2_ok))
+            (device, ts, temp, humidity, uptime, co2, pressure, co2_ok, alert)
+            VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?)
+        """, (device, temp, hum, uptime, co2, pressure, co2_ok, alert))
 
         c.execute("DELETE FROM readings WHERE ts < datetime('now',?)",
                   (f"-{RAW_RETENTION_DAYS} days",))
