@@ -82,6 +82,7 @@ still decides whether a device is online from the `devices.last_seen` timestamp 
 | `home/esp32/bme280` | main_node (`home_ping_esp32`) | backend (via `home/esp32/#`), web page | 30 s | yes | 0 |
 | `home/esp32/presence` | main_node (`home_ping_esp32`) **and** eink_node (`hallway_presence_esp32`) | backend (via `home/esp32/#`), web page (node list only) | 5 s per node | yes | 0 |
 | `home/esp32/co2` | main_node (`home_ping_esp32`) since the node merge (#57); before: co2_node (`co2_sensor_esp32`) | backend (via `home/esp32/#`), web page | 60 s | yes | 0 |
+| `home/esp32/fridge_temp` | fridge_node (`fridge_temp_esp32`) | backend (via `home/esp32/#`) | 60 s | yes | 0 |
 | `home/backend/occupancy_hourly` | backend | web page | 300 s + on every (re)connect | yes | 0 |
 | `home/backend/history_24h` (#132) | backend | web page | 300 s + on every (re)connect | yes | 0 |
 | `home/esp32/<device>/status` | every node (`online`); the broker (`offline`, last will) | backend (via `home/esp32/#`), web page (`home/esp32/+/status`) | on connect / on drop-off | yes | 1 (will) / 0 |
