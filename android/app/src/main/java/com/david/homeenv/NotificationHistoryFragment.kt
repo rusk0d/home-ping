@@ -85,13 +85,10 @@ class NotificationHistoryFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = (8 * d).toInt() }
+            ).apply { bottomMargin = (12 * d).toInt() }
             orientation = LinearLayout.VERTICAL
             setPadding((12 * d).toInt(), (8 * d).toInt(), (12 * d).toInt(), (8 * d).toInt())
-            setBackgroundResource(R.drawable.card)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(
-                Levels.color(ctx, R.color.card_bg)
-            )
+            setBackgroundColor(Levels.color(ctx, R.color.faint))
         }
 
         val tsStr = event.optString("ts")
