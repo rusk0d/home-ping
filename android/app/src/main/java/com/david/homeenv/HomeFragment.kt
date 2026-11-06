@@ -183,8 +183,11 @@ class HomeFragment : Fragment() {
 
     private fun renderLatest(latest: JSONObject, air: JSONObject?) {
         // Temperature + humidity from the device with the newest env reading (the BME280
-        // moved boards in the node merge, #57)
-        val main = latest.newestBy("env_ts")
+        // moved boards in the node merge, #57), excluding specialized devices like fridge (#290)
+        val main = latest.keys().asSequence().mapNotNull { key ->
+            if (key != FRIDGE) latest.optJSONObject(key) else null
+        }.filter { it.has("env_ts") && !it.isNull("env_ts") }
+            .maxByOrNull { it.optString("env_ts") }
         val temp = main?.optNum("temp")
         val hum = main?.optNum("humidity")
         b.tempValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
