@@ -254,7 +254,7 @@ class HomeFragment : Fragment() {
             alert == "warm_critical_duration" -> "too warm sustained"
             else -> alert
         }
-        fridgeTs = fridge?.optTs("alert_ts")
+        fridgeTs = fridge?.optTs("ts")
     }
 
     private fun renderPressure(air: JSONObject) {
