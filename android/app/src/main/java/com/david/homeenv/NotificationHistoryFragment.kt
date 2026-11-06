@@ -8,6 +8,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.david.homeenv.databinding.FragmentNotificationHistoryBinding
 import com.david.homeenv.ui.Levels
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -18,63 +19,73 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Notification history: last 20 notification events (#289).
+ * Notification history: last 20 notifications that were sent (#289).
+ * Filters events for ones that were actually delivered (status = "sent").
  */
 class NotificationHistoryFragment : Fragment() {
+
+    private lateinit var b: FragmentNotificationHistoryBinding
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        return LinearLayout(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 32)
-        }
+        b = FragmentNotificationHistoryBinding.inflate(inflater, container, false)
+        return b.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        val container = view as LinearLayout
-        val status = TextView(requireContext()).apply {
-            text = "Loading…"
-            setTextColor(Levels.color(requireContext(), R.color.muted))
-            textSize = 13f
-        }
-        container.addView(status)
+        load()
+    }
 
+    private fun load() {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 Api.fetchObject("/api/notification_history")
             }
 
             if (result.json == null) {
-                status.text = "Can't reach the server: ${result.error}"
+                b.status.text = "Can't reach the server: ${result.error}"
                 return@launch
             }
             val data = result.json!!
 
-            container.removeAllViews()
+            b.container.removeAllViews()
+            b.container.addView(b.status)
+
             val events = data.optJSONArray("events") ?: JSONArray()
 
-            if (events.length() == 0) {
+            // Filter for notifications that were actually sent (not muted or failed)
+            val sentNotifications = mutableListOf<org.json.JSONObject>()
+            for (i in 0 until events.length()) {
+                val event = events.optJSONObject(i) ?: continue
+                val value = event.optString("value", "")
+                // Value format: "sent, ...", "muted (...), ...", or "failed, ..."
+                if (value.startsWith("sent")) {
+                    sentNotifications.add(event)
+                }
+            }
+
+            if (sentNotifications.isEmpty()) {
                 val empty = TextView(requireContext()).apply {
-                    text = "No notifications yet"
+                    text = "No notifications sent yet"
                     setTextColor(Levels.color(requireContext(), R.color.muted))
                     textSize = 14f
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = 24 }
                 }
-                container.addView(empty)
+                b.container.addView(empty)
                 return@launch
             }
 
-            for (i in 0 until events.length()) {
-                val event = events.optJSONObject(i) ?: continue
+            b.status.text = "Notifications sent to this phone"
+            for (event in sentNotifications) {
                 val row = eventRow(event)
-                container.addView(row)
+                b.container.addView(row)
             }
         }
     }
@@ -86,7 +97,7 @@ class NotificationHistoryFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = (12 * d).toInt() }
+            ).apply { topMargin = (12 * d).toInt() }
             orientation = LinearLayout.VERTICAL
             setPadding((12 * d).toInt(), (8 * d).toInt(), (12 * d).toInt(), (8 * d).toInt())
             setBackgroundColor(Levels.color(ctx, R.color.faint))
@@ -96,6 +107,8 @@ class NotificationHistoryFragment : Fragment() {
         val type = event.optString("type", "?")
         val device = event.optString("device", "")
         val value = event.optString("value", "")
+        // Extract the detail part after "sent, "
+        val detail = if (value.startsWith("sent, ")) value.substring(6) else value
 
         val header = TextView(ctx).apply {
             text = "$type${if (device.isNotEmpty()) " · $device" else ""}"
@@ -116,14 +129,14 @@ class NotificationHistoryFragment : Fragment() {
         }
         row.addView(time)
 
-        if (value.isNotEmpty()) {
-            val detail = TextView(ctx).apply {
-                text = value
+        if (detail.isNotEmpty()) {
+            val detailView = TextView(ctx).apply {
+                text = detail
                 setTextColor(Levels.color(ctx, R.color.muted))
                 textSize = 12f
                 setPadding(0, (2 * d).toInt(), 0, 0)
             }
-            row.addView(detail)
+            row.addView(detailView)
         }
 
         return row
