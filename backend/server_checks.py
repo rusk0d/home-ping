@@ -24,6 +24,7 @@ import state
 from store import get_state, set_state
 from alerts import alert, alert_muted
 from baseline import send_baseline_alerts
+from fridge import send_fridge_alerts
 
 log = logging.getLogger(__name__)
 
@@ -186,3 +187,7 @@ def check_watchdogs(now=None):
         send_baseline_alerts()  # Check for unusual readings (#229)
     except Exception as e:
         log.error("Baseline alerts check failed: %s", e)
+    try:
+        send_fridge_alerts()  # Check fridge temperature alerts (#290)
+    except Exception as e:
+        log.error("Fridge alerts check failed: %s", e)

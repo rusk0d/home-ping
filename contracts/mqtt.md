@@ -119,6 +119,7 @@ ingestion (#58).
 | `uptime` | integer | seconds | Seconds since boot, from the 64-bit `esp_timer_get_time()` (`hpUptimeSeconds()` in the shared HomePing library), so it doesn't wrap (#8, #50, #75). Before: `millis() / 1000`, which wrapped after ~49.7 days. |
 | `rssi` | integer | dBm | `WiFi.RSSI()`. Sent on presence and co2, **not** on bme280. |
 | `reset_reason` | integer | n/a | Why the node last booted (#228): ESP-IDF `esp_reset_reason()` (`esp_reset_reason_t`), the same for every message until the next boot. 1 power-on, 3 software (`ESP.restart()`: WiFi timeout, OTA), 4 panic, 5 interrupt watchdog, 6 task watchdog, 7 other watchdog, 9 brownout, 14 power glitch, 15 CPU lockup (full list: `RESET_REASONS` in `backend/store.py`). On presence, bme280 and co2. Optional: nodes on older firmware don't send it. |
+| `alert` | string or null | n/a | Device-specific alert state, e.g. `"cold"`, `"warm_low"` on fridge_temp. Empty string or omitted = no alert. Stored per reading (#290). |
 
 ---
 
@@ -248,6 +249,39 @@ Backend handling: env handler (no `presence`). Stores a
 `pressure` are NULL. Stores `co2_ok` in `readings.co2_ok` (1/0, NULL when the message
 has none) and serves it via `/api/latest_all`. Temp/humidity alerts are
 skipped because `temp_c` and `humidity` are absent.
+
+---
+
+## `home/esp32/fridge_temp` (#290)
+
+- Publisher: `firmware/fridge_node` (`DEVICE_NAME = "fridge_temp_esp32"`), DS18B20 on GPIO 4 (OneWire).
+- Interval: every 60 s (`TEMP_INTERVAL`).
+- Retained: yes. QoS 0.
+- Alert state tracking on the node: transition state machine that tracks cold (<0°C for 30+ min),
+  warm_low (>5°C for 30 min), warm_critical (>8°C for 30 min), warm_critical_duration (>5°C for 2+ hours).
+  Alert state is `""` (empty string) when back to normal, or one of the above string values.
+- The backend stores the `alert` field (see "Common fields") and sends notifications via
+  the "fridge" notification kind (#290) when the alert state changes.
+
+| Field | Type | Unit | Notes |
+|---|---|---|---|
+| `device` | string | n/a | `"fridge_temp_esp32"` |
+| `temp_c` | float | °C | DS18B20 reading, 1 decimal |
+| `alert` | string | n/a | `""` (normal), `"cold"`, `"warm_low"`, `"warm_critical"`, or `"warm_critical_duration"` |
+| `rssi` | integer | dBm | |
+| `uptime` | integer | s | |
+| `reset_reason` | integer | n/a | |
+
+Example:
+
+```json
+{"device":"fridge_temp_esp32","temp_c":3.5,"alert":"","rssi":-62,"uptime":3600,"reset_reason":1}
+```
+
+Backend handling: env handler (no `presence`). Stores a `readings` row with `temp_c`
+(the `temp` column), `alert`, and `uptime`; `humidity`, `co2` and `pressure` are NULL.
+Serves the alert state via `/api/latest_all` (fields `alert` and `alert_ts`). The backend's
+fridge alert handler in `fridge.py` sends notifications when `alert` state changes.
 
 ---
 

@@ -59,6 +59,7 @@ Written by: MQTT env handler (`log_to_db`) for every message that has no
 | `co2` | INTEGER | yes | payload `co2`, ppm. NULL when the co2 node omits it (invalid reading) |
 | `pressure` | REAL | yes | payload `pressure`, hPa |
 | `co2_ok` | INTEGER | yes | payload `co2_ok` as 1/0; NULL when the message has none (added in #14, via the ALTER loop) |
+| `alert` | TEXT | yes | payload `alert` (e.g., `"cold"` on fridge_temp), empty string or NULL when no alert (#290, via ALTER loop) |
 
 Retention: rows older than `RAW_RETENTION_DAYS` (**2 days**, since #173; 8 before) are
 deleted on every insert. Longer history is in `hourly`.

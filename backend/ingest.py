@@ -195,6 +195,7 @@ def on_message(client, userdata, msg):
         uptime = read_int(data, "uptime")
         co2 = data.get("co2")
         pressure = data.get("pressure")
+        alert = data.get("alert")
 
         # A broken or disconnected sensor reports values outside its range (e.g. 178 °C,
         # 100 %, -121 hPa): drop temperature, humidity and pressure together, since they
@@ -216,7 +217,7 @@ def on_message(client, userdata, msg):
         # co2_ok is stored with the reading so it survives a backend restart
         co2_ok = (1 if data["co2_ok"] else 0) if "co2_ok" in data else None
 
-        log_to_db(device, temp, hum, uptime, co2, pressure, co2_ok)
+        log_to_db(device, temp, hum, uptime, co2, pressure, co2_ok, alert)
         touch_device(device)
         note_uptime(device, uptime, read_int(data, "reset_reason"))
 

@@ -198,6 +198,7 @@ def latest_all():
             env = newest(device, "temp, humidity, pressure",
                          "temp IS NOT NULL OR humidity IS NOT NULL OR pressure IS NOT NULL")
             co2 = newest(device, "co2, co2_ok", "co2 IS NOT NULL OR co2_ok IS NOT NULL")
+            alert = newest(device, "alert", "alert IS NOT NULL")
 
             result[device] = {
                 "ts": iso(last[0]),
@@ -210,6 +211,8 @@ def latest_all():
                 "co2": co2[1] if co2 else None,
                 "co2_ok": None if not co2 or co2[2] is None else bool(co2[2]),
                 "co2_ts": iso(co2[0]) if co2 else None,
+                "alert": alert[1] if alert else None,
+                "alert_ts": iso(alert[0]) if alert else None,
             }
 
         # ---- Radar nodes: merge in, or add if they have no env readings ----
