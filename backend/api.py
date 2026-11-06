@@ -565,6 +565,33 @@ def notification_settings_api():
     return jsonify(notification_settings())
 
 
+@app.route("/api/notification_history")
+@require_auth
+def notification_history():
+    """Last 20 notification events for history display (#289)."""
+    with db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT ts, type, device, value
+            FROM events
+            ORDER BY id DESC
+            LIMIT 20
+        """)
+        rows = c.fetchall()
+
+    events = []
+    for ts, event_type, device, value in reversed(rows):  # Reverse to show oldest first
+        parsed_ts = parse_ts(ts)
+        events.append({
+            "ts": iso(parsed_ts) if parsed_ts else ts,
+            "type": event_type,
+            "device": device,
+            "value": value,
+        })
+
+    return jsonify({"events": events})
+
+
 @app.route("/api/stats24h_combined")
 @require_auth
 def stats24h_combined():
