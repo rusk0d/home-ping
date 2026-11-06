@@ -1,12 +1,14 @@
 // Fridge temperature monitor node (#290):
 // ESP32 with DS18B20 sensor, WiFi, MQTT over TLS, OTA
 // Topic: home/esp32/fridge_temp (temperature + alert state)
+#include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "esp_system.h"
+#include <HomePing.h>
 #include <HomePingTls.h>
 #include <HomePingOta.h>
 #include "secrets.h"
