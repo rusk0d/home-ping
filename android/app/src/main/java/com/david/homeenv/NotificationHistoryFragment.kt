@@ -48,14 +48,15 @@ class NotificationHistoryFragment : Fragment() {
         container.addView(status)
 
         lifecycleScope.launch {
-            val data = withContext(Dispatchers.IO) {
-                Api.getObject("/api/notification_history")
+            val result = withContext(Dispatchers.IO) {
+                Api.fetchObject("/api/notification_history")
             }
 
-            if (data == null) {
-                status.text = "Can't reach the server."
+            if (result.json == null) {
+                status.text = "Can't reach the server: ${result.error}"
                 return@launch
             }
+            val data = result.json!!
 
             container.removeAllViews()
             val events = data.optJSONArray("events") ?: JSONArray()
