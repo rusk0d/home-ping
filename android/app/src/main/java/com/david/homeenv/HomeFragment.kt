@@ -243,7 +243,7 @@ class HomeFragment : Fragment() {
     private fun renderFridge(latest: JSONObject) {
         val fridge = latest.optJSONObject(FRIDGE)
         val temp = fridge?.optNum("temp")
-        val alert = fridge?.optString("alert", "")
+        val alert = fridge?.optString("alert", "") ?: ""
         b.fridgeValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
         Levels.applyChip(b.fridgeAlert, temp?.let(Levels::temperature))
         b.fridgeStatus.text = when {
