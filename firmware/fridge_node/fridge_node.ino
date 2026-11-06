@@ -108,12 +108,15 @@ void publishTemp() {
   doc["rssi"]         = WiFi.RSSI();
   doc["uptime"]       = millis() / 1000;
   doc["reset_reason"] = esp_reset_reason();
+  doc["heap_free"]    = ESP.getFreeHeap();
+  doc["heap_min"]     = ESP.getMinFreeHeap();
+  doc["heap_block"]   = ESP.getMaxAllocHeap();
 
   String payload;
   serializeJson(doc, payload);
 
   mqttClient.publish(MQTT_TOPIC_FRIDGE, payload.c_str(), true);  // retained
-  Serial.printf("Fridge: %.1f°C, alert=%s, rssi=%d\n", tempC, currentAlertType.c_str(), WiFi.RSSI());
+  Serial.printf("Fridge: %.1f°C, alert=%s, rssi=%d, heap_free=%u\n", tempC, currentAlertType.c_str(), WiFi.RSSI(), ESP.getFreeHeap());
 }
 
 /* =======================
