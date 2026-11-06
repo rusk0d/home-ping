@@ -220,6 +220,9 @@ def on_message(client, userdata, msg):
         log_to_db(device, temp, hum, uptime, co2, pressure, co2_ok, alert)
         touch_device(device)
         note_uptime(device, uptime, read_int(data, "reset_reason"))
+        note_node(device, uptime=uptime, rssi=read_int(data, "rssi"), reset_reason=read_int(data, "reset_reason"),
+                  heap_free=read_int(data, "heap_free"), heap_min=read_int(data, "heap_min"),
+                  heap_block=read_int(data, "heap_block"))
 
         now = time.time()
 
