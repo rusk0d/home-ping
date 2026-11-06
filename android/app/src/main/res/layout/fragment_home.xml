@@ -297,6 +297,48 @@
                 </LinearLayout>
             </com.david.homeenv.ui.AccentCard>
 
+            <!-- Fridge temperature monitor (#290) -->
+            <com.david.homeenv.ui.AccentCard
+                android:id="@+id/card_fridge"
+                style="@style/HomeCard"
+                android:layout_marginTop="12dp"
+                app:accentColor="@color/accent_temp">
+
+                <TextView
+                    style="@style/HomeLabel"
+                    android:drawableStart="@drawable/ic_metric_temp"
+                    android:drawableTint="@color/accent_temp"
+                    android:text="Fridge" />
+
+                <TextView
+                    android:id="@+id/fridge_value"
+                    style="@style/HomeValue"
+                    android:text="--" />
+
+                <TextView
+                    android:id="@+id/fridge_alert"
+                    style="@style/HomeChip" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/fridge_status"
+                        style="@style/HomeFoot"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="--" />
+
+                    <TextView
+                        android:id="@+id/fridge_age"
+                        style="@style/HomeFoot"
+                        android:text="waiting…" />
+                </LinearLayout>
+            </com.david.homeenv.ui.AccentCard>
+
             <!-- Occupancy today: 24 hourly bars -->
             <com.david.homeenv.ui.AccentCard
                 android:id="@+id/card_occ"

@@ -44,10 +44,12 @@ class HomeFragment : Fragment() {
         // Seconds without a new reading before a card is dimmed (~3 missed publishes, as on the web)
         private const val STALE_ENV_S = 90
         private const val STALE_CO2_S = 180
+        private const val STALE_FRIDGE_S = 120
 
         private const val MAIN = "home_ping_esp32"
         private const val HALLWAY = "hallway_presence_esp32"
-        private val DEVICE_NAMES = linkedMapOf(MAIN to "Main node", HALLWAY to "Hallway radar")
+        private const val FRIDGE = "fridge_temp_esp32"
+        private val DEVICE_NAMES = linkedMapOf(MAIN to "Main node", HALLWAY to "Hallway radar", FRIDGE to "Fridge")
         // Reset reasons (backend store.RESET_REASONS) that mean a crash or a power problem
         private val BAD_RESET_REASONS = listOf("panic", "watchdog", "brownout", "glitch", "lockup")
     }
@@ -57,6 +59,7 @@ class HomeFragment : Fragment() {
     // Timestamps of the latest readings, for the "x ago" labels and stale dimming
     private var envTs: Date? = null
     private var co2Ts: Date? = null
+    private var fridgeTs: Date? = null
 
     // Offline banner: set when /api/latest_all can't be fetched; lastOkAt = last successful load
     private var serverDown = false
@@ -168,6 +171,7 @@ class HomeFragment : Fragment() {
 
     private fun render(s: Snapshot) {
         s.latest?.let { renderLatest(it, s.air) }
+        s.latest?.let { renderFridge(it) }
         s.air?.let { renderPressure(it) }
         s.hourly?.let { renderHourly(it) }
         renderDevices(s.devices, s.latest)
@@ -231,6 +235,23 @@ class HomeFragment : Fragment() {
             b.cardOccNow.accentColor = Levels.color(requireContext(), if (occupied == true) R.color.good else R.color.faint)
             b.confidenceValue.text = "confidence " + (combined.optNum("confidence")?.let { "%.0f%%".format(Locale.US, it) } ?: "--")
         }
+    }
+
+    private fun renderFridge(latest: JSONObject) {
+        val fridge = latest.optJSONObject(FRIDGE)
+        val temp = fridge?.optNum("temp")
+        val alert = fridge?.optString("alert", "")
+        b.fridgeValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
+        Levels.applyChip(b.fridgeAlert, temp?.let(Levels::temperature))
+        b.fridgeStatus.text = when {
+            alert.isNullOrEmpty() -> "normal"
+            alert == "cold" -> "too cold (<0°C)"
+            alert == "warm_low" -> "warming (>5°C)"
+            alert == "warm_critical" -> "too warm (>8°C)"
+            alert == "warm_critical_duration" -> "too warm sustained"
+            else -> alert
+        }
+        fridgeTs = fridge?.optTs("alert_ts")
     }
 
     private fun renderPressure(air: JSONObject) {
@@ -446,13 +467,16 @@ class HomeFragment : Fragment() {
         renderBanner(now)
         val envAge = envTs?.let { (now - it.time) / 1000 }
         val co2AgeS = co2Ts?.let { (now - it.time) / 1000 }
+        val fridgeAgeS = fridgeTs?.let { (now - it.time) / 1000 }
         b.tempAge.text = formatAge(envAge)
         b.humidityAge.text = formatAge(envAge)
         b.co2Age.text = formatAge(co2AgeS)
+        b.fridgeAge.text = formatAge(fridgeAgeS)
         val envStale = envAge != null && envAge > STALE_ENV_S
         b.cardTemp.stale = envStale
         b.cardHum.stale = envStale
         b.cardCo2.stale = co2AgeS != null && co2AgeS > STALE_CO2_S
+        b.cardFridge.stale = fridgeAgeS != null && fridgeAgeS > STALE_FRIDGE_S
     }
 
     private fun renderBanner(now: Long) {
