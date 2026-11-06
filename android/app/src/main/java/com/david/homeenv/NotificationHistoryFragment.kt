@@ -69,16 +69,7 @@ class NotificationHistoryFragment : Fragment() {
             }
 
             if (sentNotifications.isEmpty()) {
-                val empty = TextView(requireContext()).apply {
-                    text = "No notifications sent yet"
-                    setTextColor(Levels.color(requireContext(), R.color.muted))
-                    textSize = 14f
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { topMargin = 24 }
-                }
-                b.container.addView(empty)
+                b.status.text = "No notifications sent yet"
                 return@launch
             }
 
