@@ -581,9 +581,8 @@ def notification_history():
 
     events = []
     for ts, event_type, device, value in reversed(rows):  # Reverse to show oldest first
-        parsed_ts = parse_ts(ts)
         events.append({
-            "ts": iso(parsed_ts) if parsed_ts else ts,
+            "ts": iso(ts) if ts else None,
             "type": event_type,
             "device": device,
             "value": value,
