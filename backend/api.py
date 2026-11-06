@@ -140,13 +140,14 @@ def latest():
 
     Temperature and humidity come from the newest reading of whichever device has them,
     like /api/air: during the node merge the BME280 moved boards (#57).
+    Excludes specialized devices like fridge_temp_esp32 (#290).
     """
     with db() as conn:
         c = conn.cursor()
         c.execute("""
             SELECT ts, temp, humidity, uptime, device
             FROM readings
-            WHERE temp IS NOT NULL OR humidity IS NOT NULL
+            WHERE (temp IS NOT NULL OR humidity IS NOT NULL) AND device != 'fridge_temp_esp32'
             ORDER BY id DESC LIMIT 1
         """)
         row = c.fetchone() or (None, None, None, None, None)
