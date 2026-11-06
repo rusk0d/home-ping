@@ -1,10 +1,9 @@
 """Baseline deviation alerts: detect unusual readings for time of day (#229)."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import alerts
-from config import NOTIFICATION_COOLDOWN
 from store import db, get_state, set_state, parse_ts, utcnow
 
 log = logging.getLogger(__name__)
