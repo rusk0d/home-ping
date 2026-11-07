@@ -139,7 +139,8 @@ Known keys:
 | `baseline_last_hour` | the newest `hourly` hour the baseline check has looked at (each hour once) | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
 | `baseline_count:<metric>` | unusual hours in a row for `temp` / `humidity` / `co2` | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
 | `baseline_alerted:<metric>` | `'sent'` / `'muted'` while that excursion was pushed or muted, `''` after it | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
-| `fridge_alert_state` | the fridge node's alert state last pushed or muted (`''` = normal) | no | `fridge.check_fridge_alerts()` (#294) | `fridge.check_fridge_alerts()` |
+| `fridge_alert_state` | the fridge node's alert state last handled (`''` = normal) | no | `fridge.check_fridge_alerts()` (#294) | `fridge.check_fridge_alerts()` |
+| `fridge_alert_shown` | `'sent'` / `'muted'` for that state's push, `''` when none (#300) | no | `fridge.check_fridge_alerts()` | `fridge.check_fridge_alerts()` |
 | `hourly_room_rebuilt` | `'1'` once the hours averaged with the fridge were rebuilt | no | `init_db()` (#290) | `init_db()` |
 | `air:window_nudged` | the `air:window` start ts of the spell that got "Close the window?" (once per spell) | no | `air.nudge_close()` (#245 step 2) | `air.nudge_close()` |
 
