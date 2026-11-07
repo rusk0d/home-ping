@@ -8,7 +8,7 @@ inferred then and hasn't been confirmed since.
 ## General
 
 - Engine: SQLite, file `data.db` in the backend's working directory (`DB = "data.db"`, relative path).
-- Schema owner: **`store.py` `init_db()`** (backend), which runs on every start (`server.prepare()`, called by `start()`; since #73 importing the modules does nothing). "`server.py`" below means the backend as a whole.
+- Schema owner: **`store.py` `init_db()`** (backend), which runs on every start: the schema itself (tables, columns, indexes; idempotent), then the numbered one-off **migrations** not yet run on this database, recorded as `system_state` `schema_version` (#306; `store.MIGRATIONS`: 1 = #14 drop always-0 columns, 2 = #65 UTC, 3 = #290 hourly without the fridge, 4 = #305 excursion format). A database from before #306 starts from its old flags (`ts_utc` → 2, `hourly_room_rebuilt` → 3), which are then removed. It runs from `server.prepare()` (called by `start()`; since #73 importing the modules does nothing). "`server.py`" below means the backend as a whole.
   It uses `CREATE TABLE IF NOT EXISTS`, plus `ALTER TABLE readings ADD COLUMN`
   for every `readings` column except `id`/`ts`/`temp`/`humidity` (errors ignored
   if they already exist), so older databases are upgraded on start.
@@ -37,8 +37,8 @@ inferred then and hasn't been confirmed since.
   midnight as UTC) and label hours with `strftime(..., ts, 'localtime')`.
 - Migration (#65): until then timestamps were server-local. `init_db()` converts the
   existing rows of `readings`, `presence_readings`, `events` and `devices` once with
-  `datetime(ts, 'utc')` (each row's own DST offset) and marks it in `system_state`
-  (`ts_utc` = `'1'`).
+  `datetime(ts, 'utc')` (each row's own DST offset), migration 2 (`schema_version`, #306;
+  before that the `ts_utc` flag).
 - Booleans are stored as INTEGER 0/1.
 
 ## Tables
@@ -125,7 +125,7 @@ Known keys:
 | `arrival_quiet` | quiet minutes before that arrival, as an int | no | presence handler | arrival alert body |
 | `env_alerted:HUMIDITY_<device>` / `env_alerted:TEMP_<device>` | `'sent:<band>'` / `'muted:<band>'` (band `high`/`low`, temperature only `low`) while that excursion is on, `''` after it ended (#117, #305) | no | env handler (`ingest.set_env_alerted`) | env handler |
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
-| `ts_utc` | `'1'` once the timestamps were converted to UTC | no | `init_db()` (#65) | `init_db()` |
+| `schema_version` | the number of the last migration run on this database (`store.MIGRATIONS`, #306) | no | `init_db()` | `init_db()` |
 | `node_offline:<device>` | `'sent'` while that node's current outage has been pushed, `'muted'` while it is offline but the push was muted (#82), else `''` (#305) | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
 | `notify:<kind>` | `'1'` / `'0'` per alert type (`NOTIFY_KINDS`: `humidity`, `temperature`, `radar`, `nodes`, `pressure`, `air`, `baseline`, `fridge`); missing = `'1'` | no | `POST /api/notification_settings` (#82) | `alert()` via `alert_muted()`, `GET /api/notification_settings` |
 | `quiet_hours` | `'1'` / `'0'`; missing = `'0'` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
@@ -145,14 +145,13 @@ Known keys:
 | `sensor_silent:<device>:<sensor>` | `'sent'` / `'muted'` while that sensor (`env`, `co2`) is silent, `''` once it's back (#224, #305) | no | `nodes._sensor_state()` | `nodes._sensor_state()` |
 | `fridge_alert_state` | the fridge node's alert state last handled (`''` = normal) | no | `fridge.check_fridge_alerts()` (#294) | `fridge.check_fridge_alerts()` |
 | `fridge_alert_shown` | `'sent'` / `'muted'` for that state's push, `''` when none (#300) | no | `fridge.check_fridge_alerts()` | `fridge.check_fridge_alerts()` |
-| `hourly_room_rebuilt` | `'1'` once the hours averaged with the fridge were rebuilt | no | `init_db()` (#290) | `init_db()` |
 | `air:window_nudged` | the `air:window` start ts of the spell that got "Close the window?" (once per spell) | no | `air.nudge_close()` (#245 step 2) | `air.nudge_close()` |
 
 ### `hourly` (long-term history, since #129)
 
 One row per **complete** hour, all room devices combined (like `/api/hourly` without `?device=`;
 `NON_ROOM_DEVICES` such as the fridge are left out since #290, and the hours averaged with it
-before were rebuilt once on start, `system_state` `hourly_room_rebuilt`).
+before were rebuilt once on start, migration 3).
 Filled by `store.rollup_hourly()` from `readings` and `presence_readings`, which are only kept
 2 days (#173): at startup (`server.prepare()`, catches up after downtime; the first run backfills
 whatever raw rows exist) and in the 300 s summaries loop, where it only does work once
@@ -256,3 +255,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #245: event types `WINDOW_OPEN`, `WINDOW_CLOSED`, `AIR_HIGH`, `AIR_OK` (observe-only) and `system_state` keys `air:window`, `air:window_closed`, `air:co2_high`.
 - #245 step 2: `AIR_HIGH`/`AIR_OK` push (new values), event types `WINDOW_CLOSE`, `WINDOW_LEFT_OPEN`, keys `air:co2_push`, `air:co2_shown`, `air:window_nudged`, `notify:air`.
 - #305: excursion state keys (`env_alerted:*`, `node_offline:*`, `watchdog:*`, `sensor_silent:*`, `baseline_alerted:*`) share one format, `''` / `sent` / `muted` with an optional `:<band>`; `init_db()` converts the old `'1'`/`'m'`/`'0'` and bare-band values.
+- #306: numbered migrations, `system_state` `schema_version`; the `ts_utc` and `hourly_room_rebuilt` flags are replaced and removed.

@@ -52,7 +52,7 @@ def test_issue290_fridge_not_room(env):
         conn.executemany("INSERT INTO hourly (hour, temp_avg, temp_min) VALUES (?, ?, ?)",
                          [(t(3, 0), 13.0, 4.0), (t(2, 0), 12.5, 4.0)])
         conn.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES ('hourly_until', ?)", (t(0, 0),))
-        conn.execute("DELETE FROM system_state WHERE key = 'hourly_room_rebuilt'")
+        conn.execute("UPDATE system_state SET value = '2' WHERE key = 'schema_version'")   # before the #290 migration
         conn.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES ('env_alerted:TEMP_fridge_temp_esp32', 'low')")
 
     init_db()

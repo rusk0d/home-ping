@@ -104,5 +104,6 @@ def test_issue82_notification_settings(env):
     check("nodes off: offline muted (off)", pushes == [] and (last_event("NODE_OFFLINE") or "").startswith("muted (off)"))
     # a legacy '1' value is converted at startup (#305) and loads as pushed
     store.set_state("node_offline:legacy", "1")
+    store.set_state("schema_version", "3")   # before the #305 migration
     store.init_db()
     check("legacy node_offline '1' loads as pushed", store.load_alert_state()[2].get("legacy") is True)
