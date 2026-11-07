@@ -16,6 +16,10 @@ inline uint32_t hpUptimeSeconds() {
 // Connects to WiFi; never hangs: reboots after ~30 s without a connection.
 inline void hpConnectWiFi(const char* ssid, const char* pass) {
   WiFi.mode(WIFI_STA);
+  // With several access points on the same SSID, take the strongest, not the first one found
+  // (the main node sat on the far router). Only at connect time: there's no roaming later.
+  WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
   WiFi.begin(ssid, pass);
   Serial.println("Connecting to WiFi...");
   int attempts = 0;
