@@ -31,8 +31,12 @@ SENSOR_GAUGES = (
 
 
 def note_node(device, **values):
-    """The newest health values a node sent (presence handler); None values are left out."""
-    state.NODE_HEALTH[device] = {"at": time.time(), **{k: v for k, v in values.items() if v is not None}}
+    """The newest health values a node sent (presence and env messages); None values are left out.
+    Merged, not replaced: the main node sends radar fields only on presence, so an env
+    message must not drop them."""
+    health = state.NODE_HEALTH.setdefault(device, {})
+    health.update({k: v for k, v in values.items() if v is not None})
+    health["at"] = time.time()
 
 
 def label(value):
