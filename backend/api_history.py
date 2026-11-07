@@ -7,7 +7,7 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from config import (
-    DAILY_MAX_DAYS, HOURLY_MAX_DAYS,
+    DAILY_MAX_DAYS, FRIDGE_DEVICE, HOURLY_MAX_DAYS,
     ROOM_DEVICES_SQL,
 )
 from store import (
@@ -41,7 +41,8 @@ def hourly():
         # repeated hour of the autumn DST change, like the raw queries below
         c.execute("""
             SELECT strftime('%Y-%m-%d %H:00', hour, 'localtime'),
-                   AVG(temp_avg), AVG(humidity_avg), AVG(co2_avg), AVG(pressure_avg), AVG(occupancy)
+                   AVG(temp_avg), AVG(humidity_avg), AVG(co2_avg), AVG(pressure_avg), AVG(occupancy),
+                   AVG(fridge_avg), MIN(fridge_min), MAX(fridge_max)
             FROM hourly
             WHERE hour >= datetime('now','localtime','start of day',?,'utc')
               AND hour < datetime('now','localtime','start of day','utc')
@@ -71,17 +72,27 @@ def hourly():
             GROUP BY 1
         """, (since,))
         air_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
+        # The fridge on its own (#331), never in the room values (#290)
+        c.execute("""
+            SELECT strftime('%Y-%m-%d %H:00', ts, 'localtime'), AVG(temp), MIN(temp), MAX(temp)
+            FROM readings
+            WHERE device = ? AND temp IS NOT NULL
+              AND ts >= datetime('now','localtime','start of day',?,'utc')
+            GROUP BY 1
+        """, (FRIDGE_DEVICE, since))
+        fridge_rows = {r[0]: r[1:] for r in c.fetchall()}
     occ_rows = hourly_occupancy_today()
 
-    hours = sorted(set(env_rows) | set(air_rows) | set(occ_rows) | set(past_rows), reverse=True)
+    hours = sorted(set(env_rows) | set(air_rows) | set(occ_rows) | set(fridge_rows) | set(past_rows), reverse=True)
     out = []
     for h in hours:
         if h in past_rows:
-            t, hu, co2, pr, o = past_rows[h]
+            t, hu, co2, pr, o, f, fmin, fmax = past_rows[h]
         else:
             t, hu = env_rows.get(h, (None, None))
             co2, pr = air_rows.get(h, (None, None))
             o = occ_rows.get(h)
+            f, fmin, fmax = fridge_rows.get(h, (None, None, None))
         out.append({
             "hour": h,
             "avg_temp": round(t, 1) if t is not None else None,
@@ -89,8 +100,13 @@ def hourly():
             "avg_co2": round(co2) if co2 is not None else None,
             "avg_pressure": round(pr, 1) if pr is not None else None,
             "avg_occupancy": round(o, 0) if o is not None else None,
+            "avg_fridge": _r(f), "min_fridge": _r(fmin), "max_fridge": _r(fmax),
         })
     return jsonify(out)
+
+
+def _r(v, digits=1):
+    return None if v is None else round(v, digits)
 
 
 @bp.route("/api/daily")
@@ -107,14 +123,14 @@ def daily():
                    AVG(temp_avg), MIN(temp_min), MAX(temp_max),
                    AVG(humidity_avg), MIN(humidity_min), MAX(humidity_max),
                    AVG(co2_avg), MAX(co2_max), AVG(pressure_avg),
-                   SUM(occupancy) / 100, COUNT(*)
+                   SUM(occupancy) / 100, COUNT(*),
+                   AVG(fridge_avg), MIN(fridge_min), MAX(fridge_max)
             FROM hourly
             WHERE hour >= datetime('now','localtime','start of day',?,'utc')
             GROUP BY 1 ORDER BY 1 DESC
         """, (f"-{int(days) - 1} days",)).fetchall()
 
-    def r(v, digits=1):
-        return None if v is None else round(v, digits)
+    r = _r
     return jsonify([{
         "date": d,
         "avg_temp": r(t), "min_temp": r(tmin), "max_temp": r(tmax),
@@ -123,4 +139,5 @@ def daily():
         "avg_pressure": r(pr),
         "occupied_hours": r(occ),
         "hours": n,
-    } for d, t, tmin, tmax, hu, humin, humax, co2, co2max, pr, occ, n in rows])
+        "avg_fridge": r(f), "min_fridge": r(fmin), "max_fridge": r(fmax),
+    } for d, t, tmin, tmax, hu, humin, humax, co2, co2max, pr, occ, n, f, fmin, fmax in rows])

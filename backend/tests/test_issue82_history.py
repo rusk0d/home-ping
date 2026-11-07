@@ -35,7 +35,8 @@ def test_issue82_history(env):
     h1 = get("/api/hourly").get_json()
     check("default = today only: 1 row", len(h1) == 1)
     r = h1[0]
-    check("fields", set(r) == {"hour", "avg_temp", "avg_humidity", "avg_co2", "avg_pressure", "avg_occupancy"})
+    check("fields", set(r) == {"hour", "avg_temp", "avg_humidity", "avg_co2", "avg_pressure", "avg_occupancy",
+                               "avg_fridge", "min_fridge", "max_fridge"})
     check("co2 avg across devices = 900, pressure 1010", r["avg_co2"] == 900 and r["avg_pressure"] == 1010.0)
     check("temp/hum/occ", r["avg_temp"] == 20 and r["avg_humidity"] == 50 and r["avg_occupancy"] == 100)
     h7 = get("/api/hourly?days=7").get_json()
