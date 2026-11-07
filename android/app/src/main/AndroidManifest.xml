@@ -53,6 +53,11 @@
             android:name=".HistoryActivity"
             android:exported="false" />
 
+        <!-- Devices (#322), opened from the Devices section on Home -->
+        <activity
+            android:name=".DevicesActivity"
+            android:exported="false" />
+
         <!-- Notification settings (#82), opened from the bell in the header -->
         <activity
             android:name=".NotificationSettingsActivity"
