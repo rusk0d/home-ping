@@ -141,7 +141,7 @@ def get_combined_occupancy(presence):
 
 
 def pressure_3h_change(readings):
-    """From api.py /api/air: 'Pressure as it was 3 hours ago' compared to latest.
+    """From api_env.py /api/air: 'Pressure as it was 3 hours ago' compared to latest.
 
     Returns pressure_now - pressure_3h_ago, rounded to 0.1, or None if no data.
     """

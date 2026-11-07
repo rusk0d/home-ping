@@ -6,7 +6,7 @@ from support import check
 
 
 def test_issue123_cleanups(env):
-    import server, api
+    import server, api, api_common
     from store import db, parse_ts, utcnow
     server.prepare()
     c = api.app.test_client()
@@ -37,5 +37,5 @@ def test_issue123_cleanups(env):
     # Helpers
     check("parse_ts", parse_ts("2026-10-16 08:09:10") == datetime(2026, 10, 16, 8, 9, 10))
     fresh = now.strftime("%Y-%m-%d %H:%M:%S")
-    stale = (now - timedelta(seconds=api.HEARTBEAT_TIMEOUT + 5)).strftime("%Y-%m-%d %H:%M:%S")
-    check("is_online", api.is_online(fresh) and not api.is_online(stale) and not api.is_online(None))
+    stale = (now - timedelta(seconds=api_common.HEARTBEAT_TIMEOUT + 5)).strftime("%Y-%m-%d %H:%M:%S")
+    check("is_online", api_common.is_online(fresh) and not api_common.is_online(stale) and not api_common.is_online(None))

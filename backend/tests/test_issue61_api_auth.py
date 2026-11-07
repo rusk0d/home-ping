@@ -9,14 +9,14 @@ def test_issue61_api_auth(env):
     import os, re, base64, configparser
     from unittest import mock
     os.environ.update(DASH_USER="user", DASH_PASS="pässwörd", MQTT_USER="m", MQTT_PASS="m")
-    import server, api
+    import server, api, api_common
     server.prepare()
 
-    check("right login", api.credentials_ok("user", "pässwörd"))
+    check("right login", api_common.credentials_ok("user", "pässwörd"))
     for u, p in [("user", "wrong"), ("wrong", "pässwörd"), ("", ""), (None, None), ("user", "pässwörd "), ("USER", "pässwörd")]:
-        check(f"rejected: {u!r}/{p!r}", not api.credentials_ok(u, p))
-    with mock.patch.object(api.hmac, "compare_digest", wraps=api.hmac.compare_digest) as cd:
-        api.credentials_ok("wrong", "wrong")
+        check(f"rejected: {u!r}/{p!r}", not api_common.credentials_ok(u, p))
+    with mock.patch.object(api_common.hmac, "compare_digest", wraps=api_common.hmac.compare_digest) as cd:
+        api_common.credentials_ok("wrong", "wrong")
     check("both values always compared (no short-circuit)", cd.call_count == 2)
 
     c = api.app.test_client()
