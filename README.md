@@ -125,8 +125,9 @@ overwritten one. The watchdog pushes `Off-site backup failed` when no upload suc
 
 **Restore drill (#339).** Once a month (`iot-backup-drill.timer`, 04:00 on the 1st)
 `backup_drill.py` downloads the newest backup from S3 with a second, read-only key, restores
-it into a temp folder (never the live `data.db`), runs `PRAGMA integrity_check` and
-`tools/validate_db.py` on it, and writes `backups/.drill.json`. The watchdog pushes
+it into a temp folder (never the live `data.db`), runs `PRAGMA integrity_check`, starts it
+like the backend would (`init_db()` with any migrations an older backup needs, then the hourly
+roll-up), runs `tools/validate_db.py` on it, and writes `backups/.drill.json`. The watchdog pushes
 `Restore drill failed` (with the reason) or `Restore drill overdue` (none for 35 days), and
 the app's Server card shows the last result. One-time setup:
 

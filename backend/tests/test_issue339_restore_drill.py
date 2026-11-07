@@ -90,30 +90,43 @@ def test_issue339_restore_drill(env):
     check("validate_db.py passed on the copy", any("All checks PASSED" in line for line in res["validate"]))
     check("run time recorded", res["ran"].endswith("Z"))
 
-    # A backup from before #306 has no schema_version: still a good backup (init_db migrates it)
+    check(f"started at the current version ({res.get('schema_version_started')})",
+          res["schema_version_started"] == str(store.SCHEMA_VERSION))
+
+    # A backup from before #306: no schema_version, only the old #65 flag; still good (init_db
+    # migrates it like any older database)
     with db() as conn:
         conn.execute("DELETE FROM system_state WHERE key = 'schema_version'")
+        conn.execute("INSERT INTO system_state (key, value) VALUES ('ts_utc', '1')")
     upload("data-2026-11-02b.db.gz", gzip.compress((env / "data.db").read_bytes()))
     r, res = run()
     check(f"no schema_version: still OK ({res.get('error')})", r.returncode == 0 and res["ok"] and res["schema_version"] is None)
 
-    # ...and one from before #331: no fridge columns in hourly, while it has fridge readings
+    # ...and one like the first real drill's (2026-11-07): from before the #290 fix and #331,
+    # so the fridge is averaged into the room's hours and hourly has no fridge columns. Started
+    # like the backend, migration 3 and the roll-up rebuild those hours: a good backup
     with db() as conn:
+        fridge_ts = now - timedelta(minutes=90)
         conn.execute("INSERT INTO readings (device, ts, temp) VALUES (?, ?, 4.0)",
-                     (config.FRIDGE_DEVICE, (now - timedelta(minutes=90)).strftime("%Y-%m-%d %H:%M:%S")))
+                     (config.FRIDGE_DEVICE, fridge_ts.strftime("%Y-%m-%d %H:%M:%S")))
+        conn.execute("UPDATE hourly SET temp_avg = 17 WHERE hour >= ?", (fridge_ts.strftime("%Y-%m-%d %H:00:00"),))
         for col in ("fridge_avg", "fridge_min", "fridge_max"):
             conn.execute(f"ALTER TABLE hourly DROP COLUMN {col}")
     upload("data-2026-11-02c.db.gz", gzip.compress((env / "data.db").read_bytes()))
     r, res = run()
-    check(f"no fridge columns: still OK ({res.get('error')}, {res.get('validate')})", r.returncode == 0 and res["ok"])
+    check(f"fridge-mixed hours, no fridge columns: still OK ({res.get('error')}, {res.get('validate')})",
+          r.returncode == 0 and res["ok"] and res["schema_version_started"] == str(store.SCHEMA_VERSION))
 
     upload("data-2026-11-03.db.gz", b"not gzip at all")
     r, res = run()
     check(f"corrupt gz: failed ({res['error']})", r.returncode == 1 and "gunzip failed" in res["error"])
 
-    # A copy whose hourly rows don't match its raw rows: validate_db.py must catch it
+    # A copy whose hourly rows don't match its raw rows, and no migration rebuilds them:
+    # validate_db.py must catch it
     with db() as conn:
         conn.execute("UPDATE hourly SET temp_avg = temp_avg + 5")
+        conn.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES ('schema_version', ?)",
+                     (str(store.SCHEMA_VERSION),))
     upload("data-2026-11-04.db.gz", gzip.compress((env / "data.db").read_bytes()))
     r, res = run()
     check(f"validate_db failure: failed ({res['error']})", r.returncode == 1 and "validate_db.py failed" in res["error"])

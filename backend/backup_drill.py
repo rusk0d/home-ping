@@ -6,7 +6,10 @@ put-only), restores it into a temp folder and checks it:
 - gunzip, PRAGMA integrity_check
 - the main tables are there and readings / hourly have rows (schema_version is only reported:
   a backup from before #306 has none, and init_db() migrates it like any older database)
-- tools/validate_db.py against the copy, at the copy's own time (--now: its newest reading)
+- started like the backend would start it (#347): store.init_db() (schema, the migrations an
+  older backup still needs) and rollup_hourly() as of its newest reading. Not prune(): that
+  works on the real time and would delete raw rows the copy's hourly rows are checked against.
+- tools/validate_db.py against the started copy, at the copy's own time (--now: its newest reading)
 The live data.db is never touched. The result goes to backups/.drill.json, which the backend's
 watchdog reads (push when it failed or is overdue, the app's Server card); exit 1 on a failure.
 
@@ -30,7 +33,18 @@ from dotenv import load_dotenv
 RESULT = ".drill.json"   # same name as config.DRILL_RESULT (the watchdog reads it)
 TABLES = ("readings", "presence_readings", "hourly", "events", "devices", "system_state")
 NOT_EMPTY = ("readings", "hourly")
-VALIDATE = Path(__file__).resolve().parent / "tools" / "validate_db.py"
+BACKEND = Path(__file__).resolve().parent
+VALIDATE = BACKEND / "tools" / "validate_db.py"
+# Run in the copy's folder (store opens config.DB, "data.db", there): what server.prepare() does
+# first, without prune() (see the docstring). Prints the schema_version it ends at.
+START = (
+    "import sys\n"
+    "from datetime import timedelta\n"
+    "import store\n"
+    "store.init_db()\n"
+    "store.rollup_hourly(now=store.parse_ts(sys.argv[1]) + timedelta(seconds=1))\n"
+    "print(store.get_state('schema_version', ''))\n"
+)
 
 
 def newest_backup(s3, bucket, prefix):
@@ -68,6 +82,16 @@ def check_copy(db):
         conn.close()
 
 
+def start_copy(db, at):
+    """init_db() and the roll-up on [db] (named data.db) as of [at]: (worked, schema_version or
+    the error's last lines)."""
+    env = dict(os.environ, PYTHONPATH=str(BACKEND) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    r = subprocess.run([sys.executable, "-c", START, at], cwd=db.parent, env=env,
+                       capture_output=True, text=True, timeout=600)
+    out = (r.stdout + r.stderr).strip().splitlines()
+    return r.returncode == 0, (out[-1] if r.returncode == 0 and out else "\n".join(out[-5:]))
+
+
 def validate(db, at):
     """tools/validate_db.py on [db] as of [at]: (passed, its last lines)."""
     r = subprocess.run([sys.executable, str(VALIDATE), "--db", str(db), "--now", at],
@@ -86,7 +110,7 @@ def drill(s3, bucket, prefix, workdir):
     result.update(object=obj["Key"], uploaded=obj["LastModified"].strftime("%Y-%m-%dT%H:%M:%SZ"),
                   size_bytes=obj["Size"])
     gz = workdir / "backup.db.gz"
-    db = workdir / "restored.db"
+    db = workdir / "data.db"   # the name store / config.DB expect (start_copy runs in workdir)
     s3.download_file(bucket, obj["Key"], str(gz))
     try:
         with gzip.open(gz, "rb") as f_in, open(db, "wb") as f_out:
@@ -103,6 +127,11 @@ def drill(s3, bucket, prefix, workdir):
     if problem:
         result["error"] = problem
         return result
+    started, info = start_copy(db, facts["newest_reading"])
+    if not started:
+        result["error"] = f"init_db/rollup failed: {info}"
+        return result
+    result["schema_version_started"] = info
     passed, lines = validate(db, facts["newest_reading"])
     result["validate"] = lines
     if not passed:
