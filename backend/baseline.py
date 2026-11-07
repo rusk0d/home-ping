@@ -9,10 +9,9 @@ once the metric is back under BASELINE_Z_CLEAR, "Back to normal". Pressure isn't
 it has no daily rhythm, and fronts already push "Pressure falling fast" (#237).
 
 system_state per metric: baseline_count:<metric> (unusual hours in a row),
-baseline_seen:<metric> (the hour it was last checked) and baseline_alerted:<metric> ("sent" / "muted" while an excursion is on; saved only after
-the push went out, so a failed one is retried on the next hour, no cooldown needed; a muted excursion ends
-without a "Back to normal"). baseline_last_hour is the
-newest hour checked.
+baseline_seen:<metric> (the hour it was last checked) and baseline_alerted:<metric>, an
+alerts.Excursion (#305): a failed push is retried on the next hour, no cooldown needed; a muted
+excursion ends without a "Back to normal". baseline_last_hour is the newest hour checked.
 """
 
 import logging
@@ -97,22 +96,15 @@ def check_baseline():
         count = count + 1 if abs(z) > BASELINE_Z else 0
         set_state(f"baseline_count:{metric}", str(count))
         set_state(f"baseline_seen:{metric}", hour)
-        alerted = get_state(f"baseline_alerted:{metric}", "") or ""
         detail = f"{metric}={value:.1f} {unit}, typical {med:.1f} {unit} at {local}, z={z:+.1f}"
-        data = {"event": "BASELINE", "device": metric}
-        if not alerted and count >= BASELINE_HOURS:
+        excursion = alerts.Excursion(f"baseline_alerted:{metric}", "baseline", "system",
+                                     {"event": "BASELINE", "device": metric})
+        if count >= BASELINE_HOURS:
             direction = "high" if z > 0 else "low"
-            result = alerts.alert("system", "BASELINE_DEVIATION", detail,
-                                  title="Unusual reading",
-                                  body=f"{name} is unusually {direction} for this time of day: "
-                                       f"{value:.1f} {unit} (usually {med:.1f})",
-                                  data=data, kind="baseline")
-            if result:
-                set_state(f"baseline_alerted:{metric}", result)
-        elif alerted and abs(z) < BASELINE_Z_CLEAR:
-            if alerted == "muted" or alerts.alert(
-                    "system", "BASELINE_NORMAL", detail,
-                    title="Back to normal", body=f"{name} is back to normal: {value:.1f} {unit}",
-                    data=data, kind="baseline"):
-                set_state(f"baseline_alerted:{metric}", "")
+            excursion.start("BASELINE_DEVIATION", detail, "Unusual reading",
+                            f"{name} is unusually {direction} for this time of day: "
+                            f"{value:.1f} {unit} (usually {med:.1f})")
+        elif abs(z) < BASELINE_Z_CLEAR:
+            excursion.end("BASELINE_NORMAL", detail, "Back to normal",
+                          f"{name} is back to normal: {value:.1f} {unit}")
     return {m: s[0] for m, s in scores.items()}
