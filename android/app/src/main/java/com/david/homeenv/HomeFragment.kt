@@ -41,9 +41,6 @@ class HomeFragment : Fragment() {
         val fridge = FridgeCard(b)
         val pressure = PressureCard(b)
         val hourly = HourlyCard(b)
-        val devices = DevicesCard(b)
-        val server = ServerCard(b)
-        val restarts = RestartsCard(b)
         val stats = StatsCard(b)
         /** The ones with a reading time ("x ago", stale dimming) */
         val aged = listOf(room, co2, fridge)
@@ -94,7 +91,6 @@ class HomeFragment : Fragment() {
         }
         b.swipeRefresh.setOnRefreshListener { loadDashboardData() }
         b.historyButton.setOnClickListener { startActivity(Intent(requireContext(), HistoryActivity::class.java)) }
-        b.devicesSection.setOnClickListener { startActivity(Intent(requireContext(), DevicesActivity::class.java)) }
     }
 
     override fun onResume() {
@@ -129,7 +125,8 @@ class HomeFragment : Fragment() {
 
     /**
      * /api/dashboard (#128), then /api/server_status (#260) only if that worked; all null when
-     * it fails. Blocking: call it on Dispatchers.IO.
+     * it fails. Devices, restarts and the server feed the red dot on the header's devices
+     * button (#325). Blocking: call it on Dispatchers.IO.
      */
     private fun loadSnapshot(): Snapshot {
         val d = Api.getObject("/api/dashboard")
@@ -172,10 +169,11 @@ class HomeFragment : Fragment() {
         }
         s.air?.let { c.pressure.render(it) }
         s.hourly?.let { c.hourly.render(it) }
-        if (s.devices != null) c.devices.render(devices, s.latest)
-        s.restarts?.let { c.restarts.render(it, devices) }
         s.stats?.let { c.stats.render(it) }
-        s.server?.let { c.server.render(it) }
+        // Only when the dashboard loaded: an unreachable server is the offline banner, not a dot
+        if (s.devices != null) {
+            (activity as? MainActivity)?.setDeviceIssues(DeviceIssues.list(s.devices, s.restarts, s.server).size)
+        }
         updateAges()
     }
 

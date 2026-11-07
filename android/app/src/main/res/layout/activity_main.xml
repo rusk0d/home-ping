@@ -40,6 +40,33 @@
                 android:textColor="@color/muted"/>
         </LinearLayout>
 
+        <!-- Devices (#325), with a red dot while something needs a look -->
+        <FrameLayout
+            android:layout_width="48dp"
+            android:layout_height="48dp">
+
+            <ImageButton
+                android:id="@+id/devices"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Devices"
+                android:src="@drawable/ic_devices"
+                app:tint="@color/muted" />
+
+            <View
+                android:id="@+id/devices_badge"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="10dp"
+                android:layout_marginEnd="9dp"
+                android:background="@drawable/dot"
+                android:backgroundTint="@color/bad"
+                android:contentDescription="A device needs a look"
+                android:visibility="gone" />
+        </FrameLayout>
+
         <!-- Notification settings (#82) -->
         <ImageButton
             android:id="@+id/notification_settings"
