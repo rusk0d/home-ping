@@ -187,20 +187,27 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   `BACKUP_MAX_AGE_HOURS` (**26 h**; no `backups` folder = no check), `disk` when less than
   `DISK_MIN_FREE_MB` (**1024 MB**) is free on the database's disk, `offsite` (since #122)
   when `backups/.offsite-ok` (touched by `backup_db.py` after each upload to S3) is older than
-  `OFFSITE_MAX_AGE_HOURS` (**26 h**) or missing; no `BACKUP_S3_BUCKET` in `.env` = no check.
+  `OFFSITE_MAX_AGE_HOURS` (**26 h**) or missing; no `BACKUP_S3_BUCKET` in `.env` = no check;
+  `drill` (since #339) when the last monthly restore drill (`backups/.drill.json`, written by
+  `backup_drill.py`) failed, or is older than `DRILL_MAX_AGE_DAYS` (**35**) or missing; no
+  `DRILL_AWS_ACCESS_KEY_ID` in `.env` = no check.
 - **Once per excursion**, persisted as `system_state` `watchdog:<check>` (`sent`,
   `muted` by the `nodes` switch, `''` fine). A failed send is retried at the next check.
 - Switch `nodes`. **Quiet hours postpone it** to the first check after they end, instead
   of muting it (the backup runs at 03:30); turning the switch off mutes it like other alerts.
 - Push: title `Backup failed`, body `No database backup for over 26 h (last: …)`, or title
   `Disk almost full`, body `Only {N} MB free on the server`, or title `Off-site backup failed`,
-  body `No backup uploaded to S3 for over 26 h (last: …)`;
-  data `{"event": "WATCHDOG", "device": "backup" | "disk" | "offsite" | "cert_<port>"}`. Logs `WATCHDOG_BACKUP` /
-  `WATCHDOG_DISK` / `WATCHDOG_OFFSITE` (device `server`).
+  body `No backup uploaded to S3 for over 26 h (last: …)`, or title `Restore drill failed`, body
+  `The S3 backup didn't restore cleanly: {reason}`, or title `Restore drill overdue`, body
+  `No restore drill for over 35 days (last: …)`;
+  data `{"event": "WATCHDOG", "device": "backup" | "disk" | "offsite" | "drill" | "cert_<port>"}`. Logs `WATCHDOG_BACKUP` /
+  `WATCHDOG_DISK` / `WATCHDOG_OFFSITE` / `WATCHDOG_DRILL` (device `server`).
 - Over (a backup newer than 26 h; free space ≥ 1024 + 256 MB; an upload newer than 26 h):
   title `Backup OK again` / `Disk space OK again` / `Off-site backup OK again` (body `The database
   backup reached S3 again`), same `event`/`device`, so it **replaces** the warning in the app.
   Only sent if the warning was. Logs `WATCHDOG_BACKUP_OK` / `WATCHDOG_DISK_OK` / `WATCHDOG_OFFSITE_OK`.
+  The drill's: a drill that passed within 35 days → `Restore drill OK again`, body
+  `{object} restored and validated`, `WATCHDOG_DRILL_OK`.
 - Certificates (since #206): every `host:port` in `.env` `CERT_CHECK` (none = no check), at
   most once an hour (`CERT_CHECK_INTERVAL`). The backend connects like a client (trusted chain,
   host name) and reads the certificate's expiry. `device` = `cert_<port>` (one host per port).
@@ -424,3 +431,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #251: failed pushes back off (1, 2, 5, 10, then every 15 min per key) instead of retrying every 60 s.
 - #305: one excursion helper and state format (`sent`/`muted`[`:<band>`]); a muted watchdog's end is logged too.
 - #336: fridge door left open push (`FRIDGE_DOOR`), switch `fridge`.
+- #339: watchdog `drill`: the monthly restore drill from S3 failed or is overdue.

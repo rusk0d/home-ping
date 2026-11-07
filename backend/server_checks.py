@@ -1,5 +1,6 @@
-"""Server watchdog pushes (#176): the nightly backup (or its S3 copy, #122) is overdue, the disk is nearly full, or a
-TLS certificate is about to expire (#206; renewal was broken for weeks without anyone noticing).
+"""Server watchdog pushes (#176): the nightly backup (or its S3 copy, #122) is overdue, the monthly
+restore drill failed or is overdue (#339), the disk is nearly full, or a TLS certificate is about to
+expire (#206; renewal was broken for weeks without anyone noticing).
 
 UptimeRobot only sees /api/health, so these would otherwise go unnoticed until data is lost.
 check_watchdogs() runs in the summaries loop (every 5 min). Each check pushes once per
@@ -10,6 +11,8 @@ default quiet hours). State in system_state `watchdog:<name>`, an alerts.Excursi
 'sent', 'muted' (switch off), '' fine. status() is the same view for the app's Server card (#260).
 """
 
+import calendar
+import json
 import logging
 import shutil
 import socket
@@ -17,7 +20,8 @@ import ssl
 import time
 from pathlib import Path
 
-from config import (BACKUP_DIR, BACKUP_MAX_AGE_HOURS, BACKUP_S3_BUCKET, OFFSITE_MARKER, OFFSITE_MAX_AGE_HOURS,
+from config import (BACKUP_DIR, BACKUP_DRILL, BACKUP_MAX_AGE_HOURS, BACKUP_S3_BUCKET, DRILL_MAX_AGE_DAYS,
+                    DRILL_RESULT, OFFSITE_MARKER, OFFSITE_MAX_AGE_HOURS,
                     CERT_CHECK, CERT_CHECK_INTERVAL, CERT_MIN_DAYS, DB,
                     DISK_FREE_HYSTERESIS_MB, DISK_MIN_FREE_MB)
 import state
@@ -53,6 +57,32 @@ def offsite_age_hours(now=None):
     if not marker.exists():
         return float("inf")
     return ((now or time.time()) - marker.stat().st_mtime) / 3600
+
+
+def drill_result():
+    """The last restore drill's result (backups/.drill.json, written by backup_drill.py, #339):
+    {} when it never ran, None when the drill isn't set up (no drill key) or there is no
+    backup folder. An unreadable file counts as a failed drill."""
+    path = Path(BACKUP_DIR) / DRILL_RESULT
+    if not BACKUP_DRILL or not path.parent.is_dir():
+        return None
+    if not path.exists():
+        return {}
+    try:
+        result = json.loads(path.read_text())
+        return result if isinstance(result, dict) else {"ok": False, "error": "unreadable result"}
+    except (OSError, ValueError) as e:
+        return {"ok": False, "error": f"unreadable result: {e}"}
+
+
+def drill_age_days(result, now=None):
+    """Days since the drill [result] ran; inf when it never did."""
+    ran = result.get("ran") if result else None
+    try:
+        t = calendar.timegm(time.strptime(ran, "%Y-%m-%dT%H:%M:%SZ")) if ran else None
+    except (TypeError, ValueError):
+        t = None
+    return float("inf") if t is None else ((now or time.time()) - t) / 86400
 
 
 def _ago(hours):
@@ -139,6 +169,13 @@ def status(now=None):
     if age is not None:
         last = None if age == float("inf") else now - age * 3600
         offsite = {"last": _iso(last), "ok": age <= OFFSITE_MAX_AGE_HOURS}
+    drill = None
+    result = drill_result()
+    if result is not None:
+        age = drill_age_days(result, now)
+        drill = {"last": result.get("ran"), "backup": result.get("object"),
+                 "error": result.get("error"),
+                 "ok": bool(result.get("ok")) and age <= DRILL_MAX_AGE_DAYS}
     free = disk_free_mb()
     certs = []
     for target in CERT_CHECK:
@@ -152,6 +189,7 @@ def status(now=None):
                     "last_message_age_s": int(now - state.LAST_MESSAGE_AT) if state.LAST_MESSAGE_AT else None},
         "backup": backup,
         "offsite": offsite,
+        "drill": drill,
         "disk": {"free_mb": int(free), "ok": free >= DISK_MIN_FREE_MB},
         "certs": certs,
     }
@@ -173,6 +211,22 @@ def _check_offsite(now):
                "Off-site backup OK again", "The database backup reached S3 again")
 
 
+def _check_drill(now):
+    result = drill_result()
+    if result is None:
+        return
+    age = drill_age_days(result, now)
+    if result and not result.get("ok"):
+        bad, title, body = True, "Restore drill failed", f"The S3 backup didn't restore cleanly: {result.get('error') or 'unknown error'}"
+    elif age > DRILL_MAX_AGE_DAYS:
+        last = "never" if age == float("inf") else f"{age:.0f} days ago"
+        bad, title, body = True, "Restore drill overdue", f"No restore drill for over {DRILL_MAX_AGE_DAYS} days (last: {last})"
+    else:
+        bad, title, body = False, "", ""
+    _watch("drill", bad, not bad, title, body,
+           "Restore drill OK again", f"{result.get('object', 'The S3 backup')} restored and validated")
+
+
 def _check_disk(now):
     free = disk_free_mb()
     _watch("disk", free < DISK_MIN_FREE_MB, free >= DISK_MIN_FREE_MB + DISK_FREE_HYSTERESIS_MB,
@@ -183,7 +237,7 @@ def _check_disk(now):
 def check_watchdogs(now=None):
     """Each check on its own: one that raises (a backup file removed while it's stat-ed,
     disk_usage failing) doesn't skip the others (#303)."""
-    for name, check in (("backup", _check_backup), ("offsite", _check_offsite),
+    for name, check in (("backup", _check_backup), ("offsite", _check_offsite), ("drill", _check_drill),
                         ("disk", _check_disk), ("certificates", check_certs)):
         try:
             check(now)

@@ -513,6 +513,7 @@ Reading it sends no pushes and runs no check of its own.
 {"backend":{"started":"2026-10-20T18:06:10Z","mqtt_connected":true,"last_message_age_s":2},
  "backup":{"last":"2026-10-20T01:30:02Z","size_bytes":2486563,"count":7,"ok":true},
  "offsite":{"last":"2026-10-20T01:30:04Z","ok":true},
+ "drill":{"last":"2026-11-01T03:00:41Z","backup":"backups/data-2026-11-01.db.gz","error":null,"ok":true},
  "disk":{"free_mb":12034,"ok":true},
  "certs":[{"target":"www.example.com:443","expires":"2027-01-10T12:00:00Z","error":null,"ok":true}]}
 ```
@@ -528,6 +529,10 @@ Reading it sends no pushes and runs no check of its own.
 | `offsite` | object or null | null when no `BACKUP_S3_BUCKET` is set (#122) |
 | `offsite.last` | string or null | last successful upload to S3; null = never |
 | `offsite.ok` | bool | last upload at most `OFFSITE_MAX_AGE_HOURS` (26 h) ago |
+| `drill` | object or null | the monthly restore drill (#339); null when it isn't set up (no drill key in `.env`) or without a `backups` folder |
+| `drill.last`, `drill.backup` | string or null | when it last ran, and the S3 object it restored; null = never ran |
+| `drill.error` | string or null | why it failed (download, gunzip, integrity, `validate_db.py`, …); null when it passed |
+| `drill.ok` | bool | it passed, at most `DRILL_MAX_AGE_DAYS` (35) days ago |
 | `disk.free_mb`, `disk.ok` | int, bool | free space on the database's disk; ok = at least `DISK_MIN_FREE_MB` (1024) |
 | `certs` | array | one entry per `CERT_CHECK` target (#206), in that order; `[]` when none |
 | `certs[].expires` | string or null | from the hourly check; null before the first one (5 min after start) or when it failed |
@@ -586,3 +591,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #325: app only: the devices list, restarts line and Server card moved from Home to the Devices screen; no endpoint changed.
 - #326: app only: a fridge gauge (Level bands: fridge); no endpoint changed.
 - #331: `/api/hourly` and `/api/daily` have `avg_fridge`, `min_fridge`, `max_fridge`.
+- #339: `/api/server_status` has `drill`.

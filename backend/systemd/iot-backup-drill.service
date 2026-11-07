@@ -1,0 +1,20 @@
+# Monthly restore drill (#339): restore the newest S3 backup into a temp DB and validate it.
+# Install: see the "Backups" section in README.md. Runs as the backend's user from /opt/iot.
+[Unit]
+Description=Restore drill of the IoT backend's off-site backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=iot
+Group=iot
+WorkingDirectory=/opt/iot
+ExecStart=/opt/iot/venv/bin/python backup_drill.py
+NoNewPrivileges=true
+ProtectSystem=strict
+# Only backups/.drill.json; the restored copy goes to the private /tmp
+ReadWritePaths=/opt/iot/backups
+UMask=0077
+ProtectHome=true
+PrivateTmp=true
