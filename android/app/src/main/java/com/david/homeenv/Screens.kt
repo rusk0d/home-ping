@@ -14,7 +14,7 @@ object Screens {
             listOf("HUMIDITY_", "TEMP_", "PRESSURE_", "BASELINE_").any { type.startsWith(it) } -> HistoryActivity::class.java
             // a node, one of its sensors or its radar
             listOf("NODE_", "SENSOR_", "RADAR_").any { type.startsWith(it) } -> DevicesActivity::class.java
-            // air, windows, fridge, occupancy, server watchdog: their cards on Home
+            // air, windows, occupancy, server watchdog: their cards on Home
             else -> MainActivity::class.java
         }
         return Intent(ctx, screen).apply {
@@ -27,6 +27,7 @@ object Screens {
         type.startsWith("TEMP_") -> HistoryActivity.Metric.TEMPERATURE
         type.startsWith("HUMIDITY_") -> HistoryActivity.Metric.HUMIDITY
         type.startsWith("PRESSURE_") -> HistoryActivity.Metric.PRESSURE
+        type.startsWith("FRIDGE_") -> HistoryActivity.Metric.FRIDGE   // alert and recovery, #332
         else -> null
     }
 }

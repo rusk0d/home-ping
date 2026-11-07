@@ -237,6 +237,33 @@
                     app:accentColor="@color/good" />
             </com.david.homeenv.ui.AccentCard>
 
+            <!-- The fridge (#332): its own readings, never in the room charts above -->
+            <com.david.homeenv.ui.AccentCard
+                android:id="@+id/card_fridge"
+                style="@style/HomeCard"
+                android:layout_marginTop="12dp"
+                app:accentColor="@color/accent_temp">
+
+                <TextView
+                    style="@style/HomeLabel"
+                    android:drawableStart="@drawable/ic_metric_temp"
+                    android:drawableTint="@color/accent_temp"
+                    android:text="Fridge" />
+
+                <TextView
+                    android:id="@+id/fridge_summary"
+                    style="@style/HomeFoot"
+                    android:layout_marginTop="4dp"
+                    android:text="--" />
+
+                <com.david.homeenv.ui.HistoryChartView
+                    android:id="@+id/fridge_chart"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    app:accentColor="@color/accent_temp" />
+            </com.david.homeenv.ui.AccentCard>
+
             </LinearLayout>
         </ScrollView>
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
