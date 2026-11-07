@@ -1,200 +1,126 @@
-"""Baseline deviation alerts: detect unusual readings for time of day (#229)."""
+"""Unusual readings for the time of day (#229, reworked in #297).
+
+Each newly completed hour in `hourly` is checked once: its temperature, humidity and CO₂
+averages against the same hour of the day over the last BASELINE_DAYS days, as a robust
+z-score (median and MAD). BASELINE_HOURS unusual hours in a row push "Unusual reading";
+once the metric is back under BASELINE_Z_CLEAR, "Back to normal". Pressure isn't checked:
+it has no daily rhythm, and fronts already push "Pressure falling fast" (#237).
+
+system_state per metric: baseline_count:<metric> (unusual hours in a row) and
+baseline_alerted:<metric> ("sent" / "muted" while an excursion is on; saved only after
+the push went out, so a failed one is retried on the next hour; a muted excursion ends
+without a "Back to normal"). baseline_last_hour is the
+newest hour checked.
+"""
 
 import logging
+import time
 from datetime import timedelta
 
 import alerts
-from store import db, get_state, set_state, parse_ts, utcnow
+import state
+from config import NOTIFICATION_COOLDOWN
+from store import db, get_state, parse_ts, set_state, utcnow
 
 log = logging.getLogger(__name__)
 
-# Per-metric thresholds for minimum absolute deviation to prevent alerts when variance is tiny
-MIN_ABS_DEV = {"temp": 1.5, "humidity": 5.0, "co2": 100, "pressure": 2.0}  # °C, %, ppm, hPa
-Z_THRESHOLD = 3.0  # Alert when |z| > this
-CONSECUTIVE_HOURS = 2  # Alert after this many consecutive anomalous hours
-UNITS = {"temp": "°C", "humidity": "%", "co2": "ppm", "pressure": "hPa"}
+BASELINE_DAYS = 28
+BASELINE_MIN_VALUES = 14   # half the window: a new install stays quiet for its first two weeks
+BASELINE_Z = 3.0           # unusual above this |z|
+BASELINE_Z_CLEAR = 2.0     # back to normal below this (hysteresis)
+BASELINE_HOURS = 2         # unusual hours in a row before a push
+BASELINE_MAX_AGE_HOURS = 2  # an older newest hour (node down, catch-up) isn't checked
+
+# metric: (hourly column, unit, name in the push, floor for the spread)
+METRICS = {
+    "temp": ("temp_avg", "°C", "Temperature", 1.5),
+    "humidity": ("humidity_avg", "%", "Humidity", 5.0),
+    "co2": ("co2_avg", "ppm", "CO₂", 100.0),
+}
 
 
 def median(values):
-    """Median of a list."""
-    if not values:
-        return None
-    sorted_vals = sorted(values)
-    n = len(sorted_vals)
-    return sorted_vals[n // 2] if n % 2 else (sorted_vals[n // 2 - 1] + sorted_vals[n // 2]) / 2
+    s = sorted(values)
+    n = len(s)
+    return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
 
-def mad(values, center=None):
-    """Median Absolute Deviation."""
-    if not values or center is None:
-        return None
-    abs_devs = [abs(v - center) for v in values]
-    return median(abs_devs)
-
-
-def compute_robust_zscore(value, history, metric_name):
-    """Compute z-score using median and MAD, robust to outliers.
-
-    Args:
-        value: Current reading
-        history: List of historical values for the same hour-of-day
-        metric_name: 'temp', 'humidity', 'co2', 'pressure' — for min_abs_dev lookup
-
-    Returns:
-        (z_score, median, mad) or (None, None, None) if insufficient data
-    """
-    if not history or len(history) < 8:  # Need ~2 weeks of data
-        return None, None, None
-
+def robust_z(value, history, floor):
+    """(z, median) of [value] against [history], or (None, None) with too little history.
+    The spread is the MAD, at least [floor], so a very steady metric doesn't alert on noise."""
+    if len(history) < BASELINE_MIN_VALUES:
+        return None, None
     med = median(history)
-    deviation = mad(history, med)
-
-    if med is None or deviation is None:
-        return None, None, None
-
-    # Use minimum absolute deviation to prevent alerts when variance is tiny
-    min_dev = MIN_ABS_DEV.get(metric_name, 1.0)
-    denominator = max(deviation, min_dev)
-
-    z = (value - med) / denominator if denominator > 0 else 0
-    return z, med, deviation
+    spread = max(median([abs(v - med) for v in history]), floor)
+    return (value - med) / spread, med
 
 
-def get_hour_of_day(ts_str):
-    """Extract day-of-week and hour from timestamp ('YYYY-MM-DD HH:00:00')."""
-    try:
-        dt = parse_ts(ts_str)
-        day_name = dt.strftime("%A")  # Monday, Tuesday, ...
-        hour = dt.strftime("%H")
-        return f"{day_name} {hour}:00"
-    except Exception:
-        return None
+def history(conn, col, hour):
+    """[col] of the same hour of the day over the BASELINE_DAYS days before [hour]."""
+    since = (parse_ts(hour) - timedelta(days=BASELINE_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    rows = conn.execute(f"""
+        SELECT {col} FROM hourly
+        WHERE {col} IS NOT NULL AND strftime('%H', hour) = ? AND hour >= ? AND hour < ?
+    """, (hour[11:13], since, hour)).fetchall()
+    return [r[0] for r in rows]
 
 
-def get_historical_values(metric_col, hour_of_day, lookback_days=28):
-    """Query hourly table for same hour-of-day from the past N days."""
-    hour_key = hour_of_day
-
+def check_baseline(now=None):
+    """Check the newest complete hour, once. Returns {metric: z} of what was checked."""
+    now = time.time() if now is None else now
     with db() as conn:
-        cutoff = (utcnow() - timedelta(days=lookback_days)).strftime("%Y-%m-%d %H:%M:%S")
-
-        # SQLite strftime for day and hour of the timestamp
-        query = f"""
-            SELECT {metric_col} FROM hourly
-            WHERE {metric_col} IS NOT NULL
-            AND strftime('%A %H:00', hour) = ?
-            AND hour >= ?
-            ORDER BY hour
-        """
-
-        rows = conn.execute(query, (hour_key, cutoff)).fetchall()
-        return [row[0] for row in rows]
-
-
-def check_baseline_deviations():
-    """Check the most recent complete hour in the hourly table for deviations.
-
-    Returns: list of (metric, z_score, median, current_value, detail) tuples for alerts
-    """
-    with db() as conn:
-        # Get the most recent hour (the one just completed)
-        row = conn.execute(
-            "SELECT hour, temp_avg, humidity_avg, co2_avg, pressure_avg FROM hourly ORDER BY hour DESC LIMIT 1"
-        ).fetchone()
-
+        row = conn.execute("SELECT * FROM hourly ORDER BY hour DESC LIMIT 1").fetchone()
         if not row:
-            return []
+            return {}
+        cols = [d[0] for d in conn.execute("SELECT * FROM hourly LIMIT 0").description]
+        newest = dict(zip(cols, row))
+        hour = newest["hour"]
+        if hour == get_state("baseline_last_hour", None):
+            return {}
+        if utcnow() - parse_ts(hour) > timedelta(hours=BASELINE_MAX_AGE_HOURS + 1):
+            set_state("baseline_last_hour", hour)
+            return {}
+        scores = {}
+        for metric, (col, _, _, floor) in METRICS.items():
+            if newest[col] is not None:
+                z, med = robust_z(newest[col], history(conn, col, hour), floor)
+                if z is not None:
+                    scores[metric] = (z, med, newest[col])
+    set_state("baseline_last_hour", hour)
 
-        hour_ts, temp, humidity, co2, pressure = row
-        hour_of_day = get_hour_of_day(hour_ts)
-
-        if not hour_of_day:
-            return []
-
-        alerts_to_send = []
-        metric_values = {"temp": temp, "humidity": humidity, "co2": co2, "pressure": pressure}
-        metric_scores = {}  # Cache z-scores to avoid recomputation
-
-        # Compute z-scores for all metrics once
-        for metric_name in ["temp", "humidity", "co2", "pressure"]:
-            value = metric_values[metric_name]
-            if value is None:
-                metric_scores[metric_name] = (None, None, None)
-                continue
-
-            history = get_historical_values(f"{metric_name}_avg", hour_of_day, lookback_days=28)
-            z, med, dev = compute_robust_zscore(value, history, metric_name)
-            metric_scores[metric_name] = (z, med, dev)
-
-        # Check for anomalies and ongoing excursions
-        for metric_name in ["temp", "humidity", "co2", "pressure"]:
-            z, med, dev = metric_scores[metric_name]
-            value = metric_values[metric_name]
-
-            if z is None or value is None:
-                continue
-
-            state_key = f"baseline_excursion:{metric_name}"
-            count_key = f"baseline_excursion_count:{metric_name}"
-            excursion_start = get_state(state_key, None)
-            excursion_count = int(get_state(count_key, "0"))
-
-            if abs(z) > Z_THRESHOLD:
-                # Metric is anomalous
-                if excursion_start is None:
-                    # First anomalous hour: initialize
-                    set_state(state_key, hour_ts)
-                    set_state(count_key, "1")
-                    log.info(f"Baseline: {metric_name} anomaly started at {hour_ts}, z={z:.1f}")
-                else:
-                    # Ongoing anomaly
-                    excursion_count += 1
-                    set_state(count_key, str(excursion_count))
-
-                    if excursion_count >= CONSECUTIVE_HOURS:
-                        # Alert on 2nd+ consecutive hour
-                        unit = UNITS[metric_name]
-                        detail = f"{metric_name} z={z:.1f} (unusual for {hour_of_day}), {metric_name}={value:.1f} {unit}, typical {med:.1f} {unit}"
-                        alerts_to_send.append((metric_name, z, med, value, detail))
-                        log.info(f"Baseline alert: {detail}")
-            elif excursion_start is not None:
-                # Metric is back to normal and we had an active excursion
-                set_state(state_key, None)
-                set_state(count_key, "0")
-                log.info(f"Baseline: {metric_name} excursion ended, back to normal")
-
-                # Send "back to normal" notification
-                unit = UNITS[metric_name]
-                detail = f"{metric_name} back to normal for {hour_of_day}, reading {value:.1f} {unit}"
-                alerts_to_send.append((metric_name, 0, med, value, detail))
-
-        return alerts_to_send
+    local = f"{hour[11:13]}:00 UTC"
+    for metric, (z, med, value) in scores.items():
+        _, unit, name, _ = METRICS[metric]
+        count = int(get_state(f"baseline_count:{metric}", "0"))
+        count = count + 1 if abs(z) > BASELINE_Z else 0
+        set_state(f"baseline_count:{metric}", str(count))
+        alerted = get_state(f"baseline_alerted:{metric}", "") or ""
+        key = f"BASELINE_{metric}"
+        if now - state.LAST_NOTIFICATION.get(key, 0) <= NOTIFICATION_COOLDOWN:
+            continue
+        detail = f"{metric}={value:.1f} {unit}, typical {med:.1f} {unit} at {local}, z={z:+.1f}"
+        data = {"event": "BASELINE", "device": metric}
+        if not alerted and count >= BASELINE_HOURS:
+            direction = "high" if z > 0 else "low"
+            result = alerts.alert("system", "BASELINE_DEVIATION", detail,
+                                  title="Unusual reading",
+                                  body=f"{name} is unusually {direction} for this time of day: "
+                                       f"{value:.1f} {unit} (usually {med:.1f})",
+                                  data=data, cooldown_key=key, kind="baseline")
+            if result:
+                set_state(f"baseline_alerted:{metric}", result)
+        elif alerted and abs(z) < BASELINE_Z_CLEAR:
+            if alerted == "muted" or alerts.alert(
+                    "system", "BASELINE_NORMAL", detail,
+                    title="Back to normal", body=f"{name} is back to normal: {value:.1f} {unit}",
+                    data=data, cooldown_key=key, kind="baseline"):
+                set_state(f"baseline_alerted:{metric}", "")
+    return {m: s[0] for m, s in scores.items()}
 
 
 def send_baseline_alerts():
-    """Check for deviations and send alerts."""
-    deviations = check_baseline_deviations()
-
-    for metric_name, z, med, value, detail in deviations:
-        cooldown_key = f"baseline:{metric_name}"
-
-        # Different title/body for anomaly vs recovery
-        is_recovery = z == 0
-        if is_recovery:
-            title = "Back to normal"
-            body = f"{metric_name.capitalize()} is back to normal"
-        else:
-            title = "Unusual reading"
-            body = f"{metric_name.capitalize()} is unusual for this time of day"
-
-        # Use existing alert plumbing
-        alerts.alert(
-            device="system",
-            event_type="BASELINE_DEVIATION",
-            detail=detail,
-            title=title,
-            body=body,
-            data={"metric": metric_name, "z_score": str(z)},
-            cooldown_key=cooldown_key,
-            kind="baseline"
-        )
+    """For check_watchdogs(): never raises."""
+    try:
+        check_baseline()
+    except Exception as e:
+        log.error("Baseline check failed: %s", e)

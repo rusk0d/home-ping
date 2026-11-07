@@ -49,7 +49,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 - One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
   `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
   and back online; also the server watchdog, WATCHDOG, #176, and silent sensors, SENSOR_STATUS,
-  #224), `pressure` (PRESSURE, #237), `air` (AIR, #245), `baseline` (BASELINE_DEVIATION, #229), `fridge` (FRIDGE_ALERT/FRIDGE_NORMAL, #290).
+  #224), `pressure` (PRESSURE, #237), `air` (AIR, #245), `baseline` (BASELINE, #229), `fridge` (FRIDGE_ALERT/FRIDGE_NORMAL, #290).
   All on by default.
 - **Quiet hours**: off by default. When on, the alert types above are muted between
   `start` and `end` (server local time, Budapest; the window may cross midnight,
@@ -293,18 +293,25 @@ pushed. Checked with the watchdogs, every 5 min.
 - Switch `fridge`; quiet hours mute it like the other environment alerts.
 - The fridge isn't a room sensor: the room `TEMP` alert skips it (`NON_ROOM_DEVICES`).
 
-### 12. Unusual reading: `BASELINE_DEVIATION` (since #229)
+### 12. Unusual reading: `BASELINE` (since #229, reworked in #297)
 
-**Never fires as built: see #297.** Intended behaviour, from `baseline.py`:
+`baseline.py`, with the watchdogs every 5 min, but each newly completed hour of `hourly` is
+checked once (`baseline_last_hour`; an hour more than 3 h old isn't, after downtime).
 
-- Checked with the watchdogs, every 5 min. For the newest complete hour in `hourly`, each of
-  temperature, humidity, CO₂ and pressure is compared to the same weekday and hour over the last
-  28 days: robust z-score (median, MAD, at least `MIN_ABS_DEV` per metric), needs 8 values.
-- `|z| > 3` for `CONSECUTIVE_HOURS` (2) checks in a row: push `Unusual reading` /
-  `<Metric> is unusual for this time of day`; back under: `Back to normal` /
-  `<Metric> is back to normal`. data `{"metric": "<metric>", "z_score": "<z>"}` (no `event`).
-- Logs `BASELINE_DEVIATION`. Switch `baseline`; quiet hours mute it. State keys
-  `baseline_excursion:<metric>`, `baseline_excursion_count:<metric>` in `system_state`.
+- Metrics: temperature, humidity, CO₂ (`temp_avg`, `humidity_avg`, `co2_avg`; room devices only,
+  #290). Not pressure: no daily rhythm, and fronts push `PRESSURE` already.
+- Against the **same hour of the day** over the 28 days before: robust z-score, median and MAD,
+  the MAD at least 1.5 °C / 5 %RH / 100 ppm. Needs 14 values, so a fresh install stays quiet for
+  two weeks.
+- `|z| > 3` for **2 hours in a row**: `Unusual reading` / `Temperature is unusually high for this
+  time of day: 30.0 °C (usually 22.0)`. Once under `|z| 2` (hysteresis): `Back to normal` /
+  `Temperature is back to normal: 23.0 °C`, only if the alert was sent (a muted one ends quietly).
+- data `{"event": "BASELINE", "device": "temp" | "humidity" | "co2"}`: one slot per metric, the
+  recovery replaces the alert. Logs `BASELINE_DEVIATION` / `BASELINE_NORMAL` (device `system`).
+- Cooldown key `BASELINE_<metric>`, 15 min. The excursion state is saved only after the push went
+  out, so a failed one is retried on the next hour. Switch `baseline`; quiet hours mute it.
+- Before #297 it never fired: SQLite has no `strftime('%A')`, and 28 days give only 4-5 values
+  per weekday-hour.
 
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
@@ -344,12 +351,11 @@ own app/email, not by FCM.
 | `PRESSURE` | Pressure falling fast | hourly pressure average −3.0 hPa or more below 3 h earlier | once per excursion (until > −2.0), 15 min | 5 min check after the hourly rollup |
 | `AIR` | Time to air out / Air is fresh again (`co2`); Close the window? / Window still open? (`window`) | CO₂ ≥ 1200 ppm for 10 min, someone home / < 900 again; spell ≥ 20 min with fresh air and cold outside; geofence left home during a spell | every 3 h while high; once per spell; once per leave | 60 s check; `POST /api/occupancy_arm` |
 | `FRIDGE_ALERT` / `FRIDGE_NORMAL` | Fridge too cold / warming up / too warm / too warm (sustained) / back to normal | the node's `alert` state changed (<0 °C, >5 °C, >8 °C for 30 min; >5 °C for 2 h) | once per state change, 15 min per state | 5 min check |
-| (none) `BASELINE_DEVIATION` | Unusual reading / Back to normal | hourly average far from the same weekday-hour of the last 28 days (**never fires, #297**) | none | 5 min check |
+| `BASELINE` | Unusual reading / Back to normal | hourly average \|z\| > 3 vs. the same hour of the day over 28 days, 2 hours in a row / \|z\| < 2 again | once per excursion, 15 min per metric | each new hour (5 min check) |
 
 ## Mismatches and issues
 
-- #297: `BASELINE_DEVIATION` can never fire (SQLite has no `strftime('%A')`, and 28 days give
-  at most 4-5 values per weekday-hour, 8 are needed); if it did, it would push every 5 min.
+None open.
 
 ## Changelog
 
