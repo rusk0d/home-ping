@@ -119,7 +119,7 @@ ingestion (#58).
 | `uptime` | integer | seconds | Seconds since boot, from the 64-bit `esp_timer_get_time()` (`hpUptimeSeconds()` in the shared HomePing library), so it doesn't wrap (#8, #50, #75). Before: `millis() / 1000`, which wrapped after ~49.7 days. |
 | `rssi` | integer | dBm | `WiFi.RSSI()`. Sent on presence and co2, **not** on bme280. |
 | `reset_reason` | integer | n/a | Why the node last booted (#228): ESP-IDF `esp_reset_reason()` (`esp_reset_reason_t`), the same for every message until the next boot. 1 power-on, 3 software (`ESP.restart()`: WiFi timeout, OTA), 4 panic, 5 interrupt watchdog, 6 task watchdog, 7 other watchdog, 9 brownout, 14 power glitch, 15 CPU lockup (full list: `RESET_REASONS` in `backend/store.py`). On presence, bme280 and co2. Optional: nodes on older firmware don't send it. |
-| `alert` | string or null | n/a | Device-specific alert state, e.g. `"cold"`, `"warm_low"` on fridge_temp. Empty string or omitted = no alert. Stored per reading (#290). |
+| `alert` | string or null | n/a | Device-specific alert state, e.g. `"cold"`, `"warm_low"` on fridge_temp. Empty string or omitted = no alert. Stored per reading (#290); a non-string or one over `ALERT_MAX` (32) characters is stored as null and the reading kept (#294). |
 
 ---
 
@@ -257,9 +257,11 @@ skipped because `temp_c` and `humidity` are absent.
 - Publisher: `firmware/fridge_node` (`DEVICE_NAME = "fridge_temp_esp32"`), DS18B20 on GPIO 4 (OneWire).
 - Interval: every 60 s (`TEMP_INTERVAL`).
 - Retained: yes. QoS 0.
-- Alert state tracking on the node: transition state machine that tracks cold (<0°C for 30+ min),
-  warm_low (>5°C for 30 min), warm_critical (>8°C for 30 min), warm_critical_duration (>5°C for 2+ hours).
-  Alert state is `""` (empty string) when back to normal, or one of the above string values.
+- Alert state, decided on the node (#294): each condition (<0 °C, >5 °C, >8 °C) starts when the
+  reading first crosses its threshold and ends only 0.5 °C back past it (hysteresis). `alert` is
+  the most severe condition that has lasted long enough: `warm_critical` (>8 °C for 30 min),
+  `warm_critical_duration` (>5 °C for 2 h), `warm_low` (>5 °C for 30 min), `cold` (<0 °C for
+  30 min); `""` otherwise. The timers are in RAM, so a reboot starts them over.
 - The backend stores the `alert` field (see "Common fields") and sends notifications via
   the "fridge" notification kind (#290) when the alert state changes.
 
@@ -269,8 +271,9 @@ skipped because `temp_c` and `humidity` are absent.
 | `temp_c` | float | °C | DS18B20 reading, 1 decimal |
 | `alert` | string | n/a | `""` (normal), `"cold"`, `"warm_low"`, `"warm_critical"`, or `"warm_critical_duration"` |
 | `rssi` | integer | dBm | |
-| `uptime` | integer | s | |
+| `uptime` | integer | s | `hpUptimeSeconds()` (64-bit, doesn't wrap; `millis() / 1000` before #294) |
 | `reset_reason` | integer | n/a | |
+| `heap_free`, `heap_min`, `heap_block` | integer | bytes | as on presence (for `/api/metrics`) |
 
 Example:
 
