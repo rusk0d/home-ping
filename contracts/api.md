@@ -157,6 +157,10 @@ Then **`ts` and `uptime` are overwritten** with the radar row's values:
 Radar booleans are integers 0/1 here (as stored in SQLite).
 `confidence` = `calculate_confidence(device)` (see "confidence" above).
 
+Every device entry also has **`room`** (since #306): `true` when its readings are the flat's
+(`config.DEVICES` role `room`, also any device not listed there), `false` for the fridge. A
+client picking "the room's" temperature skips the `false` ones instead of hard-coding IDs.
+
 Plus:
 
 ```json
@@ -316,8 +320,11 @@ The widget reads `co2` for its CO2 row (fetched alongside `/api/latest`; `--` if
 Every row in the `devices` table.
 
 ```json
-[{"device":"home_ping_esp32","last_seen":"2026-10-13T17:42:15Z","online":true}]
+[{"device":"home_ping_esp32","name":"Main node","role":"room","last_seen":"2026-10-13T17:42:15Z","online":true}]
 ```
+
+`name` and `role` (since #306) come from `config.DEVICES`: role `room` or `fridge`; a device not
+listed there is `room`, named by its ID.
 
 Sensor nodes only. (Until #15, `/api/register_token` added an `"unknown"` row for
 the phone; the backend deletes that row on start.)
@@ -546,3 +553,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #245: `/api/notification_settings` has an `air` switch; `POST /api/occupancy_arm` from the geofence can push "Window still open?".
 - #236: the occupancy arm switch moved from the Android home screen to its notification settings (no API change).
 - #306: the routes moved into Flask blueprints (`api_env`, `api_history`, `api_notify`, `api_server`); no endpoint changed.
+- #306: `/api/devices` has `name` and `role`, `/api/latest_all` entries have `room` (device registry `config.DEVICES`).

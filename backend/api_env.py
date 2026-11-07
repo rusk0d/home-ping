@@ -8,7 +8,7 @@ import re
 from flask import Blueprint, jsonify
 
 from config import (
-    MOULD_HOURS, MOULD_HUMIDITY, ROOM_DEVICES_SQL,
+    MOULD_HOURS, MOULD_HUMIDITY, ROOM_DEVICES_SQL, device_info,
 )
 from store import (
     calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
@@ -140,6 +140,10 @@ def latest_all():
             })
             result[device] = entry
 
+    # Whether its readings are the room's (config.DEVICES, #306): the app's room card skips
+    # the others instead of hard-coding the fridge
+    for device, entry in result.items():
+        entry["room"] = device_info(device)["role"] == "room"
     result["combined"] = {
         "occupied": get_combined_occupancy(),
         "confidence": calculate_combined_confidence()
@@ -254,6 +258,7 @@ def devices():
     for dev, ts in rows:
         out.append({
             "device": dev,
+            **device_info(dev),   # name, role (config.DEVICES, #306)
             "last_seen": iso(ts),
             "online": is_online(ts, now)
         })

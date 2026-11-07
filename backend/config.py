@@ -54,9 +54,27 @@ METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
 METRICS_FRESH_SECONDS = 600
 HEALTH_MAX_MESSAGE_AGE = 300   # /api/health fails when no live MQTT message came for this long (#77)
 
+# The nodes (#306, R4). role: "room" (its readings are the flat's: room alerts, the hourly
+# roll-up, history_24h, the "whichever device" readings) or "fridge" (its own alerts only,
+# #290). occupancy: the radar whose rows are the occupancy history; co2: the node the air-out
+# helper watches. A device not listed counts as "room" under its ID. Served by /api/devices
+# and /api/latest_all ("room"), so the app needn't hard-code which node is what.
+DEVICES = {
+    "home_ping_esp32": {"name": "Main node", "role": "room", "occupancy": True, "co2": True},
+    "hallway_presence_esp32": {"name": "Hallway radar", "role": "room"},
+    "fridge_temp_esp32": {"name": "Fridge", "role": "fridge"},
+}
+
+
+def device_info(device):
+    """{"name", "role"} for [device]; an unknown one is a room device named by its ID."""
+    info = DEVICES.get(device, {})
+    return {"name": info.get("name", device), "role": info.get("role", "room")}
+
+
 # Presence (LD2410C radar) — the ONLY source of occupancy data.
 # PIR "occupied" fields from other devices are ignored.
-PRESENCE_DEVICE = "home_ping_esp32"
+PRESENCE_DEVICE = next(d for d, info in DEVICES.items() if info.get("occupancy"))
 PRESENCE_SIGNAL_THRESHOLD = 15   # stationary readings below this energy are treated as noise
 # "confidence" everywhere in the API: % of a radar's rows in the last
 # CONFIDENCE_MINUTES that were occupied (0-100), or None without radar data.
@@ -90,13 +108,14 @@ ALERT_MAX = 32   # longest accepted payload `alert` (a node's own alert state, #
 
 # Nodes whose temperature isn't the room's (#290): left out of room alerts, the hourly
 # roll-up, history_24h and the "whichever device" readings
-NON_ROOM_DEVICES = ("fridge_temp_esp32",)
+NON_ROOM_DEVICES = tuple(d for d, info in DEVICES.items() if info["role"] != "room")
+FRIDGE_DEVICE = next(d for d, info in DEVICES.items() if info["role"] == "fridge")
 ROOM_DEVICES_SQL = "device NOT IN (" + ", ".join(f"'{d}'" for d in NON_ROOM_DEVICES) + ")"
 
 # Air-out helper (#245): window spells and CO₂ excursions, pushes under the "air" switch since
 # step 2 (logs-only 2026-10-19..24). Thresholds from the main node's readings of 2026-10-17..19 (a window opening fell 250-1000 ppm and 0.8-1.7 °C
 # in 10 min; closing it brought the temperature back +0.3-1.5 °C within 10 min).
-AIR_DEVICE = PRESENCE_DEVICE      # the node with the CO₂ sensor (main node)
+AIR_DEVICE = next(d for d, info in DEVICES.items() if info.get("co2"))   # the main node
 AIR_CHECK_INTERVAL = 60           # seconds
 WINDOW_MINUTES = 10               # the changes below are over this many minutes
 WINDOW_CO2_DROP = 200             # ppm fall that means a window opened...
