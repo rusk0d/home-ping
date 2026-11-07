@@ -17,7 +17,7 @@ NODE_OFFLINE = {}       # device -> whether its offline push was sent (False: mu
 NODE_LOCK = threading.Lock()  # offline checks (own thread) vs. messages (MQTT thread)
 STARTED_AT = time.time()      # reset by start(); the offline check and health count from it
 LAST_MESSAGE_AT = None  # last live (non-retained) MQTT message, for /api/health (#77)
-NODE_HEALTH = {}        # device -> newest presence health values + "at" (unix time), for /api/metrics
+NODE_HEALTH = {}        # device -> {field: (newest value, unix time)}, for /api/metrics (#296)
 mqttc = None            # MQTT client, created by start()
 
 

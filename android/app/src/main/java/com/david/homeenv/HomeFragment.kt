@@ -243,15 +243,16 @@ class HomeFragment : Fragment() {
     private fun renderFridge(latest: JSONObject) {
         val fridge = latest.optJSONObject(FRIDGE)
         val temp = fridge?.optNum("temp")
-        val alert = fridge?.optString("alert", "") ?: ""
+        // optString() turns a JSON null into "null"
+        val alert = fridge?.takeUnless { it.isNull("alert") }?.optString("alert").orEmpty()
         b.fridgeValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
-        Levels.applyChip(b.fridgeAlert, temp?.let(Levels::temperature))
-        b.fridgeStatus.text = when {
-            alert.isNullOrEmpty() -> "normal"
-            alert == "cold" -> "too cold (<0°C)"
-            alert == "warm_low" -> "warming (>5°C)"
-            alert == "warm_critical" -> "too warm (>8°C)"
-            alert == "warm_critical_duration" -> "too warm sustained"
+        Levels.applyChip(b.fridgeAlert, temp?.let { Levels.fridge(alert) })
+        b.fridgeStatus.text = when (alert) {
+            "" -> "normal"
+            "cold" -> "below 0 °C for 30+ min"
+            "warm_low" -> "above 5 °C for 30+ min"
+            "warm_critical" -> "above 8 °C for 30+ min"
+            "warm_critical_duration" -> "above 5 °C for 2+ h"
             else -> alert
         }
         fridgeTs = fridge?.optTs("ts")

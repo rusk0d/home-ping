@@ -568,24 +568,26 @@ def notification_settings_api():
 @app.route("/api/notification_history")
 @require_auth
 def notification_history():
-    """Last 20 notification events for history display (#289)."""
+    """The last 20 pushes that went out (#289): events alert() logged as "sent, <detail>" (#296).
+    Muted and failed ones, and the non-push events (occupancy changes, restarts, ...), aren't."""
     with db() as conn:
         c = conn.cursor()
         c.execute("""
             SELECT ts, type, device, value
             FROM events
+            WHERE value LIKE 'sent, %'
             ORDER BY id DESC
             LIMIT 20
         """)
         rows = c.fetchall()
 
     events = []
-    for ts, event_type, device, value in reversed(rows):  # Reverse to show oldest first
+    for ts, event_type, device, value in rows:   # newest first
         events.append({
-            "ts": iso(ts) if ts else None,
+            "ts": iso(ts),
             "type": event_type,
             "device": device,
-            "value": value,
+            "detail": value.removeprefix("sent, "),
         })
 
     return jsonify({"events": events})

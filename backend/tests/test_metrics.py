@@ -14,7 +14,7 @@ from support import check
 def test_metrics(env):
     os.environ["METRICS_TOKEN"] = "t0ken"
     import server
-    import config, ingest, state, api
+    import config, ingest, metrics, state, api
     server.prepare()
     c = api.app.test_client()
 
@@ -67,9 +67,19 @@ def test_metrics(env):
           and any(ln.startswith("homeping_mqtt_last_message_age_seconds ") for ln in lines))
 
     # A node that went quiet drops out instead of showing its last numbers forever
-    state.NODE_HEALTH["home_ping_esp32"]["at"] = time.time() - config.METRICS_FRESH_SECONDS - 1
+    old = time.time() - config.METRICS_FRESH_SECONDS - 1
+    health = state.NODE_HEALTH["home_ping_esp32"]
+    for k, (v, _) in list(health.items()):
+        health[k] = (v, old)
     lines = get().get_data(as_text=True).splitlines()
     check("stale node health left out", not any('heap_free_bytes{device="home_ping_esp32"}' in ln for ln in lines))
+
+    # #296: env messages go on after the radar stopped: their fields are fresh, the radar's aren't
+    metrics.note_node("home_ping_esp32", rssi=-55, uptime=99)
+    lines = get().get_data(as_text=True).splitlines()
+    check("env fields fresh again", 'homeping_node_wifi_rssi_dbm{device="home_ping_esp32"} -55' in lines)
+    check("radar fields still stale", not any(ln.startswith('homeping_radar_connected{device="home_ping_esp32"}')
+                                              or ln.startswith('homeping_occupied{device="home_ping_esp32"}') for ln in lines))
 
 
 def test_metrics_off_without_token(env):

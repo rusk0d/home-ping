@@ -88,6 +88,15 @@ object Levels {
         }
     }
 
+    /** Fridge chip from the node's own `alert` state (#290, #296), not the room temperature scale. */
+    fun fridge(alert: String): Level = when (alert) {
+        "" -> Level("OK", R.color.good)
+        "warm_low" -> Level("Warming", R.color.poor)
+        "warm_critical", "warm_critical_duration" -> Level("Too warm", R.color.bad)
+        "cold" -> Level("Too cold", R.color.poor)
+        else -> Level("Alert", R.color.poor)
+    }
+
     /** Humidity chip while /api/air reports `mould_risk` (#177; contracts/api.md). */
     val MOULD_RISK = Level("Mould risk", R.color.poor)
 

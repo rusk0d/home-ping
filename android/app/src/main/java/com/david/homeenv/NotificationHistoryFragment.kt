@@ -18,10 +18,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Notification history: last 20 notifications that were sent (#289).
- * Filters events for ones that were actually delivered (status = "sent").
- */
+/** The last 20 pushes the server sent (`/api/notification_history`, #289, #296), newest first. */
 class NotificationHistoryFragment : Fragment() {
 
     private lateinit var b: FragmentNotificationHistoryBinding
@@ -35,13 +32,14 @@ class NotificationHistoryFragment : Fragment() {
         return b.root
     }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
+    // Each time the tab is shown (ViewPager2 resumes only the visible page), not just once
+    override fun onResume() {
+        super.onResume()
         load()
     }
 
     private fun load() {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 Api.fetchObject("/api/notification_history")
             }
@@ -56,27 +54,14 @@ class NotificationHistoryFragment : Fragment() {
             b.container.addView(b.status)
 
             val events = data.optJSONArray("events") ?: JSONArray()
-
-            // Filter for notifications that were actually sent (not muted or failed)
-            val sentNotifications = mutableListOf<org.json.JSONObject>()
-            for (i in 0 until events.length()) {
-                val event = events.optJSONObject(i) ?: continue
-                val value = event.optString("value", "")
-                // Value format: "sent, ...", "muted (...), ...", or "failed, ..."
-                if (value.startsWith("sent")) {
-                    sentNotifications.add(event)
-                }
-            }
-
-            if (sentNotifications.isEmpty()) {
+            if (events.length() == 0) {
                 b.status.text = "No notifications sent yet"
                 return@launch
             }
 
-            b.status.text = "Notifications sent to this phone"
-            for (event in sentNotifications) {
-                val row = eventRow(event)
-                b.container.addView(row)
+            b.status.text = "The last ${events.length()} pushes, to every phone"
+            for (i in 0 until events.length()) {
+                events.optJSONObject(i)?.let { b.container.addView(eventRow(it)) }
             }
         }
     }
@@ -97,9 +82,7 @@ class NotificationHistoryFragment : Fragment() {
         val tsStr = event.optString("ts")
         val type = event.optString("type", "?")
         val device = event.optString("device", "")
-        val value = event.optString("value", "")
-        // Extract the detail part after "sent, "
-        val detail = if (value.startsWith("sent, ")) value.substring(6) else value
+        val detail = event.optString("detail", "")
 
         val header = TextView(ctx).apply {
             text = "$type${if (device.isNotEmpty()) " · $device" else ""}"
