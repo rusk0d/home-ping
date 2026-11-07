@@ -149,6 +149,8 @@ Known keys:
 | `sensor_silent:<device>:<sensor>` | `'sent'` / `'muted'` while that sensor (`env`, `co2`) is silent, `''` once it's back (#224, #305) | no | `nodes._sensor_state()` | `nodes._sensor_state()` |
 | `fridge_alert_state` | the fridge node's alert state last handled (`''` = normal) | no | `fridge.check_fridge_alerts()` (#294) | `fridge.check_fridge_alerts()` |
 | `fridge_alert_shown` | `'sent'` / `'muted'` for that state's push, `''` when none (#300) | no | `fridge.check_fridge_alerts()` | `fridge.check_fridge_alerts()` |
+| `fridge_door_rise` | `"<start ts UTC>\|<base °C>"` of the fast rise being watched, `''` when none (#336) | no | `fridge.check_door()` | `fridge.check_door()` |
+| `fridge_door` | `'sent'` / `'muted'` for the door-open push of that rise, `''` when none (#336, Excursion format) | no | `fridge.check_door()` | `fridge.check_door()` |
 | `air:window_nudged` | the `air:window` start ts of the spell that got "Close the window?" (once per spell) | no | `air.nudge_close()` (#245 step 2) | `air.nudge_close()` |
 
 ### `hourly` (long-term history, since #129)
@@ -214,6 +216,7 @@ Event types written by `server.py`:
 | `BASELINE_DEVIATION` | `system` | `sent, temp=30.0 °C, typical 22.0 °C at 15:00, z=+16.0` (local hour) | "Unusual reading" push attempted: \|z\| > 3 for 2 consecutive hours against the same local hour of the day over 28 days (#229, #297, #302) |
 | `BASELINE_NORMAL` | `system` | `sent, temp=23.0 °C, typical 22.0 °C at 17:00, z=+2.0` | "Back to normal" push attempted: \|z\| < 2 after a pushed excursion (#297) |
 | `FRIDGE_ALERT` / `FRIDGE_ALERT_RECOVERY` | `fridge_temp_esp32` | `sent, alert=warm_low (was: normal)` / `sent, back to normal (was: warm_low)` | the fridge node's alert state changed (#290, #294; `notifications.md`) |
+| `FRIDGE_DOOR_OPEN` / `FRIDGE_DOOR_CLOSED` | `fridge_temp_esp32` | `sent, temp=7.5 (was 3.0 10 min ago)` / `sent, temp=3.6` | the door looks left open / the fridge cooled back (#336; `notifications.md`) |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12), or
 `muted (off), ` / `muted (quiet hours), ` when the alert type is switched off or in quiet hours (#82).
@@ -266,3 +269,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #306: numbered migrations, `system_state` `schema_version`; the `ts_utc` and `hourly_room_rebuilt` flags are replaced and removed.
 - #304: retention in `store.prune()` once per summaries pass instead of on every insert; partial index `ix_presence_occupied_id`.
 - #331: `hourly.fridge_avg`, `fridge_min`, `fridge_max`; migration 5 backfills them.
+- #336: `system_state` keys `fridge_door_rise`, `fridge_door`; event types `FRIDGE_DOOR_OPEN`, `FRIDGE_DOOR_CLOSED`.

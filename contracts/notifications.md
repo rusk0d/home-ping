@@ -49,7 +49,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 - One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
   `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
   and back online; also the server watchdog, WATCHDOG, #176, and silent sensors, SENSOR_STATUS,
-  #224), `pressure` (PRESSURE, #237), `air` (AIR, #245), `baseline` (BASELINE, #229), `fridge` (FRIDGE_ALERT, #290).
+  #224), `pressure` (PRESSURE, #237), `air` (AIR, #245), `baseline` (BASELINE, #229), `fridge` (FRIDGE_ALERT, #290; FRIDGE_DOOR, #336).
   All on by default.
 - **Quiet hours**: off by default. When on, the alert types above are muted between
   `start` and `end` (server local time, Budapest; the window may cross midnight,
@@ -311,6 +311,29 @@ watchdog or rollup doesn't skip it (#303).
   a more severe one, e.g. `warm_low` -> `warm_critical`, pushes at once.
 - The fridge isn't a room sensor: the room `TEMP` alert skips it (`NON_ROOM_DEVICES`).
 
+### 11b. Fridge door left open: `FRIDGE_DOOR` (since #336)
+
+The backend's own rule, from the readings (the node's `alert` doesn't know about the door):
+`fridge.check_door()` on every fridge reading (ingest), so the push isn't up to 5 min late;
+`fridge.door_step()` is the rule itself.
+
+- **Rise**: the newest reading at least `FRIDGE_DOOR_RISE_C` (2.0 °C) above the lowest of the
+  last `FRIDGE_DOOR_RISE_MINUTES` (5). The newest of those lowest readings is the base and the
+  start. A compressor cycle warms far slower than that.
+- **Open**: still above base + `FRIDGE_DOOR_CLOSED_C` (1.0 °C) `FRIDGE_DOOR_OPEN_MINUTES` (10)
+  after the start → `Fridge door open?` / `Up from 3.0 to 7.5 °C in 10 min and not cooling down`.
+  Once per rise (`alerts.Excursion`).
+- **Closed**: back within `FRIDGE_DOOR_CLOSED_C` of the base → the rise is over; after a sent
+  push `Fridge door closed` / `Back to 3.6 °C` replaces it. A door shut within a few minutes
+  cools back before 10 min: nothing is pushed.
+- data `{"event": "FRIDGE_DOOR", "device": "fridge_temp_esp32"}`: its own notification slot (not
+  the temperature alert's). Logs `FRIDGE_DOOR_OPEN` / `FRIDGE_DOOR_CLOSED`.
+- Switch `fridge`, quiet hours mute it (Excursion default): a muted open is saved as `muted` and
+  its close only logged.
+- `system_state`: `fridge_door_rise` (the watched rise) and `fridge_door` (the push's state).
+- Tuning: `tools/fridge_door_replay.py` replays the stored raw readings (2 days) through
+  `door_step()` and prints the rises and the pushes it would have sent; options override the limits.
+
 ### 12. Unusual reading: `BASELINE` (since #229, reworked in #297 and #302)
 
 `baseline.py`, in the summaries loop every 5 min (its own step, after the rollup, #303), but each newly completed hour of `hourly` is
@@ -371,6 +394,7 @@ own app/email, not by FCM.
 | `PRESSURE` | Pressure falling fast | hourly pressure average −3.0 hPa or more below 3 h earlier | once per excursion (until > −2.0), 15 min | 5 min check after the hourly rollup |
 | `AIR` | Time to air out / Air is fresh again (`co2`); Close the window? / Window still open? (`window`) | CO₂ ≥ 1200 ppm for 10 min, someone home / < 900 again; spell ≥ 20 min with fresh air and cold outside; geofence left home during a spell | every 3 h while high; once per spell; once per leave | 60 s check; `POST /api/occupancy_arm` |
 | `FRIDGE_ALERT` | Fridge too cold / warming up / too warm / too warm (sustained) / back to normal | the node's `alert` state changed (<0 °C, >5 °C, >8 °C for 30 min; >5 °C for 2 h); a muted one is pushed once unmuted if still on | once per state change, 15 min per state | 5 min check |
+| `FRIDGE_DOOR` | Fridge door open? / Fridge door closed | a rise of 2 °C within 5 min, not back within 1 °C of the start 10 min later / back within 1 °C | once per rise | each fridge reading |
 | `BASELINE` | Unusual reading / Back to normal | hourly average \|z\| > 3 vs. the same local hour over 28 days, 2 consecutive hours / \|z\| < 2 again | once per excursion | each new hour (5 min check) |
 
 ## Mismatches and issues
@@ -399,3 +423,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #122: watchdog push when the nightly backup wasn't uploaded to S3 for 26 h (`offsite`).
 - #251: failed pushes back off (1, 2, 5, 10, then every 15 min per key) instead of retrying every 60 s.
 - #305: one excursion helper and state format (`sent`/`muted`[`:<band>`]); a muted watchdog's end is logged too.
+- #336: fridge door left open push (`FRIDGE_DOOR`), switch `fridge`.

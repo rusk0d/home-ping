@@ -110,6 +110,13 @@ ALERT_MAX = 32   # longest accepted payload `alert` (a node's own alert state, #
 # roll-up, history_24h and the "whichever device" readings
 NON_ROOM_DEVICES = tuple(d for d, info in DEVICES.items() if info["role"] != "room")
 FRIDGE_DEVICE = next(d for d, info in DEVICES.items() if info["role"] == "fridge")
+# Door left open (#336, fridge.door_step): a rise of FRIDGE_DOOR_RISE_C within
+# FRIDGE_DOOR_RISE_MINUTES (a compressor cycle warms far slower), still FRIDGE_DOOR_CLOSED_C
+# above where it started FRIDGE_DOOR_OPEN_MINUTES later. Tune with tools/fridge_door_replay.py.
+FRIDGE_DOOR_RISE_C = 2.0
+FRIDGE_DOOR_RISE_MINUTES = 5
+FRIDGE_DOOR_OPEN_MINUTES = 10
+FRIDGE_DOOR_CLOSED_C = 1.0
 ROOM_DEVICES_SQL = "device NOT IN (" + ", ".join(f"'{d}'" for d in NON_ROOM_DEVICES) + ")"
 
 # Air-out helper (#245): window spells and CO₂ excursions, pushes under the "air" switch since
