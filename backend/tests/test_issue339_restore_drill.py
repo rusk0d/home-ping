@@ -97,6 +97,16 @@ def test_issue339_restore_drill(env):
     r, res = run()
     check(f"no schema_version: still OK ({res.get('error')})", r.returncode == 0 and res["ok"] and res["schema_version"] is None)
 
+    # ...and one from before #331: no fridge columns in hourly, while it has fridge readings
+    with db() as conn:
+        conn.execute("INSERT INTO readings (device, ts, temp) VALUES (?, ?, 4.0)",
+                     (config.FRIDGE_DEVICE, (now - timedelta(minutes=90)).strftime("%Y-%m-%d %H:%M:%S")))
+        for col in ("fridge_avg", "fridge_min", "fridge_max"):
+            conn.execute(f"ALTER TABLE hourly DROP COLUMN {col}")
+    upload("data-2026-11-02c.db.gz", gzip.compress((env / "data.db").read_bytes()))
+    r, res = run()
+    check(f"no fridge columns: still OK ({res.get('error')}, {res.get('validate')})", r.returncode == 0 and res["ok"])
+
     upload("data-2026-11-03.db.gz", b"not gzip at all")
     r, res = run()
     check(f"corrupt gz: failed ({res['error']})", r.returncode == 1 and "gunzip failed" in res["error"])

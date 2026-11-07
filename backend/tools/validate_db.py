@@ -220,8 +220,9 @@ def run_checks():
                 if hourly['co2_avg'] is None or abs(hourly['co2_avg'] - raw['co2_avg']) > tolerance:
                     mismatches.append(f"  {hour_str}: co2_avg mismatch (db={hourly['co2_avg']}, raw={raw['co2_avg']})")
 
-            # Check the fridge (#331)
-            if fridge and fridge['fridge_avg'] is not None:
+            # Check the fridge (#331); a database from before it (an old backup in the restore
+            # drill, #339) has no fridge columns yet: init_db() adds them on start
+            if fridge and fridge['fridge_avg'] is not None and 'fridge_avg' in hourly.keys():
                 if hourly['fridge_avg'] is None or abs(hourly['fridge_avg'] - fridge['fridge_avg']) > tolerance:
                     mismatches.append(f"  {hour_str}: fridge_avg mismatch (db={hourly['fridge_avg']}, raw={fridge['fridge_avg']})")
 
