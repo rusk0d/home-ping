@@ -21,6 +21,8 @@ from store import (
 from alerts import alert, set_radar_alerted
 from metrics import note_node
 from nodes import handle_status, touch_device
+from baseline import check_baseline
+from fridge import check_fridge_alerts
 from server_checks import check_watchdogs
 
 log = logging.getLogger(__name__)
@@ -178,18 +180,20 @@ def on_message(client, userdata, msg):
                       msg.topic, type(data).__name__, payload)
             return
 
+        # Every sketch sends its device ID; without one there's no device to store it
+        # under (the old default "esp32" made a phantom device and an offline push, #170).
+        # The radar's default is PRESENCE_DEVICE; a given one is checked like the rest (#303).
+        device = data.get("device", PRESENCE_DEVICE if "presence" in data else None)
+        if not isinstance(device, str) or not device or len(device) > DEVICE_ID_MAX:
+            log.warning("payload on %s without a device (or an ID over %d characters), dropped: %.200s",
+                        msg.topic, DEVICE_ID_MAX, payload)
+            return
+
         if "presence" in data:
             handle_presence_data(data)
             return
 
         # ---- Everything else: environmental sensors. PIR fields are ignored. ----
-        # Every sketch sends its device ID; without one there's no device to store it
-        # under (the old default "esp32" made a phantom device and an offline push, #170)
-        device = data.get("device")
-        if not isinstance(device, str) or not device or len(device) > DEVICE_ID_MAX:
-            log.warning("payload on %s without a device (or an ID over %d characters), dropped: %.200s",
-                        msg.topic, DEVICE_ID_MAX, payload)
-            return
         temp = data.get("temp_c")
         hum = data.get("humidity")
         uptime = read_int(data, "uptime")
@@ -398,22 +402,29 @@ def check_pressure(now=None):
             set_env_alerted(key, "falling")
 
 
+# The 5-minute steps, in order, each guarded: one that raises doesn't skip the rest (#303)
+SUMMARY_STEPS = (
+    ("fridge alert check", check_fridge_alerts),   # first: the one that matters most (#290)
+    ("hourly rollup", rollup_hourly),              # only does work once another hour has completed (#129)
+    ("pressure check", check_pressure),            # after the rollup: it reads the newest complete hour (#237)
+    ("baseline check", check_baseline),            # after the rollup too (#229)
+    ("summaries publish", publish_summaries),
+    ("watchdog check", check_watchdogs),           # backup, disk (#176), certificates (#206)
+)
+
+
+def run_summary_steps():
+    for name, step in SUMMARY_STEPS:
+        try:
+            step()
+        except Exception as e:
+            log.warning("%s failed: %s", name, e)
+
+
 def summaries_loop():
     while True:
         time.sleep(OCCUPANCY_HOURLY_INTERVAL)
-        try:
-            rollup_hourly()   # only does work once another hour has completed (#129)
-        except Exception as e:
-            log.warning("hourly rollup failed: %s", e)
-        try:
-            check_pressure()   # after the rollup: it reads the newest complete hour (#237)
-        except Exception as e:
-            log.warning("pressure check failed: %s", e)
-        publish_summaries()
-        try:
-            check_watchdogs()   # backup overdue, disk almost full (#176), certificates (#206)
-        except Exception as e:
-            log.warning("watchdog check failed: %s", e)
+        run_summary_steps()
 
 
 # paho callback API v2 (#66). A refused connect also arrives here, as a failure code;

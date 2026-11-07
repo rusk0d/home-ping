@@ -23,8 +23,6 @@ from config import (BACKUP_DIR, BACKUP_MAX_AGE_HOURS, BACKUP_S3_BUCKET, OFFSITE_
 import state
 from store import get_state, set_state
 from alerts import alert, alert_muted
-from baseline import send_baseline_alerts
-from fridge import send_fridge_alerts
 
 log = logging.getLogger(__name__)
 
@@ -167,27 +165,35 @@ def status(now=None):
     }
 
 
-def check_watchdogs(now=None):
+def _check_backup(now):
     age = backup_age_hours(now)
     if age is not None:
         _watch("backup", age > BACKUP_MAX_AGE_HOURS, age <= BACKUP_MAX_AGE_HOURS,
                "Backup failed", f"No database backup for over {BACKUP_MAX_AGE_HOURS} h (last: {_ago(age)})",
                "Backup OK again", "The nightly database backup ran again")
+
+
+def _check_offsite(now):
     age = offsite_age_hours(now)
     if age is not None:
         _watch("offsite", age > OFFSITE_MAX_AGE_HOURS, age <= OFFSITE_MAX_AGE_HOURS,
                "Off-site backup failed", f"No backup uploaded to S3 for over {OFFSITE_MAX_AGE_HOURS} h (last: {_ago(age)})",
                "Off-site backup OK again", "The database backup reached S3 again")
+
+
+def _check_disk(now):
     free = disk_free_mb()
     _watch("disk", free < DISK_MIN_FREE_MB, free >= DISK_MIN_FREE_MB + DISK_FREE_HYSTERESIS_MB,
            "Disk almost full", f"Only {free:.0f} MB free on the server",
            "Disk space OK again", f"{free:.0f} MB free on the server")
-    check_certs(now)
-    try:
-        send_baseline_alerts()  # Check for unusual readings (#229)
-    except Exception as e:
-        log.error("Baseline alerts check failed: %s", e)
-    try:
-        send_fridge_alerts()  # Check fridge temperature alerts (#290)
-    except Exception as e:
-        log.error("Fridge alerts check failed: %s", e)
+
+
+def check_watchdogs(now=None):
+    """Each check on its own: one that raises (a backup file removed while it's stat-ed,
+    disk_usage failing) doesn't skip the others (#303)."""
+    for name, check in (("backup", _check_backup), ("offsite", _check_offsite),
+                        ("disk", _check_disk), ("certificates", check_certs)):
+        try:
+            check(now)
+        except Exception as e:
+            log.warning("%s watchdog failed: %s", name, e)

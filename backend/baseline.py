@@ -116,11 +116,3 @@ def check_baseline():
                     data=data, kind="baseline"):
                 set_state(f"baseline_alerted:{metric}", "")
     return {m: s[0] for m, s in scores.items()}
-
-
-def send_baseline_alerts():
-    """For check_watchdogs(): never raises."""
-    try:
-        check_baseline()
-    except Exception as e:
-        log.error("Baseline check failed: %s", e)

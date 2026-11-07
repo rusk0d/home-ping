@@ -272,7 +272,8 @@ Android: its own silent channel (no sound or vibration), from the app change of 
 
 The fridge node decides the alert state itself (`alert` in `home/esp32/fridge_temp`,
 `mqtt.md`); `fridge.py` pushes when the newest reading's state differs from the one last
-handled. Checked with the watchdogs, every 5 min.
+handled. Checked first in the summaries loop, every 5 min, as its own step: a failing
+watchdog or rollup doesn't skip it (#303).
 
 | `alert` | Title / body |
 |---|---|
@@ -304,7 +305,7 @@ handled. Checked with the watchdogs, every 5 min.
 
 ### 12. Unusual reading: `BASELINE` (since #229, reworked in #297 and #302)
 
-`baseline.py`, with the watchdogs every 5 min, but each newly completed hour of `hourly` is
+`baseline.py`, in the summaries loop every 5 min (its own step, after the rollup, #303), but each newly completed hour of `hourly` is
 checked once (`baseline_last_hour`; an hour more than 3 h old isn't, after downtime).
 
 - Metrics: temperature, humidity, CO₂ (`temp_avg`, `humidity_avg`, `co2_avg`; room devices only,
