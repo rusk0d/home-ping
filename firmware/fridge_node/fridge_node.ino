@@ -11,6 +11,7 @@
 #include <HomePing.h>
 #include <HomePingTls.h>
 #include <HomePingOta.h>
+#include <HomePingCondition.h>
 #include "secrets.h"
 
 /* =======================
@@ -48,25 +49,11 @@ DallasTemperature sensors(&oneWire);
 
 unsigned long lastTempPublish = 0;
 
-// One per condition: whether it holds, and since when (millis(); unsigned subtraction
-// stays right across the 49.7-day wrap)
-struct Condition { bool on; unsigned long since; };
-Condition cold = {false, 0}, warm = {false, 0}, hot = {false, 0};
+// One per condition: whether it holds, and since when (HomePingCondition.h, #306)
+HpCondition cold, warm, hot;
 String currentAlertType = "";   // "", "cold", "warm_low", "warm_critical", "warm_critical_duration"
 
 JsonDocument doc;
-
-/* =======================
-   HELPERS
-   ======================= */
-void track(Condition& c, bool enter, bool leave, unsigned long now) {
-  if (!c.on && enter) { c.on = true; c.since = now; }
-  else if (c.on && leave) c.on = false;
-}
-
-bool lasted(const Condition& c, unsigned long ms, unsigned long now) {
-  return c.on && now - c.since >= ms;
-}
 
 /* =======================
    PUBLISH
@@ -81,16 +68,16 @@ void publishTemp() {
   }
 
   unsigned long now = millis();
-  track(cold, tempC < COLD_BELOW, tempC >= COLD_BELOW + HYSTERESIS, now);
-  track(warm, tempC > WARM_ABOVE, tempC <= WARM_ABOVE - HYSTERESIS, now);
-  track(hot,  tempC > HOT_ABOVE,  tempC <= HOT_ABOVE - HYSTERESIS,  now);
+  cold.track(tempC < COLD_BELOW, tempC >= COLD_BELOW + HYSTERESIS, now);
+  warm.track(tempC > WARM_ABOVE, tempC <= WARM_ABOVE - HYSTERESIS, now);
+  hot.track(tempC > HOT_ABOVE,  tempC <= HOT_ABOVE - HYSTERESIS,  now);
 
   // The most severe condition that has lasted long enough
   String alertType = "";
-  if (lasted(hot, HOT_FOR, now))            alertType = "warm_critical";
-  else if (lasted(warm, WARM_LONG_FOR, now)) alertType = "warm_critical_duration";
-  else if (lasted(warm, WARM_FOR, now))      alertType = "warm_low";
-  else if (lasted(cold, COLD_FOR, now))      alertType = "cold";
+  if (hot.lasted(HOT_FOR, now))             alertType = "warm_critical";
+  else if (warm.lasted(WARM_LONG_FOR, now)) alertType = "warm_critical_duration";
+  else if (warm.lasted(WARM_FOR, now))      alertType = "warm_low";
+  else if (cold.lasted(COLD_FOR, now))      alertType = "cold";
 
   if (alertType != currentAlertType) {
     Serial.printf("Alert: %s -> %s\n", currentAlertType.c_str(), alertType.c_str());

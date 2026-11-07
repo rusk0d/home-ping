@@ -213,8 +213,9 @@ checks (see `notifications.md`). Missing fields default to: `presence`/`stationa
 - Interval: every 60 s (`CO2_INTERVAL`). The first publish happens as soon as the loop starts.
 - Calibration: the sensor's automatic baseline correction (ABC) is **disabled** (#167).
   Manual zero-point calibration via serial console: type `calibrate` in the serial monitor
-  while the sensor is outside in fresh air (≥20 min), then wait 3 minutes for the sensor to
-  stabilize and run calibration. Readings should then reach ~420 ppm in fresh air and follow
+  while the sensor is outside in fresh air (≥20 min); the node calibrates 3 minutes later, once
+  the sensor has stabilized, and keeps publishing in the meantime (since #306; before, the wait
+  blocked the loop and the node dropped off MQTT). Readings should then reach ~420 ppm in fresh air and follow
   realistic room levels (typically 800–1200 ppm, up to 1600+ when stuffy).
   Recalibrate every 1–3 months to account for sensor drift.
 - Retained: yes. QoS 0.

@@ -27,6 +27,7 @@ const char* DEVICE_NAME = "home_ping_esp32";
 const unsigned long PRESENCE_INTERVAL = 5000;   // radar: every 5s
 const unsigned long ENV_INTERVAL      = 30000;  // temp/hum/pressure: every 30s
 const unsigned long CO2_INTERVAL      = 60000;  // every minute is plenty for CO2
+const unsigned long CALIBRATE_WAIT_MS = 180000; // 'calibrate': let the sensor settle first (#167)
 
 // LD2410C radar (UART2)
 #define RADAR_RX   16   // RX2 <- radar TX
@@ -66,6 +67,8 @@ int bmeReadFailures = 0;
 unsigned long lastPresencePublish = 0;
 unsigned long lastEnvPublish = 0;
 unsigned long lastCo2Publish = 0;
+bool calibratePending = false;   // 'calibrate' typed, waiting CALIBRATE_WAIT_MS (#306)
+unsigned long calibrateStart = 0;
 JsonDocument doc;
 
 /* =======================
@@ -212,21 +215,24 @@ void setup() {
    ======================= */
 void loop() {
   // Serial command: type "calibrate" to run CO2 zero-point calibration (#167)
+  // The 3 min wait doesn't block the loop (#306, L8): MQTT, OTA and the radar keep running
+  // (a blocking wait dropped the MQTT connection and fired the offline will)
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
-    if (cmd == "calibrate") {
+    if (cmd == "calibrate" && !calibratePending) {
       Serial.println("\n=== CO2 CALIBRATION MODE ===");
       Serial.println("Place sensor in fresh outdoor air (≥20 min).");
-      Serial.println("Waiting 3 min for sensor to stabilize...");
-      for (int i = 0; i < 180; i++) {
-        delay(1000);
-        if (i % 30 == 0) Serial.print(".");
-      }
-      Serial.println("\nRunning calibration...");
-      mhz.calibrate();
-      Serial.println("Calibration complete!");
+      Serial.println("Calibrating in 3 min, once the sensor has stabilized...");
+      calibratePending = true;
+      calibrateStart = millis();
     }
+  }
+  if (calibratePending && millis() - calibrateStart >= CALIBRATE_WAIT_MS) {
+    calibratePending = false;
+    Serial.println("Running calibration...");
+    mhz.calibrate();
+    Serial.println("Calibration complete!");
   }
 
   ArduinoOTA.handle();
