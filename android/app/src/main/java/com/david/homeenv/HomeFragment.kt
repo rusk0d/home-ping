@@ -96,14 +96,14 @@ class HomeFragment : Fragment() {
     }
 
     /**
-     * A tap on a card opens its chart in History (#329; it replaced the History button). The
-     * fridge has no history in the app (/api/hourly and /api/daily are the room, #303).
+     * A tap on a card opens its chart in History (#329; it replaced the History button; the
+     * fridge since #332).
      */
     private fun historyTaps() {
         val taps = listOf<Pair<View, Metric>>(
             b.cardTemp to Metric.TEMPERATURE, b.cardHum to Metric.HUMIDITY,
             b.cardPres to Metric.PRESSURE, b.cardOccNow to Metric.OCCUPANCY,
-            b.cardCo2 to Metric.CO2, b.cardOcc to Metric.OCCUPANCY,
+            b.cardCo2 to Metric.CO2, b.cardFridge to Metric.FRIDGE, b.cardOcc to Metric.OCCUPANCY,
             // Last 24 hours: the small cards around these values
             b.statsAvgTemp.parent as View to Metric.TEMPERATURE,
             b.statsAvgHumidity.parent as View to Metric.HUMIDITY,
@@ -193,7 +193,10 @@ class HomeFragment : Fragment() {
             c.fridge.render(it, devices)
         }
         s.air?.let { c.pressure.render(it) }
-        s.hourly?.let { c.hourly.render(it) }
+        s.hourly?.let {
+            c.hourly.render(it)
+            c.fridge.renderToday(it)
+        }
         s.stats?.let { c.stats.render(it) }
         // Only when the dashboard loaded: an unreachable server is the offline banner, not a dot
         if (s.devices != null) {
