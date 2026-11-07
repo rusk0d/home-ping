@@ -94,6 +94,7 @@ class HomeFragment : Fragment() {
         }
         b.swipeRefresh.setOnRefreshListener { loadDashboardData() }
         b.historyButton.setOnClickListener { startActivity(Intent(requireContext(), HistoryActivity::class.java)) }
+        b.devicesSection.setOnClickListener { startActivity(Intent(requireContext(), DevicesActivity::class.java)) }
     }
 
     override fun onResume() {

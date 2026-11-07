@@ -18,6 +18,9 @@ import java.util.Locale
 /** Text and small views the Home cards share (#306, R5). */
 object HomeFormat {
 
+    /** Reset reasons (backend store.RESET_REASONS) that mean a crash or a power problem. */
+    val BAD_RESET_REASONS = listOf("panic", "watchdog", "brownout", "glitch", "lockup")
+
     /** "22.4" + "°C" → big number with a small muted unit. */
     fun valueWithUnit(ctx: Context, value: String?, unit: String): CharSequence {
         if (value == null) return "--"

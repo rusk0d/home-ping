@@ -252,6 +252,8 @@ class DevicesCard(b: FragmentHomeBinding) : HomeCard(b) {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 .apply { bottomMargin = (8 * d).toInt() }
             addView(HomeFormat.statusLine(ctx, name, meta, online))
+            isClickable = true
+            setOnClickListener { ctx.startActivity(android.content.Intent(ctx, DevicesActivity::class.java)) }
         }
     }
 }
@@ -341,16 +343,12 @@ class RestartsCard(b: FragmentHomeBinding) : HomeCard(b) {
         b.restartsValue.setTextColor(Levels.color(ctx, when {
             total24h == 0 -> R.color.muted
             // A crash or power problem is worth a look even once; an update or power-on isn't
-            reason != null && BAD_RESET_REASONS.any { reason.contains(it) } -> R.color.bad
+            reason != null && HomeFormat.BAD_RESET_REASONS.any { reason.contains(it) } -> R.color.bad
             total24h <= 2 -> R.color.ok
             else -> R.color.bad
         }))
     }
 
-    private companion object {
-        // Reset reasons (backend store.RESET_REASONS) that mean a crash or a power problem
-        val BAD_RESET_REASONS = listOf("panic", "watchdog", "brownout", "glitch", "lockup")
-    }
 }
 
 /** The last 24 h averages (/api/stats24h_combined). */

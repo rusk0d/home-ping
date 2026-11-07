@@ -380,10 +380,12 @@
                     android:layout_marginTop="8dp" />
             </com.david.homeenv.ui.AccentCard>
 
-            <!-- Devices -->
+            <!-- Devices; the heading and the rows open the Devices screen (#322) -->
             <TextView
+                android:id="@+id/devices_section"
                 style="@style/HomeSection"
-                android:text="Devices" />
+                android:background="?attr/selectableItemBackground"
+                android:text="Devices  ›" />
 
             <LinearLayout
                 android:id="@+id/devices_list"

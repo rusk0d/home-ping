@@ -20,6 +20,15 @@
             android:paddingTop="16dp"
             android:paddingBottom="32dp">
 
+            <!-- Also the alerts that were muted (switch off, quiet hours), #321 -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/show_muted"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Show muted"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+
             <TextView
                 android:id="@+id/status"
                 android:layout_width="match_parent"
@@ -27,7 +36,14 @@
                 android:text="Loading…"
                 android:textColor="@color/muted"
                 android:textSize="13sp"
+                android:layout_marginTop="4dp"
                 android:layout_marginBottom="12dp" />
+
+            <LinearLayout
+                android:id="@+id/list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout>
