@@ -42,7 +42,7 @@ def test_issue61_api_auth(env):
     # fail2ban removes the date it found before matching (a real line has "[]" left), so
     # test both forms; the first version of the filter needed text inside the brackets
     cases += [(re.sub(r"\[[^\]]*\]", "[]", line, count=1), host) for line, host in cases]
-    cases.append(('94.21.99.133 - wrong [] "GET /api/occupancy_status HTTP/1.1" 401 23 "-" "curl/8.21.0"', "94.21.99.133"))
+    cases.append(('198.51.100.23 - wrong [] "GET /api/occupancy_status HTTP/1.1" 401 23 "-" "curl/8.21.0"', "198.51.100.23"))
     for line, host in cases:
         m = rx.search(line)
         got = m.group("host") if m else None
