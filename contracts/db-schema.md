@@ -8,7 +8,7 @@ inferred then and hasn't been confirmed since.
 ## General
 
 - Engine: SQLite, file `data.db` in the backend's working directory (`DB = "data.db"`, relative path).
-- Schema owner: **`store.py` `init_db()`** (backend), which runs on every start: the schema itself (tables, columns, indexes; idempotent), then the numbered one-off **migrations** not yet run on this database, recorded as `system_state` `schema_version` (#306; `store.MIGRATIONS`: 1 = #14 drop always-0 columns, 2 = #65 UTC, 3 = #290 hourly without the fridge, 4 = #305 excursion format). A database from before #306 starts from its old flags (`ts_utc` → 2, `hourly_room_rebuilt` → 3), which are then removed. It runs from `server.prepare()` (called by `start()`; since #73 importing the modules does nothing). "`server.py`" below means the backend as a whole.
+- Schema owner: **`store.py` `init_db()`** (backend), which runs on every start: the schema itself (tables, columns, indexes; idempotent), then the numbered one-off **migrations** not yet run on this database, recorded as `system_state` `schema_version` (#306; `store.MIGRATIONS`: 1 = #14 drop always-0 columns, 2 = #65 UTC, 3 = #290 hourly without the fridge, 4 = #305 excursion format, 5 = #331 fridge columns of `hourly` backfilled). A database from before #306 starts from its old flags (`ts_utc` → 2, `hourly_room_rebuilt` → 3), which are then removed. It runs from `server.prepare()` (called by `start()`; since #73 importing the modules does nothing). "`server.py`" below means the backend as a whole.
   It uses `CREATE TABLE IF NOT EXISTS`, plus `ALTER TABLE readings ADD COLUMN`
   for every `readings` column except `id`/`ts`/`temp`/`humidity` (errors ignored
   if they already exist), so older databases are upgraded on start.
@@ -155,12 +155,15 @@ Known keys:
 
 One row per **complete** hour, all room devices combined (like `/api/hourly` without `?device=`;
 `NON_ROOM_DEVICES` such as the fridge are left out since #290, and the hours averaged with it
-before were rebuilt once on start, migration 3).
+before were rebuilt once on start, migration 3). The fridge has its own `fridge_*` columns
+(#331; added to older tables on start, and migration 5 filled them from the raw readings still
+kept then, without touching the room columns).
 Filled by `store.rollup_hourly()` from `readings` and `presence_readings`, which are only kept
 2 days (#173): at startup (`server.prepare()`, catches up after downtime; the first run backfills
 whatever raw rows exist) and in the 300 s summaries loop, where it only does work once
 another hour has completed. Each run redoes the hour before `hourly_until` (late rows) and
-adds every completed hour since; an hour without any rows gets no row.
+adds every completed hour since; an hour without any rows gets no row (one with only fridge
+readings gets a row with null room columns).
 
 | Column | Type | Null? | Meaning |
 |---|---|---|---|
@@ -170,8 +173,9 @@ adds every completed hour since; an hour without any rows gets no row.
 | `co2_avg` (REAL) / `co2_min` / `co2_max` (INTEGER) | | yes | from `readings.co2` (valid readings only; invalid ones are stored as null), ppm |
 | `pressure_avg` / `pressure_min` / `pressure_max` | REAL | yes | from `readings.pressure`, hPa |
 | `occupancy` | REAL | yes | mean(`occupied`)×100 of `PRESENCE_DEVICE`'s radar rows, %; null = no radar rows |
+| `fridge_avg` / `fridge_min` / `fridge_max` | REAL | yes | from `FRIDGE_DEVICE`'s `readings.temp`, °C (#331); null = no fridge readings |
 
-Retention: none (about 24 rows, ~2.4 KB, a day). Read by `GET /api/daily`.
+Retention: none (about 24 rows, ~3 KB, a day). Read by `GET /api/daily` and the past days of `GET /api/hourly`.
 
 ### `events` (audit / event log)
 
@@ -225,7 +229,7 @@ Read by: `/api/restarts` (`RESTART` only).
 | `devices` | `touch_device` | `/api/latest`, `/api/latest_all`, `/api/devices` |
 | `system_state` | `init_db` seed, `set_state` | `get_state` |
 | `events` | `log_event` | `/api/restarts` |
-| `hourly` | `rollup_hourly` (#129) | `/api/daily` |
+| `hourly` | `rollup_hourly` (#129) | `/api/daily`, `/api/hourly` (past days), baseline, pressure trend |
 
 Notable derived values:
 
@@ -261,3 +265,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #305: excursion state keys (`env_alerted:*`, `node_offline:*`, `watchdog:*`, `sensor_silent:*`, `baseline_alerted:*`) share one format, `''` / `sent` / `muted` with an optional `:<band>`; `init_db()` converts the old `'1'`/`'m'`/`'0'` and bare-band values.
 - #306: numbered migrations, `system_state` `schema_version`; the `ts_utc` and `hourly_room_rebuilt` flags are replaced and removed.
 - #304: retention in `store.prune()` once per summaries pass instead of on every insert; partial index `ix_presence_occupied_id`.
+- #331: `hourly.fridge_avg`, `fridge_min`, `fridge_max`; migration 5 backfills them.

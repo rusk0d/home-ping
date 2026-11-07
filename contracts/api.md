@@ -221,17 +221,21 @@ Temperature/humidity averages come from `readings` of `device` if given, else of
 only: the `hourly` table combines all room devices.
 CO2/pressure averages come from `readings` of any device (like `/api/air`).
 Occupancy comes from `presence_readings` for `home_ping_esp32` only (`PRESENCE_DEVICE`).
+The fridge fields (#331) come from `FRIDGE_DEVICE`'s readings only, never the room values (#290).
 An hour appears if any of these has data.
 
 ```json
 [{"hour":"2026-10-13 19:00","avg_temp":22.3,"avg_humidity":48.0,"avg_co2":812,
-  "avg_pressure":1013.4,"avg_occupancy":62.0}]
+  "avg_pressure":1013.4,"avg_occupancy":62.0,"avg_fridge":4.1,"min_fridge":3.6,"max_fridge":5.2}]
 ```
 
 - `avg_temp`/`avg_humidity`: number or null (1 dp).
 - `avg_co2`: integer ppm or null (since #82).
 - `avg_pressure`: hPa, number or null (1 dp, since #82).
 - `avg_occupancy`: mean(`occupied`)×100, rounded to 0 dp. null if no radar rows that hour.
+- `avg_fridge` / `min_fridge` / `max_fridge` (since #331): the fridge's temperature that hour,
+  °C, 1 dp; null if no fridge readings. Past days from `hourly` (from #331 on, plus the 2 days
+  of raw readings backfilled then).
 
 Clients:
 - Android Home occupancy bar strip and sparklines (`days` omitted; reads `hour`,
@@ -255,7 +259,8 @@ first. For ranges beyond the 7 days of `/api/hourly`.
 ```json
 [{"date":"2026-10-16","avg_temp":22.6,"min_temp":21.8,"max_temp":24.1,
   "avg_humidity":41.3,"min_humidity":34.0,"max_humidity":48.2,
-  "avg_co2":712,"max_co2":1180,"avg_pressure":1011.4,"occupied_hours":8.9,"hours":20}]
+  "avg_co2":712,"max_co2":1180,"avg_pressure":1011.4,"occupied_hours":8.9,"hours":20,
+  "avg_fridge":4.2,"min_fridge":3.1,"max_fridge":6.8}]
 ```
 
 | Field | Type | Notes |
@@ -267,7 +272,8 @@ first. For ranges beyond the 7 days of `/api/hourly`.
 | `max_co2` | integer or null | ppm |
 | `avg_pressure` | number or null | hPa, 1 dp |
 | `occupied_hours` | number or null | sum of the hourly occupancy % / 100 (like the History screen's occupancy bars), 1 dp; null = no radar data that day |
-| `hours` | integer | stored hours that day (24 for a full day) |
+| `hours` | integer | stored hours that day (24 for a full day; an hour with only fridge readings counts, #331) |
+| `avg_fridge` / `min_fridge` / `max_fridge` | number or null | the fridge, °C, 1 dp (since #331); null = no fridge data that day |
 
 ### GET `/api/air`
 
@@ -577,3 +583,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #322: `/api/devices` has `health` per node (RSSI, uptime, heap, reset reason, radar).
 - #325: app only: the devices list, restarts line and Server card moved from Home to the Devices screen; no endpoint changed.
 - #326: app only: a fridge gauge (Level bands: fridge); no endpoint changed.
+- #331: `/api/hourly` and `/api/daily` have `avg_fridge`, `min_fridge`, `max_fridge`.

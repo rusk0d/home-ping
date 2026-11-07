@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import config
 import state
 from config import (
-    CONFIDENCE_MINUTES, DEVICES_RETENTION_DAYS, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, NON_ROOM_DEVICES, RAW_RETENTION_DAYS, ROOM_DEVICES_SQL,
+    CONFIDENCE_MINUTES, DEVICES_RETENTION_DAYS, EVENTS_RETENTION_DAYS, FRIDGE_DEVICE, PRESENCE_DEVICE, NON_ROOM_DEVICES, RAW_RETENTION_DAYS, ROOM_DEVICES_SQL,
     UPTIME_DROP_TOLERANCE,
 )
 
@@ -152,9 +152,9 @@ def _schema(conn):
         )
     """)
 
-    # Long-term history (#129): one row per complete hour, all devices combined (like
-    # the app's charts), filled by rollup_hourly() from the raw tables, which are only
-    # kept RAW_RETENTION_DAYS (2, #173). Kept for good: ~2.4 KB a day.
+    # Long-term history (#129): one row per complete hour, the room devices combined (like
+    # the app's charts) and the fridge on its own (#331), filled by rollup_hourly() from the
+    # raw tables, which are only kept RAW_RETENTION_DAYS (2, #173). Kept for good: ~3 KB a day.
     c.execute("""
         CREATE TABLE IF NOT EXISTS hourly (
             hour TEXT PRIMARY KEY,   -- start of the hour, UTC, "YYYY-MM-DD HH:00:00"
@@ -162,9 +162,15 @@ def _schema(conn):
             humidity_avg REAL, humidity_min REAL, humidity_max REAL,
             co2_avg REAL, co2_min INTEGER, co2_max INTEGER,
             pressure_avg REAL, pressure_min REAL, pressure_max REAL,
-            occupancy REAL           -- % of PRESENCE_DEVICE's radar rows occupied
+            occupancy REAL,          -- % of PRESENCE_DEVICE's radar rows occupied
+            fridge_avg REAL, fridge_min REAL, fridge_max REAL   -- FRIDGE_DEVICE's temp, °C (#331)
         )
     """)
+    for col in ("fridge_avg", "fridge_min", "fridge_max"):   # tables from before #331
+        try:
+            c.execute(f"ALTER TABLE hourly ADD COLUMN {col} REAL")
+        except sqlite3.OperationalError:
+            pass   # already there
 
 
 def _indexes(conn):
@@ -182,6 +188,10 @@ def _indexes(conn):
         "CREATE INDEX IF NOT EXISTS ix_presence_occupied_id ON presence_readings(id) WHERE occupied = 1",
     ):
         conn.execute(sql)
+
+
+# A raw ts's hour as `hourly` stores it
+_HOUR_SQL = "strftime('%Y-%m-%d %H:00:00', ts)"
 
 
 def _migrate_drop_zero_columns(c):
@@ -236,6 +246,22 @@ def _migrate_excursion_format(c):
         WHERE key LIKE 'env_alerted:%' AND value IN ('high', 'low', 'falling')""")
 
 
+def _migrate_fridge_hourly(c):
+    """#331: the fridge columns of `hourly` for the hours already rolled up, from the raw
+    readings still kept (RAW_RETENTION_DAYS); older fridge history doesn't exist. Only the
+    fridge columns: the room ones of those hours stay as they are."""
+    until = c.execute("SELECT value FROM system_state WHERE key = 'hourly_until'").fetchone()
+    if until is None:
+        return   # never rolled up: the first rollup_hourly() does every hour
+    c.execute(f"""
+        INSERT INTO hourly (hour, fridge_avg, fridge_min, fridge_max)
+        SELECT {_HOUR_SQL}, AVG(temp), MIN(temp), MAX(temp) FROM readings
+        WHERE device = ? AND temp IS NOT NULL AND ts < ? GROUP BY 1
+        ON CONFLICT(hour) DO UPDATE SET fridge_avg = excluded.fridge_avg,
+            fridge_min = excluded.fridge_min, fridge_max = excluded.fridge_max
+    """, (FRIDGE_DEVICE, until[0]))
+
+
 # One-off data changes, in order; each runs once per database and is recorded as
 # system_state schema_version = its number. Append only: never renumber or remove one.
 MIGRATIONS = (
@@ -243,6 +269,7 @@ MIGRATIONS = (
     (2, _migrate_utc),                     # #65
     (3, _migrate_hourly_without_fridge),   # #290
     (4, _migrate_excursion_format),        # #305
+    (5, _migrate_fridge_hourly),           # #331
 )
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
@@ -317,11 +344,14 @@ def prune():
 
 HOURLY_COLUMNS = ("hour", "temp_avg", "temp_min", "temp_max", "humidity_avg", "humidity_min",
                   "humidity_max", "co2_avg", "co2_min", "co2_max", "pressure_avg", "pressure_min",
-                  "pressure_max", "occupancy")
+                  "pressure_max", "occupancy", "fridge_avg", "fridge_min", "fridge_max")
+_OCCUPANCY = HOURLY_COLUMNS.index("occupancy")
+_FRIDGE = HOURLY_COLUMNS.index("fridge_avg")
 
 
 def rollup_hourly(now=None):
-    """Aggregate complete hours from readings/presence_readings into `hourly` (#129).
+    """Aggregate complete hours from readings/presence_readings into `hourly` (#129): the room
+    devices combined, the radar's occupancy and the fridge's temperature (#331).
 
     system_state 'hourly_until' is where the last run stopped (the then-current hour). A run
     starts an hour before it (redone, in case rows arrived late), or at the oldest raw row
@@ -336,18 +366,26 @@ def rollup_hourly(now=None):
     since = (parse_ts(until) - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S") if until else "0000-01-01 00:00:00"
     with db() as conn:
         hours = {}
-        for row in conn.execute(f"""
-            SELECT strftime('%Y-%m-%d %H:00:00', ts),
+        def row(h):
+            return hours.setdefault(h, [h] + [None] * (len(HOURLY_COLUMNS) - 1))
+        for r in conn.execute(f"""
+            SELECT {_HOUR_SQL},
                    AVG(temp), MIN(temp), MAX(temp), AVG(humidity), MIN(humidity), MAX(humidity),
                    AVG(co2), MIN(co2), MAX(co2), AVG(pressure), MIN(pressure), MAX(pressure)
             FROM readings WHERE ts >= ? AND ts < ? AND {ROOM_DEVICES_SQL} GROUP BY 1
         """, (since, end_s)):
-            hours[row[0]] = list(row) + [None]
-        for h, occ in conn.execute("""
-            SELECT strftime('%Y-%m-%d %H:00:00', ts), AVG(occupied) * 100
+            row(r[0])[1:_OCCUPANCY] = r[1:]
+        for h, occ in conn.execute(f"""
+            SELECT {_HOUR_SQL}, AVG(occupied) * 100
             FROM presence_readings WHERE device = ? AND ts >= ? AND ts < ? GROUP BY 1
         """, (PRESENCE_DEVICE, since, end_s)):
-            hours.setdefault(h, [h] + [None] * 12 + [None])[13] = occ
+            row(h)[_OCCUPANCY] = occ
+        # The fridge on its own (#331), never in the room columns (#290)
+        for r in conn.execute(f"""
+            SELECT {_HOUR_SQL}, AVG(temp), MIN(temp), MAX(temp)
+            FROM readings WHERE device = ? AND temp IS NOT NULL AND ts >= ? AND ts < ? GROUP BY 1
+        """, (FRIDGE_DEVICE, since, end_s)):
+            row(r[0])[_FRIDGE:_FRIDGE + 3] = r[1:]
         conn.executemany(
             f"INSERT OR REPLACE INTO hourly ({', '.join(HOURLY_COLUMNS)}) "
             f"VALUES ({', '.join('?' * len(HOURLY_COLUMNS))})",
