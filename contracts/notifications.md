@@ -49,7 +49,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 - One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
   `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
   and back online; also the server watchdog, WATCHDOG, #176, and silent sensors, SENSOR_STATUS,
-  #224), `pressure` (PRESSURE, #237), `air` (AIR, #245). All on by default.
+  #224), `pressure` (PRESSURE, #237), `air` (AIR, #245), `fridge` (FRIDGE_ALERT/FRIDGE_NORMAL, #290). All on by default.
 - **Quiet hours**: off by default. When on, the alert types above are muted between
   `start` and `end` (server local time, Budapest; the window may cross midnight,
   `start` inclusive, `end` exclusive).
@@ -267,6 +267,31 @@ Android: its own silent channel (no sound or vibration), from the app change of 
 - data `{"event": "AIR", "device": "co2" | "window"}`: one notification slot each.
 - Window spells (`WINDOW_OPEN`/`WINDOW_CLOSED`) and the state keys: `db-schema.md`.
 
+### 11. Fridge: `FRIDGE_ALERT` / `FRIDGE_NORMAL` (since #290, fixed in #294)
+
+The fridge node decides the alert state itself (`alert` in `home/esp32/fridge_temp`,
+`mqtt.md`); `fridge.py` pushes when the newest reading's state differs from the one last
+pushed. Checked with the watchdogs, every 5 min.
+
+| `alert` | Title / body |
+|---|---|
+| `cold` | `Fridge too cold` / `Below 0 °C for 30+ minutes` |
+| `warm_low` | `Fridge warming up` / `Above 5 °C for 30+ minutes` |
+| `warm_critical` | `Fridge too warm` / `Above 8 °C for 30+ minutes` |
+| `warm_critical_duration` | `Fridge too warm (sustained)` / `Above 5 °C for 2+ hours` |
+| `""` after one of the above | `Fridge back to normal` / `Temperature is within normal range` (`FRIDGE_NORMAL`) |
+
+- data `{"event": "FRIDGE_ALERT", "device": "fridge_temp_esp32", "alert": "<state>"}`, or
+  `{"event": "FRIDGE_NORMAL", "device": "fridge_temp_esp32"}`. Logs `FRIDGE_ALERT` /
+  `FRIDGE_ALERT_RECOVERY`.
+- `system_state` `fridge_alert_state` is the state last pushed (or muted). It's saved only after
+  the push went out, so a failed push is retried with the #251 backoff instead of being lost.
+- Cooldown per state: key `fridge:<state>` (`fridge:normal` for the recovery), 15 min. A state
+  that comes back within its cooldown waits (pushed on the first check after it, if still on);
+  a different state, e.g. `warm_low` -> `warm_critical`, pushes at once.
+- Switch `fridge`; quiet hours mute it like the other environment alerts.
+- The fridge isn't a room sensor: the room `TEMP` alert skips it (`NON_ROOM_DEVICES`).
+
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
 ## Outside the backend: uptime monitor (since #250)
@@ -304,6 +329,7 @@ own app/email, not by FCM.
 | `SENSOR_STATUS` | Sensor not reporting / Sensor reporting again | node online, no valid BME280 / CO₂ value for 15 min / valid again | once per excursion | 30 s check |
 | `PRESSURE` | Pressure falling fast | hourly pressure average −3.0 hPa or more below 3 h earlier | once per excursion (until > −2.0), 15 min | 5 min check after the hourly rollup |
 | `AIR` | Time to air out / Air is fresh again (`co2`); Close the window? / Window still open? (`window`) | CO₂ ≥ 1200 ppm for 10 min, someone home / < 900 again; spell ≥ 20 min with fresh air and cold outside; geofence left home during a spell | every 3 h while high; once per spell; once per leave | 60 s check; `POST /api/occupancy_arm` |
+| `FRIDGE_ALERT` / `FRIDGE_NORMAL` | Fridge too cold / warming up / too warm / too warm (sustained) / back to normal | the node's `alert` state changed (<0 °C, >5 °C, >8 °C for 30 min; >5 °C for 2 h) | once per state change, 15 min per state | 5 min check |
 
 ## Mismatches and issues
 

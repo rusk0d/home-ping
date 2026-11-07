@@ -27,15 +27,16 @@ const unsigned long TEMP_INTERVAL = 60000;  // publish every 60 s
 // DS18B20 (OneWire, GPIO4)
 #define ONE_WIRE_PIN 4
 
-// Alert thresholds (#290)
-const float ALERT_BELOW = 0.0;      // warning: below 0°C for 30+ min
-const float ALERT_ABOVE_LOW = 5.0;  // warning: above 5°C for 30 min
-const float ALERT_ABOVE_MID = 8.0;  // critical: above 8°C for 30 min
-const float ALERT_ABOVE_HIGH = 5.0; // critical: above 5°C for 2+ hours
-const unsigned long ALERT_BELOW_DUR = 1800000;     // 30 min in ms
-const unsigned long ALERT_ABOVE_LOW_DUR = 1800000;   // 30 min in ms
-const unsigned long ALERT_ABOVE_MID_DUR = 1800000;   // 30 min in ms
-const unsigned long ALERT_ABOVE_HIGH_DUR = 7200000;  // 2 hours in ms
+// Alert thresholds (#290, #294): a condition starts when its threshold is crossed and ends
+// HYSTERESIS past it, so a fridge hovering at 5.0 °C doesn't restart the timer on every dip
+const float COLD_BELOW = 0.0;   // cold: below 0 °C for 30 min
+const float WARM_ABOVE = 5.0;   // warm_low: above 5 °C for 30 min, warm_critical_duration: for 2 h
+const float HOT_ABOVE  = 8.0;   // warm_critical: above 8 °C for 30 min
+const float HYSTERESIS = 0.5;
+const unsigned long COLD_FOR      = 30UL * 60 * 1000;
+const unsigned long WARM_FOR      = 30UL * 60 * 1000;
+const unsigned long WARM_LONG_FOR = 2UL * 60 * 60 * 1000;
+const unsigned long HOT_FOR       = 30UL * 60 * 1000;
 
 /* =======================
    GLOBALS
@@ -46,8 +47,12 @@ OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
 
 unsigned long lastTempPublish = 0;
-unsigned long alertStartTime = 0;  // when current alert condition started
-String currentAlertType = "";      // "", "cold", "warm_low", "warm_high", "warm_critical"
+
+// One per condition: whether it holds, and since when (millis(); unsigned subtraction
+// stays right across the 49.7-day wrap)
+struct Condition { bool on; unsigned long since; };
+Condition cold = {false, 0}, warm = {false, 0}, hot = {false, 0};
+String currentAlertType = "";   // "", "cold", "warm_low", "warm_critical", "warm_critical_duration"
 
 JsonDocument doc;
 
@@ -57,6 +62,15 @@ JsonDocument doc;
 bool initBme(bool verbose) {
   // Not used in this node, but kept for compatibility with HomePing patterns
   return true;
+}
+
+void track(Condition& c, bool enter, bool leave, unsigned long now) {
+  if (!c.on && enter) { c.on = true; c.since = now; }
+  else if (c.on && leave) c.on = false;
+}
+
+bool lasted(const Condition& c, unsigned long ms, unsigned long now) {
+  return c.on && now - c.since >= ms;
 }
 
 /* =======================
@@ -71,32 +85,20 @@ void publishTemp() {
     return;
   }
 
-  // Determine alert state
-  String alertType = "";
   unsigned long now = millis();
-  unsigned long alertDuration = now - alertStartTime;
+  track(cold, tempC < COLD_BELOW, tempC >= COLD_BELOW + HYSTERESIS, now);
+  track(warm, tempC > WARM_ABOVE, tempC <= WARM_ABOVE - HYSTERESIS, now);
+  track(hot,  tempC > HOT_ABOVE,  tempC <= HOT_ABOVE - HYSTERESIS,  now);
 
-  if (tempC < ALERT_BELOW) {
-    alertType = "cold";
-  } else if (tempC > ALERT_ABOVE_HIGH && alertDuration >= ALERT_ABOVE_HIGH_DUR) {
-    alertType = "warm_critical_duration";
-  } else if (tempC > ALERT_ABOVE_MID && alertDuration >= ALERT_ABOVE_MID_DUR) {
-    alertType = "warm_critical";
-  } else if (tempC > ALERT_ABOVE_LOW && alertDuration >= ALERT_ABOVE_LOW_DUR) {
-    alertType = "warm_low";
-  }
+  // The most severe condition that has lasted long enough
+  String alertType = "";
+  if (lasted(hot, HOT_FOR, now))            alertType = "warm_critical";
+  else if (lasted(warm, WARM_LONG_FOR, now)) alertType = "warm_critical_duration";
+  else if (lasted(warm, WARM_FOR, now))      alertType = "warm_low";
+  else if (lasted(cold, COLD_FOR, now))      alertType = "cold";
 
-  // Handle alert state transitions
   if (alertType != currentAlertType) {
-    if (alertType.length() > 0) {
-      // Alert started or changed
-      alertStartTime = now;
-      Serial.printf("Alert state: %s\n", alertType.c_str());
-    } else {
-      // Alert ended
-      Serial.printf("Alert ended (was: %s)\n", currentAlertType.c_str());
-      alertStartTime = 0;
-    }
+    Serial.printf("Alert: %s -> %s\n", currentAlertType.c_str(), alertType.c_str());
     currentAlertType = alertType;
   }
 
@@ -106,8 +108,8 @@ void publishTemp() {
   doc["temp_c"]       = tempC;
   doc["alert"]        = currentAlertType;
   doc["rssi"]         = WiFi.RSSI();
-  doc["uptime"]       = millis() / 1000;
-  doc["reset_reason"] = esp_reset_reason();
+  doc["uptime"]       = hpUptimeSeconds();   // 64-bit timer: doesn't wrap like millis() (#8)
+  doc["reset_reason"] = (int)esp_reset_reason();
   doc["heap_free"]    = ESP.getFreeHeap();
   doc["heap_min"]     = ESP.getMinFreeHeap();
   doc["heap_block"]   = ESP.getMaxAllocHeap();
