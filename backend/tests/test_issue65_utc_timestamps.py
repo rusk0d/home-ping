@@ -29,7 +29,7 @@ def test_issue65_utc_timestamps(env):
     check("migration: devices + events converted", q("SELECT last_seen FROM devices")[0][0] == "2026-10-15 18:00:00" and q("SELECT ts FROM events")[0][0] == "2026-10-15 18:00:00")
     store.init_db()
     check("second start doesn't convert again", q("SELECT ts FROM readings WHERE device='a'")[0][0] == "2026-10-15 18:00:00")
-    check("ts_utc marker set", store.get_state("ts_utc", None) == "1")
+    check("schema_version set (#306)", store.get_state("schema_version", None) == str(store.SCHEMA_VERSION))
 
     # New rows are UTC
     mqtt = lambda topic, p: ingest.on_message(None, None, types.SimpleNamespace(retain=False, topic=topic, payload=json.dumps(p).encode()))
