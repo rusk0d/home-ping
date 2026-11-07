@@ -24,7 +24,8 @@ mqttc = None            # MQTT client, created by start()
 def reset():
     """Back to a fresh process (prepare() calls it before loading the saved alert state)."""
     global STARTED_AT, LAST_MESSAGE_AT
-    for d in (LAST_UPTIME, RADAR_FAIL_COUNT, LAST_NOTIFICATION, RADAR_ALERTED, NODE_OFFLINE, NODE_HEALTH):
+    for d in (LAST_UPTIME, RADAR_FAIL_COUNT, LAST_NOTIFICATION, PUSH_FAILURES, RADAR_ALERTED, NODE_OFFLINE,
+              NODE_HEALTH):
         d.clear()
     STARTED_AT = time.time()
     LAST_MESSAGE_AT = None

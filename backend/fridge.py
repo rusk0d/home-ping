@@ -99,11 +99,3 @@ def check_fridge_alerts(now=None):
         result = _push(current, last)
         if result:
             _save(current, result)
-
-
-def send_fridge_alerts():
-    """For check_watchdogs(): never raises."""
-    try:
-        check_fridge_alerts()
-    except Exception as e:
-        log.error("Fridge alert check failed: %s", e)
