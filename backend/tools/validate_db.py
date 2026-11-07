@@ -162,14 +162,20 @@ def run_checks():
                 continue
 
             # Aggregate raw readings for this hour
-            c.execute("""
+            c.execute(f"""
                 SELECT AVG(temp) as temp_avg, MIN(temp) as temp_min, MAX(temp) as temp_max,
                        AVG(humidity) as humidity_avg, MIN(humidity) as humidity_min, MAX(humidity) as humidity_max,
                        AVG(co2) as co2_avg, MIN(co2) as co2_min, MAX(co2) as co2_max,
                        AVG(pressure) as pressure_avg, MIN(pressure) as pressure_min, MAX(pressure) as pressure_max
-                FROM readings WHERE ts >= ? AND ts < ?
+                FROM readings WHERE ts >= ? AND ts < ? AND {config.ROOM_DEVICES_SQL}
             """, (hour_str, hour_end_str))
             raw = c.fetchone()
+            # The fridge has its own columns (#331), the room ones leave it out (#290)
+            c.execute("""
+                SELECT AVG(temp) as fridge_avg FROM readings
+                WHERE device = ? AND temp IS NOT NULL AND ts >= ? AND ts < ?
+            """, (config.FRIDGE_DEVICE, hour_str, hour_end_str))
+            fridge = c.fetchone()
 
             # Aggregate raw presence for this hour
             c.execute("""
@@ -194,6 +200,11 @@ def run_checks():
             if raw and raw['co2_avg'] is not None:
                 if hourly['co2_avg'] is None or abs(hourly['co2_avg'] - raw['co2_avg']) > tolerance:
                     mismatches.append(f"  {hour_str}: co2_avg mismatch (db={hourly['co2_avg']}, raw={raw['co2_avg']})")
+
+            # Check the fridge (#331)
+            if fridge and fridge['fridge_avg'] is not None:
+                if hourly['fridge_avg'] is None or abs(hourly['fridge_avg'] - fridge['fridge_avg']) > tolerance:
+                    mismatches.append(f"  {hour_str}: fridge_avg mismatch (db={hourly['fridge_avg']}, raw={fridge['fridge_avg']})")
 
             # Check occupancy
             if presence and presence['occupancy'] is not None:
