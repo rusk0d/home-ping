@@ -73,6 +73,63 @@ def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind
     return "sent" if ok else False
 
 
+class Excursion:
+    """A condition that starts and ends, pushed once per excursion (#305).
+
+    State in system_state [key]: "" while there's none, else how its start went, "sent" or
+    "muted", with ":<band>" when the condition has bands (humidity "sent:high"). Saved only
+    once the push went out: a failed one is tried again at the next check, after the back-off
+    of [cooldown_key] when there is one (#251). Another band while one is on is a new
+    excursion (humidity high -> low). The end pushes only when the start was sent: it shares
+    data["event"] / data["device"] with it, so it replaces it on the phone; after a muted
+    start it's only logged.
+    [cooldown_key]: also at most one start push per NOTIFICATION_COOLDOWN.
+    [postpone_quiet]: quiet hours hold the start back until they're over instead of muting
+    it (the server watchdogs: nothing urgent, but it mustn't get lost).
+    """
+
+    def __init__(self, key, kind, device, data, cooldown_key=None, postpone_quiet=False):
+        self.key, self.kind, self.device, self.data = key, kind, device, data
+        self.cooldown_key, self.postpone_quiet = cooldown_key, postpone_quiet
+
+    def current(self):
+        """(status, band): ("sent" / "muted", band or None), or (None, None) when none is on."""
+        status, _, band = (get_state(self.key, "") or "").partition(":")
+        return (status, band or None) if status in ("sent", "muted") else (None, None)
+
+    def start(self, event_type, detail, title, body, band=None, data=None):
+        """The condition holds: push it unless this excursion (and band) was handled already.
+        Returns "sent" / "muted" when it was handled now, else None."""
+        status, current = self.current()
+        if status and current == band:
+            return None
+        if self.cooldown_key and (time.time() - state.LAST_NOTIFICATION.get(self.cooldown_key, 0)
+                                  <= NOTIFICATION_COOLDOWN):
+            return None
+        if self.postpone_quiet and alert_muted(self.kind) == "quiet hours":
+            return None
+        result = alert(self.device, event_type, detail, title, body, {**self.data, **(data or {})},
+                       cooldown_key=self.cooldown_key, kind=self.kind)
+        if result:
+            set_state(self.key, result + (f":{band}" if band else ""))
+        return result or None
+
+    def end(self, event_type=None, detail="", title=None, body=None, data=None):
+        """The condition is over. Pushes [title] / [body] when the start was sent; without an
+        [event_type] it just ends (no recovery push). Returns whether one was on."""
+        status, _ = self.current()
+        if not status:
+            return False
+        set_state(self.key, "")
+        if event_type is None:
+            return True
+        if status == "sent":
+            alert(self.device, event_type, detail, title, body, {**self.data, **(data or {})}, kind=self.kind)
+        else:
+            log_event(self.device, event_type, f"no push (alert was muted), {detail}")
+        return True
+
+
 def retry_delay(key):
     """Seconds until a failed push of [key] is retried: PUSH_RETRY_SECONDS by how many
     failed in a row, then NOTIFICATION_COOLDOWN. Counts this failure."""

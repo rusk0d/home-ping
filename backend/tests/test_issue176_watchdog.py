@@ -32,11 +32,11 @@ def test_issue176_watchdog(env):
     backups.mkdir()
     store.set_state("quiet_hours", "1"); store.set_state("quiet_start", "00:00"); store.set_state("quiet_end", "23:59")
     server_checks.check_watchdogs()
-    check("quiet hours: postponed, not dropped", pushes() == [] and store.get_state("watchdog:backup") == "0")
+    check("quiet hours: postponed, not dropped", pushes() == [] and store.get_state("watchdog:backup") in ("", "0"))
     store.set_state("quiet_hours", "0")
     server_checks.check_watchdogs()
     check("after quiet hours: 'Backup failed' push", pushes() == [("backup", "Backup failed")])
-    check("pushed flag stored", store.get_state("watchdog:backup") == "1")
+    check("pushed flag stored", store.get_state("watchdog:backup") == "sent")
     server_checks.check_watchdogs()
     check("once per excursion: no repeat", pushes() == [])
 
@@ -44,24 +44,24 @@ def test_issue176_watchdog(env):
     backup_file("data-2026-10-17.db.gz", 1)
     server_checks.check_watchdogs()
     check("fresh backup: 'Backup OK again'", pushes() == [("backup", "Backup OK again")])
-    check("flag cleared", store.get_state("watchdog:backup") == "0")
+    check("flag cleared", store.get_state("watchdog:backup") in ("", "0"))
 
     # Too old again, but the "nodes" switch is off: no push, and no "OK" push later
     backup_file("data-2026-10-17.db.gz", config.BACKUP_MAX_AGE_HOURS + 1)
     store.set_state("notify:nodes", "0")
     server_checks.check_watchdogs()
-    check("switch off: no push, muted flag", pushes() == [] and store.get_state("watchdog:backup") == "m")
+    check("switch off: no push, muted flag", pushes() == [] and store.get_state("watchdog:backup") == "muted")
     store.set_state("notify:nodes", "1")
     backup_file("data-2026-10-18.db.gz", 0)
     server_checks.check_watchdogs()
-    check("muted excursion ends without an 'OK' push", pushes() == [] and store.get_state("watchdog:backup") == "0")
+    check("muted excursion ends without an 'OK' push", pushes() == [] and store.get_state("watchdog:backup") in ("", "0"))
 
     # A failed send is retried at the next check
     os.remove(backups / "data-2026-10-17.db.gz"); os.remove(backups / "data-2026-10-18.db.gz")
     m.send.side_effect = Exception("FCM down")
     server_checks.check_watchdogs()
     m.send.side_effect = None
-    check("failed send: flag not set", store.get_state("watchdog:backup") == "0")
+    check("failed send: flag not set", store.get_state("watchdog:backup") in ("", "0"))
     m.Message.reset_mock()
     server_checks.check_watchdogs()
     check("...retried next time", pushes() == [("backup", "Backup failed")])

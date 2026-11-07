@@ -6,8 +6,8 @@ check_watchdogs() runs in the summaries loop (every 5 min). Each check pushes on
 excursion and once more when it's over, under the "nodes" notification switch (#82).
 Quiet hours postpone the push to the next check after they end instead of dropping it:
 nothing here is urgent, but it mustn't get lost (the backup runs at 03:30, inside the
-default quiet hours). State in system_state `watchdog:<name>`: '1' pushed, 'm' muted
-(switch off), '0' fine. status() is the same view for the app's Server card (#260).
+default quiet hours). State in system_state `watchdog:<name>`, an alerts.Excursion (#305):
+'sent', 'muted' (switch off), '' fine. status() is the same view for the app's Server card (#260).
 """
 
 import logging
@@ -21,8 +21,7 @@ from config import (BACKUP_DIR, BACKUP_MAX_AGE_HOURS, BACKUP_S3_BUCKET, OFFSITE_
                     CERT_CHECK, CERT_CHECK_INTERVAL, CERT_MIN_DAYS, DB,
                     DISK_FREE_HYSTERESIS_MB, DISK_MIN_FREE_MB)
 import state
-from store import get_state, set_state
-from alerts import alert, alert_muted
+from alerts import Excursion
 
 log = logging.getLogger(__name__)
 
@@ -112,19 +111,12 @@ def check_certs(now=None):
 
 def _watch(name, bad, recovered, title, body, back_title, back_body):
     """One check: push when [bad] starts, and again once [recovered] (with hysteresis)."""
-    key = f"watchdog:{name}"
-    status = get_state(key, "0")
-    data = {"event": "WATCHDOG", "device": name}
-    if status == "0" and bad:
-        if alert_muted("nodes") == "quiet hours":
-            return   # try again after quiet hours
-        result = alert("server", f"WATCHDOG_{name.upper()}", body, title, body, data, kind="nodes")
-        if result:   # a failed send is retried at the next check
-            set_state(key, "1" if result == "sent" else "m")
-    elif status != "0" and recovered:
-        set_state(key, "0")
-        if status == "1":   # only clear a notification that was actually shown
-            alert("server", f"WATCHDOG_{name.upper()}_OK", back_body, back_title, back_body, data, kind="nodes")
+    excursion = Excursion(f"watchdog:{name}", "nodes", "server", {"event": "WATCHDOG", "device": name},
+                          postpone_quiet=True)
+    if bad:
+        excursion.start(f"WATCHDOG_{name.upper()}", body, title, body)
+    elif recovered:
+        excursion.end(f"WATCHDOG_{name.upper()}_OK", back_body, back_title, back_body)
 
 
 def _iso(t):

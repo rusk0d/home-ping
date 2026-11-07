@@ -97,7 +97,7 @@ def test_issue122_offsite_watchdog(env):
     check("27 h old: pushes again, local backup still fine", pushes() == [("offsite", "Off-site backup failed")])
 
     server_checks.BACKUP_S3_BUCKET = ""
-    store.set_state("watchdog:offsite", "0")
+    store.set_state("watchdog:offsite", "")
     server_checks.check_watchdogs()
     check("no bucket: no check", pushes() == [])
 

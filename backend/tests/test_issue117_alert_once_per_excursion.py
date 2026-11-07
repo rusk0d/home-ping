@@ -24,7 +24,7 @@ def test_issue117_alert_once_per_excursion(env):
     # --- humidity high
     env(humidity=70.0)
     check("high: first reading pushes", pushes == ["HUMIDITY_HIGH"])
-    check("high: excursion flag set", store.get_state(f"env_alerted:HUMIDITY_{DEV}", "") == "high")
+    check("high: excursion flag set", store.get_state(f"env_alerted:HUMIDITY_{DEV}", "") == "sent:high")
     for h in (71.0, 75.0, 66.0):
         cooldown_over(); env(humidity=h)
     check("still high after the cooldown: no repeat", pushes == ["HUMIDITY_HIGH"])
@@ -47,7 +47,7 @@ def test_issue117_alert_once_per_excursion(env):
     # --- humidity low, and a swing from high straight to low
     pushes.clear(); cooldown_over()
     env(humidity=20.0)
-    check("high -> low: the low alert pushes", pushes == ["HUMIDITY_LOW"] and store.get_state(f"env_alerted:HUMIDITY_{DEV}", "") == "low")
+    check("high -> low: the low alert pushes", pushes == ["HUMIDITY_LOW"] and store.get_state(f"env_alerted:HUMIDITY_{DEV}", "") == "sent:low")
     cooldown_over(); env(humidity=26.0); env(humidity=22.0)
     check("26 (inside the margin) and back: no repeat", pushes == ["HUMIDITY_LOW"])
     env(humidity=28.0)
@@ -74,7 +74,7 @@ def test_issue117_alert_once_per_excursion(env):
     for k in list(state.LAST_NOTIFICATION): state.LAST_NOTIFICATION[k] -= 61
     env(humidity=80.0)
     check("retry after 60 s pushes and sets the flag", pushes == ["HUMIDITY_HIGH", "HUMIDITY_HIGH"]
-          and store.get_state(f"env_alerted:HUMIDITY_{DEV}", "") == "high")
+          and store.get_state(f"env_alerted:HUMIDITY_{DEV}", "") == "sent:high")
 
     # --- devices are independent
     pushes.clear()

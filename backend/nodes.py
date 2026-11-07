@@ -7,10 +7,10 @@ import time
 import state
 from config import (
     DEVICES_RETENTION_DAYS, NODE_CHECK_INTERVAL, NODE_OFFLINE_ALERT_SECONDS,
-    NOTIFICATION_COOLDOWN, SENSOR_SILENT_SECONDS,
+    SENSOR_SILENT_SECONDS,
 )
-from store import db, get_state, log_event, parse_ts, set_state, utcnow
-from alerts import alert, alert_muted
+from store import db, log_event, parse_ts, utcnow
+from alerts import Excursion
 
 log = logging.getLogger(__name__)
 
@@ -58,40 +58,26 @@ def check_nodes():
         with state.NODE_LOCK:
             if device in state.NODE_OFFLINE:
                 continue
-            if time.time() - state.LAST_NOTIFICATION.get(f"NODE_{device}", 0) <= NOTIFICATION_COOLDOWN:
-                continue
-            result = alert(device, "NODE_OFFLINE", f"last seen {last_seen}",
-                           title="Node offline",
-                           body=f"{device}: no data for {int(age // 60)} min",
-                           data={"event": "NODE_STATUS", "status": "offline", "device": device},
-                           cooldown_key=f"NODE_{device}", kind="nodes")
+            result = _outage(device).start("NODE_OFFLINE", f"last seen {last_seen}", "Node offline",
+                                           f"{device}: no data for {int(age // 60)} min",
+                                           data={"status": "offline"})
             if result:
-                set_node_offline(device, True, pushed=result == "sent")
+                state.NODE_OFFLINE[device] = result == "sent"
 
 
 def node_back_online(device):
     with state.NODE_LOCK:
-        if device not in state.NODE_OFFLINE:
+        if state.NODE_OFFLINE.pop(device, None) is None:
             return
-        pushed = state.NODE_OFFLINE[device]
-        set_node_offline(device, False)
-        if not pushed:   # the offline alert was muted: nothing to clear on the phone
-            log_event(device, "NODE_ONLINE", "no push (offline alert was muted), data again")
-            return
-        alert(device, "NODE_ONLINE", "data again",
-              title="Node back online",
-              body=f"{device} is sending data again",
-              data={"event": "NODE_STATUS", "status": "online", "device": device},
-              kind="nodes")
+        _outage(device).end("NODE_ONLINE", "data again", "Node back online",
+                            f"{device} is sending data again", data={"status": "online"})
 
 
-def set_node_offline(device, offline, pushed=True):
-    """[pushed]: whether the offline push was sent (False: muted, #82)."""
-    if offline:
-        state.NODE_OFFLINE[device] = pushed
-    else:
-        state.NODE_OFFLINE.pop(device, None)
-    set_state(f"node_offline:{device}", ("1" if pushed else "m") if offline else "0")
+def _outage(device):
+    """node_offline:<device>, an Excursion (#305); state.NODE_OFFLINE is its in-memory copy
+    (device -> whether the offline push was sent), for the checks on every message."""
+    return Excursion(f"node_offline:{device}", "nodes", device, {"event": "NODE_STATUS", "device": device},
+                     cooldown_key=f"NODE_{device}")
 
 
 # -------------------------
@@ -102,9 +88,8 @@ def set_node_offline(device, offline, pushed=True):
 # co2_ok false. Checked for each sensor a device has in the raw data (kept
 # RAW_RETENTION_DAYS): silent when there's been no valid value for SENSOR_SILENT_SECONDS
 # although the node was sending other data at the start of that time and still is, so an
-# outage (NODE_STATUS) or a reboot doesn't count. Once per excursion, persisted as
-# sensor_silent:<device>:<sensor> ('1' pushed, 'm' muted, '0' fine); quiet hours postpone
-# it, like the server watchdog.
+# outage (NODE_STATUS) or a reboot doesn't count. Once per excursion, an Excursion in
+# sensor_silent:<device>:<sensor> (#305); quiet hours postpone it, like the server watchdog.
 SENSORS = {   # sensor: (name in pushes, a valid value, the sensor reported at all)
     "env": ("BME280", "temp IS NOT NULL", "temp IS NOT NULL"),
     "co2": ("CO₂ sensor", "co2 IS NOT NULL AND co2_ok = 1", "co2 IS NOT NULL OR co2_ok IS NOT NULL"),
@@ -139,26 +124,17 @@ def check_sensors():
 
 def _sensor_state(device, sensor, silent, back):
     name = SENSORS[sensor][0]
-    key = f"sensor_silent:{device}:{sensor}"
-    status = get_state(key, "0")
     # One notification slot per sensor: the "back" push replaces the warning in the app
-    data = {"event": "SENSOR_STATUS", "device": f"{device}:{sensor}"}
-    if status == "0" and silent:
-        if alert_muted("nodes") == "quiet hours":
-            return   # try again after quiet hours
+    excursion = Excursion(f"sensor_silent:{device}:{sensor}", "nodes", device,
+                          {"event": "SENSOR_STATUS", "device": f"{device}:{sensor}"}, postpone_quiet=True)
+    if silent:
         body = f"{device}: no {name} readings for {SENSOR_SILENT_SECONDS // 60} min"
-        result = alert(device, f"SENSOR_SILENT_{sensor.upper()}", body, "Sensor not reporting", body,
-                       {**data, "status": "silent"}, kind="nodes")
-        if result:   # a failed send is retried at the next check
-            set_state(key, "1" if result == "sent" else "m")
-    elif status != "0" and back:
-        set_state(key, "0")
+        excursion.start(f"SENSOR_SILENT_{sensor.upper()}", body, "Sensor not reporting", body,
+                        data={"status": "silent"})
+    elif back:
         body = f"{device}: {name} readings are back"
-        if status == "1":   # only clear a notification that was actually shown
-            alert(device, f"SENSOR_OK_{sensor.upper()}", body, "Sensor reporting again", body,
-                  {**data, "status": "ok"}, kind="nodes")
-        else:
-            log_event(device, f"SENSOR_OK_{sensor.upper()}", f"no push (warning was muted), {body}")
+        excursion.end(f"SENSOR_OK_{sensor.upper()}", body, "Sensor reporting again", body,
+                      data={"status": "ok"})
 
 
 def node_check_loop():

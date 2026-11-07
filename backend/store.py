@@ -195,6 +195,17 @@ def init_db():
         # Without statistics SQLite picks the wrong index for several queries
         c.execute("ANALYZE")
 
+        # The excursion states in the alerts.Excursion format (#305): '1' / 'm' / '0' became
+        # 'sent' / 'muted' / '', a bare humidity/temperature/pressure band 'sent:<band>'
+        # (they had no recovery push, so muted or sent didn't matter). Matches old values only.
+        c.execute("""
+            UPDATE system_state SET value = CASE value WHEN '1' THEN 'sent' WHEN 'm' THEN 'muted' ELSE '' END
+            WHERE (key LIKE 'watchdog:%' OR key LIKE 'sensor_silent:%' OR key LIKE 'node_offline:%')
+              AND value IN ('1', 'm', '0')""")
+        c.execute("""
+            UPDATE system_state SET value = 'sent:' || value
+            WHERE key LIKE 'env_alerted:%' AND value IN ('high', 'low', 'falling')""")
+
         # Once: the hourly roll-up averaged the fridge in with the room (#290). Rewind it to the
         # fridge's first reading so the next rollup_hourly() rebuilds those hours without it.
         if not c.execute("SELECT 1 FROM system_state WHERE key = 'hourly_room_rebuilt'").fetchone():
@@ -474,7 +485,7 @@ def load_alert_state():
         """).fetchall()
     cooldowns = {k[len("cooldown:"):]: float(v) for k, v in rows if k.startswith("cooldown:")}
     alerted = {k[len("radar_alerted:"):] for k, v in rows if k.startswith("radar_alerted:") and v == "1"}
-    # node_offline: '1' = offline push sent, 'm' = offline but muted (#82), '0' = online
-    offline = {k[len("node_offline:"):]: v == "1" for k, v in rows
-               if k.startswith("node_offline:") and v in ("1", "m")}
+    # node_offline: an alerts.Excursion (#305), 'sent' / 'muted' (#82) while offline
+    offline = {k[len("node_offline:"):]: v == "sent" for k, v in rows
+               if k.startswith("node_offline:") and v in ("sent", "muted")}
     return cooldowns, alerted, offline

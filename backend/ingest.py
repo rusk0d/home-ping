@@ -18,7 +18,7 @@ from store import (
     db, get_last_occupancy, get_state, log_event, log_presence, log_to_db, note_uptime,
     parse_ts, rollup_hourly, set_state, utcnow,
 )
-from alerts import alert, set_radar_alerted
+from alerts import Excursion, alert, set_radar_alerted
 from metrics import note_node
 from nodes import handle_status, touch_device
 from baseline import check_baseline
@@ -134,15 +134,12 @@ def handle_presence_data(data):
               rssi, quiet_minutes)
 
 
-# An alerted humidity/temperature condition (#117), in system_state so it survives a restart:
-# env_alerted:<HUMIDITY|TEMP>_<device> = "high" / "low" while that excursion has been pushed
-# (or muted); removed once the value is back in range by the hysteresis margin.
-def env_alerted(key):
-    return get_state(f"env_alerted:{key}", "") or None
-
-
-def set_env_alerted(key, band):
-    set_state(f"env_alerted:{key}", band or "")
+# An alerted humidity/temperature/pressure condition (#117): an Excursion (#305) in
+# env_alerted:<HUMIDITY|TEMP>_<device> / env_alerted:PRESSURE, band "high" / "low" / "falling",
+# ended (without a push) once the value is back in range by the hysteresis margin. The
+# cooldown key is the same without "env_alerted:".
+def env_excursion(key, kind, device):
+    return Excursion(f"env_alerted:{key}", kind, device, {"device": device}, cooldown_key=key)
 
 
 def on_message(client, userdata, msg):
@@ -233,8 +230,6 @@ def on_message(client, userdata, msg):
                   heap_free=read_int(data, "heap_free"), heap_min=read_int(data, "heap_min"),
                   heap_block=read_int(data, "heap_block"))
 
-        now = time.time()
-
         # Each alert only needs its own value (a node may send just one of them)
 
         # -------------------------
@@ -247,39 +242,29 @@ def on_message(client, userdata, msg):
                 band = "low"
             else:
                 band = None
-            key = f"HUMIDITY_{device}"
-            alerted = env_alerted(key)
+            excursion = env_excursion(f"HUMIDITY_{device}", "humidity", device)
+            _, alerted = excursion.current()
             # Back in range by the hysteresis margin: the excursion is over
             if (alerted == "high" and hum < HUMIDITY_HIGH_THRESHOLD - HUMIDITY_HYSTERESIS
                     or alerted == "low" and hum > HUMIDITY_LOW_THRESHOLD + HUMIDITY_HYSTERESIS):
-                set_env_alerted(key, None)
-                alerted = None
-            if band and band != alerted and now - state.LAST_NOTIFICATION.get(key, 0) > NOTIFICATION_COOLDOWN:
-                if alert(device, f"HUMIDITY_{band.upper()}_ALERT", f"humidity={hum}",
-                         title="Humidity Alert",
-                         body=f"Humidity is {band}: {hum:.1f}%",
-                         data={"event": f"HUMIDITY_{band.upper()}", "device": device},
-                         cooldown_key=key, kind="humidity"):
-                    set_env_alerted(key, band)
+                excursion.end()
+            if band:
+                excursion.start(f"HUMIDITY_{band.upper()}_ALERT", f"humidity={hum}", "Humidity Alert",
+                                f"Humidity is {band}: {hum:.1f}%", band=band,
+                                data={"event": f"HUMIDITY_{band.upper()}"})
 
         # -------------------------
         # TEMPERATURE ALERT (once per excursion, #117)
         # -------------------------
         # Room alert only: a fridge's 4 °C isn't a cold flat (fridge.py has its own)
         if temp is not None and device not in NON_ROOM_DEVICES:
-            key = f"TEMP_{device}"
-            alerted = env_alerted(key)
-            if alerted and temp > TEMP_THRESHOLD + TEMP_HYSTERESIS:
-                set_env_alerted(key, None)
-                alerted = None
-            if (temp < TEMP_THRESHOLD and not alerted
-                    and now - state.LAST_NOTIFICATION.get(key, 0) > NOTIFICATION_COOLDOWN):
-                if alert(device, "TEMP_ALERT", f"temp={temp}",
-                         title="Temperature Alert",
-                         body=f"Temperature is low on {device}: {temp:.1f}°C",
-                         data={"event": "TEMP", "device": device},
-                         cooldown_key=key, kind="temperature"):
-                    set_env_alerted(key, "low")
+            excursion = env_excursion(f"TEMP_{device}", "temperature", device)
+            if temp > TEMP_THRESHOLD + TEMP_HYSTERESIS:
+                excursion.end()
+            elif temp < TEMP_THRESHOLD:
+                excursion.start("TEMP_ALERT", f"temp={temp}", "Temperature Alert",
+                                f"Temperature is low on {device}: {temp:.1f}°C", band="low",
+                                data={"event": "TEMP"})
 
     except Exception as e:
         log.error("MQTT error on %s: %r", getattr(msg, "topic", "?"), e)
@@ -387,19 +372,14 @@ def check_pressure(now=None):
     change = pressure_change(now)
     if change is None:
         return
-    key = "PRESSURE"
-    alerted = env_alerted(key)
-    if alerted and change > PRESSURE_DROP_THRESHOLD + PRESSURE_HYSTERESIS:
-        set_env_alerted(key, None)
-        alerted = None
-    if (change <= PRESSURE_DROP_THRESHOLD and not alerted
-            and time.time() - state.LAST_NOTIFICATION.get(key, 0) > NOTIFICATION_COOLDOWN):
-        if alert("pressure", "PRESSURE_FALLING", f"change={change:.1f} hPa/{PRESSURE_WINDOW_HOURS}h",
-                 title="Pressure falling fast",
-                 body=f"{change:+.1f} hPa in {PRESSURE_WINDOW_HOURS} h: storm likely, bring things in from outside",
-                 data={"event": "PRESSURE", "device": "pressure"},
-                 cooldown_key=key, kind="pressure"):
-            set_env_alerted(key, "falling")
+    excursion = env_excursion("PRESSURE", "pressure", "pressure")
+    if change > PRESSURE_DROP_THRESHOLD + PRESSURE_HYSTERESIS:
+        excursion.end()
+    elif change <= PRESSURE_DROP_THRESHOLD:
+        excursion.start("PRESSURE_FALLING", f"change={change:.1f} hPa/{PRESSURE_WINDOW_HOURS}h",
+                        "Pressure falling fast",
+                        f"{change:+.1f} hPa in {PRESSURE_WINDOW_HOURS} h: storm likely, bring things in from outside",
+                        band="falling", data={"event": "PRESSURE"})
 
 
 # The 5-minute steps, in order, each guarded: one that raises doesn't skip the rest (#303)

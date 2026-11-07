@@ -123,10 +123,10 @@ Known keys:
 | `cooldown:<key>` | unix time (float, as text) when the cooldown for alert `<key>` started (e.g. `cooldown:HUMIDITY_home_ping_esp32`) | no | `alert()` via `set_cooldown()` | loaded into `LAST_NOTIFICATION` at startup (#5) |
 | `arrival_started` | unix time an arrival started (first occupied reading after the quiet spell), `'0'` once confirmed | no | presence handler | presence handler (arrival alert) |
 | `arrival_quiet` | quiet minutes before that arrival, as an int | no | presence handler | arrival alert body |
-| `env_alerted:HUMIDITY_<device>` / `env_alerted:TEMP_<device>` | `'high'`/`'low'` while that humidity/temperature excursion has been pushed or muted, `''` after it ended (#117) | no | env handler (`ingest.set_env_alerted`) | env handler |
+| `env_alerted:HUMIDITY_<device>` / `env_alerted:TEMP_<device>` | `'sent:<band>'` / `'muted:<band>'` (band `high`/`low`, temperature only `low`) while that excursion is on, `''` after it ended (#117, #305) | no | env handler (`ingest.set_env_alerted`) | env handler |
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
 | `ts_utc` | `'1'` once the timestamps were converted to UTC | no | `init_db()` (#65) | `init_db()` |
-| `node_offline:<device>` | `'1'` while that node's current outage has been pushed, `'m'` while it is offline but the push was muted (#82), else `'0'` | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
+| `node_offline:<device>` | `'sent'` while that node's current outage has been pushed, `'muted'` while it is offline but the push was muted (#82), else `''` (#305) | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
 | `notify:<kind>` | `'1'` / `'0'` per alert type (`NOTIFY_KINDS`: `humidity`, `temperature`, `radar`, `nodes`, `pressure`, `air`, `baseline`, `fridge`); missing = `'1'` | no | `POST /api/notification_settings` (#82) | `alert()` via `alert_muted()`, `GET /api/notification_settings` |
 | `quiet_hours` | `'1'` / `'0'`; missing = `'0'` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 | `quiet_start` / `quiet_end` | `"HH:MM"`, server local time; missing = `22:00` / `07:00` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
@@ -140,6 +140,9 @@ Known keys:
 | `baseline_count:<metric>` | unusual consecutive hours for `temp` / `humidity` / `co2` | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
 | `baseline_seen:<metric>` | the hour that metric was last checked: the next one only continues the count if it's exactly one hour later (#302) | no | `baseline.check_baseline()` | `baseline.check_baseline()` |
 | `baseline_alerted:<metric>` | `'sent'` / `'muted'` while that excursion was pushed or muted, `''` after it | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
+| `env_alerted:PRESSURE` | `'sent:falling'` / `'muted:falling'` while a pressure-falling excursion is on, `''` after it (#237, #305) | no | `ingest.check_pressure()` | `ingest.check_pressure()` |
+| `watchdog:<check>` | `'sent'` / `'muted'` while that server check (`backup`, `offsite`, `disk`, `cert_<port>`) is failing, `''` fine (#176, #305) | no | `server_checks._watch()` | `server_checks._watch()` |
+| `sensor_silent:<device>:<sensor>` | `'sent'` / `'muted'` while that sensor (`env`, `co2`) is silent, `''` once it's back (#224, #305) | no | `nodes._sensor_state()` | `nodes._sensor_state()` |
 | `fridge_alert_state` | the fridge node's alert state last handled (`''` = normal) | no | `fridge.check_fridge_alerts()` (#294) | `fridge.check_fridge_alerts()` |
 | `fridge_alert_shown` | `'sent'` / `'muted'` for that state's push, `''` when none (#300) | no | `fridge.check_fridge_alerts()` | `fridge.check_fridge_alerts()` |
 | `hourly_room_rebuilt` | `'1'` once the hours averaged with the fridge were rebuilt | no | `init_db()` (#290) | `init_db()` |
@@ -192,7 +195,7 @@ Event types written by `server.py`:
 | `TEMP_ALERT` | env ID | `sent, temp=17.6` | temperature push attempted |
 | `STATUS` | node ID | `online` / `offline` | live message on `home/esp32/<device>/status` (#13) |
 | `NODE_OFFLINE` | node ID | `sent, last seen 2026-10-16 06:12:40` (UTC) | node-offline push attempted (#13) |
-| `NODE_ONLINE` | node ID | `sent, data again` | back-online push attempted (#13); `no push (offline alert was muted), data again` when the offline alert was muted (#82) |
+| `NODE_ONLINE` | node ID | `sent, data again` | back-online push attempted (#13); `no push (alert was muted), data again` when the offline alert was muted (#82, #305) |
 | `OCCUPANCY_ARMED` | `system` | `1 (manual)` / `0 (location)` etc.: the new state and the source (#238; before that a bare `1` / `0`) | `POST /api/occupancy_arm` |
 | `NOTIFICATION_SETTINGS` | `system` | `notify:humidity=0, quiet_start=23:00` | `POST /api/notification_settings` changed something (#82) |
 | `WINDOW_OPEN` | CO₂ node ID | `CO₂ -690 ppm, -1.3 °C in 10 min; outside 9.8 °C 80 %` | CO₂ fell ≥ 200 ppm or the temperature ≥ 0.8 °C within 10 min (#245, `air.py`, no push) |
@@ -252,3 +255,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #228: `RESTART` event value ends with `, reason <name> (<code>)` when the node sends `reset_reason`.
 - #245: event types `WINDOW_OPEN`, `WINDOW_CLOSED`, `AIR_HIGH`, `AIR_OK` (observe-only) and `system_state` keys `air:window`, `air:window_closed`, `air:co2_high`.
 - #245 step 2: `AIR_HIGH`/`AIR_OK` push (new values), event types `WINDOW_CLOSE`, `WINDOW_LEFT_OPEN`, keys `air:co2_push`, `air:co2_shown`, `air:window_nudged`, `notify:air`.
+- #305: excursion state keys (`env_alerted:*`, `node_offline:*`, `watchdog:*`, `sensor_silent:*`, `baseline_alerted:*`) share one format, `''` / `sent` / `muted` with an optional `:<band>`; `init_db()` converts the old `'1'`/`'m'`/`'0'` and bare-band values.
