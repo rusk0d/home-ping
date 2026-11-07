@@ -41,7 +41,7 @@ class HistoryActivity : AppCompatActivity() {
     }
 
     /** A chart on this screen. */
-    enum class Metric { TEMPERATURE, HUMIDITY, CO2, PRESSURE, OCCUPANCY }
+    enum class Metric { TEMPERATURE, HUMIDITY, CO2, PRESSURE, OCCUPANCY, FRIDGE }
 
     companion object {
         private const val DAYS = 7
@@ -68,6 +68,7 @@ class HistoryActivity : AppCompatActivity() {
         b.tempChart.bands = Levels.TEMPERATURE
         b.humidityChart.bands = Levels.HUMIDITY
         b.co2Chart.bands = Levels.CO2
+        b.fridgeChart.bands = Levels.FRIDGE
         range = savedInstanceState?.getString(KEY_RANGE)
             ?.let { runCatching { Range.valueOf(it) }.getOrNull() } ?: Range.WEEK
         for ((view, r) in rangeViews()) view.setOnClickListener { if (range != r) { range = r; clear(); load() } }
@@ -83,6 +84,7 @@ class HistoryActivity : AppCompatActivity() {
             Metric.CO2 -> b.cardCo2
             Metric.PRESSURE -> b.cardPressure
             Metric.OCCUPANCY -> b.cardOccupancy
+            Metric.FRIDGE -> b.cardFridge
         }
         // After layout, so the card has its position; the charts have a fixed height, so it
         // stays put when the data arrives
@@ -96,9 +98,9 @@ class HistoryActivity : AppCompatActivity() {
 
     /** Empty charts while another range loads, so a failed load doesn't leave the old range's data. */
     private fun clear() {
-        for (chart in listOf(b.tempChart, b.humidityChart, b.co2Chart, b.pressureChart)) chart.setLine(emptyList(), emptyList(), "")
+        for (chart in listOf(b.tempChart, b.humidityChart, b.co2Chart, b.pressureChart, b.fridgeChart)) chart.setLine(emptyList(), emptyList(), "")
         b.occupancyChart.setBars(emptyList(), emptyList()) { "" }
-        for (summary in listOf(b.tempSummary, b.humiditySummary, b.co2Summary, b.pressureSummary, b.occupancySummary)) summary.text = ""
+        for (summary in listOf(b.tempSummary, b.humiditySummary, b.co2Summary, b.pressureSummary, b.fridgeSummary, b.occupancySummary)) summary.text = ""
     }
 
     private fun rangeViews() = listOf(b.rangeWeek to Range.WEEK, b.rangeMonth to Range.MONTH, b.rangeYear to Range.YEAR)
@@ -158,6 +160,9 @@ class HistoryActivity : AppCompatActivity() {
         line(b.humidityChart, b.humiditySummary, labels, series("avg_humidity"), "%.0f", "%")
         line(b.co2Chart, b.co2Summary, labels, series("avg_co2"), "%.0f", " ppm")
         line(b.pressureChart, b.pressureSummary, labels, series("avg_pressure"), "%.0f", " hPa")
+        // The fridge's real extremes per hour (#331), so a door left open shows in the summary
+        line(b.fridgeChart, b.fridgeSummary, labels, series("avg_fridge"), "%.1f", "°C",
+            series("min_fridge"), series("max_fridge"))
 
         // Occupancy: hours occupied per day = sum of the hourly percentages / 100
         val occ = series("avg_occupancy").chunked(24).map { day ->
@@ -193,6 +198,8 @@ class HistoryActivity : AppCompatActivity() {
         line(b.co2Chart, b.co2Summary, labels, series("avg_co2"), "%.0f", " ppm",
             null, series("max_co2"))
         line(b.pressureChart, b.pressureSummary, labels, series("avg_pressure"), "%.0f", " hPa")
+        line(b.fridgeChart, b.fridgeSummary, labels, series("avg_fridge"), "%.1f", "°C",
+            series("min_fridge"), series("max_fridge"))
 
         val occ = series("occupied_hours")
         b.occupancyChart.setBars(labels, occ) { "" }   // 30 labels would overlap; the summary has the numbers
@@ -220,6 +227,8 @@ class HistoryActivity : AppCompatActivity() {
         line(b.co2Chart, b.co2Summary, labels, series("avg_co2"), "%.0f", " ppm",
             null, extreme("max_co2") { it.max() })
         line(b.pressureChart, b.pressureSummary, labels, series("avg_pressure"), "%.0f", " hPa")
+        line(b.fridgeChart, b.fridgeSummary, labels, series("avg_fridge"), "%.1f", "°C",
+            extreme("min_fridge") { it.min() }, extreme("max_fridge") { it.max() })
 
         // Occupancy: average occupied hours per day with radar data, per month
         val occ = series("occupied_hours")

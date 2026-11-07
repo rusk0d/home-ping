@@ -240,10 +240,12 @@ An hour appears if any of these has data.
 Clients:
 - Android Home occupancy bar strip and sparklines (`days` omitted; reads `hour`,
   `avg_occupancy`, `avg_temp`, `avg_humidity`; reverses the order). A null
-  `avg_occupancy` is drawn as "no data".
+  `avg_occupancy` is drawn as "no data". The fridge card shows today's lowest `min_fridge`
+  and highest `max_fridge` (#332; hidden while there are none, e.g. an older backend).
 - Android History (`days=7`): one line chart per metric over 7 × 24 hourly slots (a
   missing hour or null value breaks the line), and occupied hours per day
-  = sum(`avg_occupancy`) / 100.
+  = sum(`avg_occupancy`) / 100. The fridge chart (#332) plots `avg_fridge`; its summary
+  range is from `min_fridge` / `max_fridge`.
 
 ### GET `/api/daily` (since #129)
 

@@ -1,6 +1,7 @@
 package com.david.homeenv
 
 import android.content.Context
+import android.view.View
 import android.widget.TextView
 import com.david.homeenv.HomeFormat.valueWithUnit
 import com.david.homeenv.databinding.FragmentHomeBinding
@@ -156,6 +157,18 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
         b.fridgeGauge.value = temp
         b.fridgeStatus.text = if (fridge == null || temp == null) "no data" else status(alert)
         fridgeTs = fridge?.optTs("ts")
+    }
+
+    /**
+     * Today's lowest and highest (#332): the extremes of /api/hourly's `min_fridge` /
+     * `max_fridge` (#331), so a short spike shows even when the hour's average hides it.
+     */
+    fun renderToday(hourly: JSONArray) {
+        val items = (0 until hourly.length()).mapNotNull { hourly.optJSONObject(it) }
+        val lo = items.mapNotNull { it.optNum("min_fridge") }.minOrNull()
+        val hi = items.mapNotNull { it.optNum("max_fridge") }.maxOrNull()
+        b.fridgeRange.visibility = if (lo != null && hi != null) View.VISIBLE else View.GONE
+        if (lo != null && hi != null) b.fridgeRange.text = "today %.1f–%.1f°".format(Locale.US, lo, hi)
     }
 
     private fun status(alert: String) = when (alert) {
