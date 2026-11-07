@@ -6,7 +6,7 @@ import time
 
 import state
 from config import (
-    DEVICES_RETENTION_DAYS, NODE_CHECK_INTERVAL, NODE_OFFLINE_ALERT_SECONDS,
+    NODE_CHECK_INTERVAL, NODE_OFFLINE_ALERT_SECONDS,
     SENSOR_SILENT_SECONDS,
 )
 from store import db, log_event, parse_ts, utcnow
@@ -28,9 +28,7 @@ def touch_device(device):
             ON CONFLICT(device)
             DO UPDATE SET last_seen=datetime('now')
         """, (device,))
-        # Forget nodes that have been gone for a long time (e.g. a retired node)
-        c.execute("DELETE FROM devices WHERE last_seen < datetime('now',?)",
-                  (f"-{DEVICES_RETENTION_DAYS} days",))
+        # (nodes gone for DEVICES_RETENTION_DAYS are dropped by store.prune())
     if device in state.NODE_OFFLINE:
         node_back_online(device)
 

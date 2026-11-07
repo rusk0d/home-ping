@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import config
 import state
 from config import (
-    CONFIDENCE_MINUTES, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, NON_ROOM_DEVICES, RAW_RETENTION_DAYS, ROOM_DEVICES_SQL,
+    CONFIDENCE_MINUTES, DEVICES_RETENTION_DAYS, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, NON_ROOM_DEVICES, RAW_RETENTION_DAYS, ROOM_DEVICES_SQL,
     UPTIME_DROP_TOLERANCE,
 )
 
@@ -177,6 +177,9 @@ def _indexes(conn):
         "CREATE INDEX IF NOT EXISTS ix_readings_device_id ON readings(device, id)",
         "CREATE INDEX IF NOT EXISTS ix_readings_device_ts ON readings(device, ts)",
         "CREATE INDEX IF NOT EXISTS ix_events_type_ts ON events(type, ts)",
+        # The newest occupied radar row (any_radar_quiet_minutes, every presence message): an
+        # index seek instead of scanning back through hours of vacant rows (#304)
+        "CREATE INDEX IF NOT EXISTS ix_presence_occupied_id ON presence_readings(id) WHERE occupied = 1",
     ):
         conn.execute(sql)
 
@@ -285,9 +288,6 @@ def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None, a
             VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?)
         """, (device, temp, hum, uptime, co2, pressure, co2_ok, alert))
 
-        c.execute("DELETE FROM readings WHERE ts < datetime('now',?)",
-                  (f"-{RAW_RETENTION_DAYS} days",))
-
 
 def log_presence(device, occupied, presence, stationary, moving,
                  distance, signal, rssi, uptime, radar_connected):
@@ -301,9 +301,18 @@ def log_presence(device, occupied, presence, stationary, moving,
         """, (device, occupied, presence, stationary, moving,
               distance, signal, rssi, uptime, radar_connected))
 
-        # RAW_RETENTION_DAYS, so the 24h queries always have full coverage (#173)
-        c.execute("DELETE FROM presence_readings WHERE ts < datetime('now',?)",
-                  (f"-{RAW_RETENTION_DAYS} days",))
+
+def prune():
+    """Retention (#18, #173): raw readings RAW_RETENTION_DAYS (so the 24 h queries always have
+    full coverage), events EVENTS_RETENTION_DAYS, nodes unseen DEVICES_RETENTION_DAYS (e.g. a
+    retired one). Once per summaries pass and at startup (#304), not on every insert, and
+    always after rollup_hourly(): those raw rows must be in `hourly` before they go."""
+    with db() as conn:
+        for table, col, days in (("readings", "ts", RAW_RETENTION_DAYS),
+                                 ("presence_readings", "ts", RAW_RETENTION_DAYS),
+                                 ("events", "ts", EVENTS_RETENTION_DAYS),
+                                 ("devices", "last_seen", DEVICES_RETENTION_DAYS)):
+            conn.execute(f"DELETE FROM {table} WHERE {col} < datetime('now', ?)", (f"-{days} days",))
 
 
 HOURLY_COLUMNS = ("hour", "temp_avg", "temp_min", "temp_max", "humidity_avg", "humidity_min",
@@ -469,8 +478,6 @@ def log_event(device, event_type, value):
             INSERT INTO events (device, ts, type, value)
             VALUES (?, datetime('now'), ?, ?)
         """, (device, event_type, value))
-        c.execute("DELETE FROM events WHERE ts < datetime('now',?)",
-                  (f"-{EVENTS_RETENTION_DAYS} days",))
 
 
 def get_state(key, default="0"):

@@ -16,7 +16,7 @@ from config import (
 )
 from store import (
     db, get_last_occupancy, get_state, log_event, log_presence, log_to_db, note_uptime,
-    parse_ts, rollup_hourly, set_state, utcnow,
+    parse_ts, prune, rollup_hourly, set_state, utcnow,
 )
 from alerts import Excursion, alert, set_radar_alerted
 from metrics import note_node
@@ -386,6 +386,7 @@ def check_pressure(now=None):
 SUMMARY_STEPS = (
     ("fridge alert check", check_fridge_alerts),   # first: the one that matters most (#290)
     ("hourly rollup", rollup_hourly),              # only does work once another hour has completed (#129)
+    ("retention", prune),                          # after the rollup: those rows are in hourly (#304)
     ("pressure check", check_pressure),            # after the rollup: it reads the newest complete hour (#237)
     ("baseline check", check_baseline),            # after the rollup too (#229)
     ("summaries publish", publish_summaries),
