@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 import state
 from config import (
-    ARRIVAL_CONFIRM_SECONDS, CO2_VALID, DEVICE_ID_MAX, ENV_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
+    ALERT_MAX, ARRIVAL_CONFIRM_SECONDS, CO2_VALID, DEVICE_ID_MAX, ENV_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
     HISTORY_24H_TOPIC, ROOM_DEVICES_SQL, NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
     NON_ROOM_DEVICES, PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, PRESSURE_DROP_THRESHOLD, PRESSURE_HYSTERESIS,
     PRESSURE_WINDOW_HOURS, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD, TOPIC,
@@ -196,6 +196,10 @@ def on_message(client, userdata, msg):
         co2 = data.get("co2")
         pressure = data.get("pressure")
         node_alert = data.get("alert")
+        # Stored as-is per reading (#290): a non-string would make sqlite drop the whole reading (#294)
+        if node_alert is not None and not (isinstance(node_alert, str) and len(node_alert) <= ALERT_MAX):
+            log.warning("%s: bad alert field %.50r, stored as null", device, node_alert)
+            node_alert = None
 
         # A broken or disconnected sensor reports values outside its range (e.g. 178 °C,
         # 100 %, -121 hPa): drop temperature, humidity and pressure together, since they
