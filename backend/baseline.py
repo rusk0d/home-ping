@@ -1,25 +1,24 @@
 """Unusual readings for the time of day (#229, reworked in #297).
 
 Each newly completed hour in `hourly` is checked once: its temperature, humidity and CO₂
-averages against the same hour of the day over the last BASELINE_DAYS days, as a robust
-z-score (median and MAD). BASELINE_HOURS unusual hours in a row push "Unusual reading";
+averages against the same **local** hour of the day over the last BASELINE_DAYS days (the
+household's rhythm follows the clock on the wall, so across a DST change the UTC hour shifts,
+#302), as a robust z-score (median and MAD). BASELINE_HOURS unusual hours in a row (really
+consecutive: a skipped hour starts over, #302) push "Unusual reading";
 once the metric is back under BASELINE_Z_CLEAR, "Back to normal". Pressure isn't checked:
 it has no daily rhythm, and fronts already push "Pressure falling fast" (#237).
 
-system_state per metric: baseline_count:<metric> (unusual hours in a row) and
-baseline_alerted:<metric> ("sent" / "muted" while an excursion is on; saved only after
-the push went out, so a failed one is retried on the next hour; a muted excursion ends
+system_state per metric: baseline_count:<metric> (unusual hours in a row),
+baseline_seen:<metric> (the hour it was last checked) and baseline_alerted:<metric> ("sent" / "muted" while an excursion is on; saved only after
+the push went out, so a failed one is retried on the next hour, no cooldown needed; a muted excursion ends
 without a "Back to normal"). baseline_last_hour is the
 newest hour checked.
 """
 
 import logging
-import time
 from datetime import timedelta
 
 import alerts
-import state
-from config import NOTIFICATION_COOLDOWN
 from store import db, get_state, parse_ts, set_state, utcnow
 
 log = logging.getLogger(__name__)
@@ -56,18 +55,18 @@ def robust_z(value, history, floor):
 
 
 def history(conn, col, hour):
-    """[col] of the same hour of the day over the BASELINE_DAYS days before [hour]."""
+    """[col] of the same local hour of the day over the BASELINE_DAYS days before [hour]."""
     since = (parse_ts(hour) - timedelta(days=BASELINE_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
     rows = conn.execute(f"""
         SELECT {col} FROM hourly
-        WHERE {col} IS NOT NULL AND strftime('%H', hour) = ? AND hour >= ? AND hour < ?
-    """, (hour[11:13], since, hour)).fetchall()
+        WHERE {col} IS NOT NULL AND hour >= ? AND hour < ?
+          AND strftime('%H', hour, 'localtime') = strftime('%H', ?, 'localtime')
+    """, (since, hour, hour)).fetchall()
     return [r[0] for r in rows]
 
 
-def check_baseline(now=None):
+def check_baseline():
     """Check the newest complete hour, once. Returns {metric: z} of what was checked."""
-    now = time.time() if now is None else now
     with db() as conn:
         row = conn.execute("SELECT * FROM hourly ORDER BY hour DESC LIMIT 1").fetchone()
         if not row:
@@ -86,18 +85,19 @@ def check_baseline(now=None):
                 z, med = robust_z(newest[col], history(conn, col, hour), floor)
                 if z is not None:
                     scores[metric] = (z, med, newest[col])
+        local = conn.execute("SELECT strftime('%H:00', ?, 'localtime')", (hour,)).fetchone()[0]
     set_state("baseline_last_hour", hour)
 
-    local = f"{hour[11:13]}:00 UTC"
+    prev_hour = (parse_ts(hour) - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
     for metric, (z, med, value) in scores.items():
         _, unit, name, _ = METRICS[metric]
-        count = int(get_state(f"baseline_count:{metric}", "0"))
+        # Only a run of checked hours with no gap is "in a row"
+        in_row = get_state(f"baseline_seen:{metric}", None) == prev_hour
+        count = int(get_state(f"baseline_count:{metric}", "0")) if in_row else 0
         count = count + 1 if abs(z) > BASELINE_Z else 0
         set_state(f"baseline_count:{metric}", str(count))
+        set_state(f"baseline_seen:{metric}", hour)
         alerted = get_state(f"baseline_alerted:{metric}", "") or ""
-        key = f"BASELINE_{metric}"
-        if now - state.LAST_NOTIFICATION.get(key, 0) <= NOTIFICATION_COOLDOWN:
-            continue
         detail = f"{metric}={value:.1f} {unit}, typical {med:.1f} {unit} at {local}, z={z:+.1f}"
         data = {"event": "BASELINE", "device": metric}
         if not alerted and count >= BASELINE_HOURS:
@@ -106,14 +106,14 @@ def check_baseline(now=None):
                                   title="Unusual reading",
                                   body=f"{name} is unusually {direction} for this time of day: "
                                        f"{value:.1f} {unit} (usually {med:.1f})",
-                                  data=data, cooldown_key=key, kind="baseline")
+                                  data=data, kind="baseline")
             if result:
                 set_state(f"baseline_alerted:{metric}", result)
         elif alerted and abs(z) < BASELINE_Z_CLEAR:
             if alerted == "muted" or alerts.alert(
                     "system", "BASELINE_NORMAL", detail,
                     title="Back to normal", body=f"{name} is back to normal: {value:.1f} {unit}",
-                    data=data, cooldown_key=key, kind="baseline"):
+                    data=data, kind="baseline"):
                 set_state(f"baseline_alerted:{metric}", "")
     return {m: s[0] for m, s in scores.items()}
 
