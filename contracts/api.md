@@ -391,12 +391,12 @@ is all that guards it.
 | Metric | Labels | From |
 |---|---|---|
 | `homeping_node_last_seen_age_seconds` | `device` | `devices.last_seen` (every node, also offline ones) |
-| `homeping_node_uptime_seconds` | `device` | presence `uptime` |
-| `homeping_node_wifi_rssi_dbm` | `device` | presence `rssi` |
-| `homeping_node_reset_reason` | `device` | presence `reset_reason` (`esp_reset_reason_t`) |
-| `homeping_node_heap_free_bytes` | `device` | presence `heap_free` |
-| `homeping_node_heap_min_free_bytes` | `device` | presence `heap_min` |
-| `homeping_node_heap_max_block_bytes` | `device` | presence `heap_block` |
+| `homeping_node_uptime_seconds` | `device` | presence or env `uptime` |
+| `homeping_node_wifi_rssi_dbm` | `device` | presence or env `rssi` |
+| `homeping_node_reset_reason` | `device` | presence or env `reset_reason` (`esp_reset_reason_t`) |
+| `homeping_node_heap_free_bytes` | `device` | presence or env `heap_free` |
+| `homeping_node_heap_min_free_bytes` | `device` | presence or env `heap_min` |
+| `homeping_node_heap_max_block_bytes` | `device` | presence or env `heap_block` |
 | `homeping_radar_connected` | `device` | presence `radar_connected` (1/0) |
 | `homeping_occupied` | `device` | derived `occupied` (1/0) |
 | `homeping_temperature_celsius`, `homeping_humidity_percent`, `homeping_pressure_hpa` | `device` | newest non-null `readings` value |
@@ -405,7 +405,9 @@ is all that guards it.
 | `homeping_mqtt_connected` | none | 1/0 |
 | `homeping_mqtt_last_message_age_seconds` | none | last live MQTT message (absent before the first) |
 
-- The presence values are kept in memory (`state.NODE_HEALTH`), the newest per node; sensor
+- The node health values (from presence messages and, since the fridge node #290, from env
+  messages such as `fridge_temp`) are kept in memory (`state.NODE_HEALTH`), merged per node
+  so an env message doesn't drop a node's radar fields; sensor
   values come from `readings`. Both are left out once older than `METRICS_FRESH_SECONDS`
   (600 s), so a dead node's last numbers don't stay on the graphs (`last_seen_age` keeps growing).
 - A sample is missing when the node didn't send that field (older firmware: no heap fields).
