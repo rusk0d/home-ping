@@ -84,6 +84,7 @@
         android:layout_weight="1">
 
         <ScrollView
+            android:id="@+id/scroll"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false">
@@ -107,6 +108,7 @@
                     android:visibility="gone" />
 
             <com.david.homeenv.ui.AccentCard
+                android:id="@+id/card_temp"
                 style="@style/HomeCard"
                 android:layout_marginTop="0dp"
                 app:accentColor="@color/accent_temp">
@@ -132,6 +134,7 @@
             </com.david.homeenv.ui.AccentCard>
 
             <com.david.homeenv.ui.AccentCard
+                android:id="@+id/card_humidity"
                 style="@style/HomeCard"
                 android:layout_marginTop="12dp"
                 app:accentColor="@color/accent_hum">
@@ -157,6 +160,7 @@
             </com.david.homeenv.ui.AccentCard>
 
             <com.david.homeenv.ui.AccentCard
+                android:id="@+id/card_co2"
                 style="@style/HomeCard"
                 android:layout_marginTop="12dp"
                 app:accentColor="@color/accent_co2">
@@ -182,6 +186,7 @@
             </com.david.homeenv.ui.AccentCard>
 
             <com.david.homeenv.ui.AccentCard
+                android:id="@+id/card_pressure"
                 style="@style/HomeCard"
                 android:layout_marginTop="12dp"
                 app:accentColor="@color/accent_pres">
@@ -207,6 +212,7 @@
             </com.david.homeenv.ui.AccentCard>
 
             <com.david.homeenv.ui.AccentCard
+                android:id="@+id/card_occupancy"
                 style="@style/HomeCard"
                 android:layout_marginTop="12dp"
                 app:accentColor="@color/good">
