@@ -14,8 +14,8 @@ data class Level(val text: String, @param:ColorRes val color: Int)
 
 /**
  * A banded scale: the value range a gauge shows, the band stops, and the colour of each
- * band (one more colour than stops). Used by the chip thresholds below, the CO₂ card's
- * gauge and the widget gauges.
+ * band (one more colour than stops). Used by the chip thresholds below, the CO₂ and fridge
+ * cards' gauges and the widget gauges.
  */
 class Scale(val min: Double, val max: Double, val stops: List<Double>, val colors: List<Int>) {   // colour resource IDs
     init { require(colors.size == stops.size + 1) }
@@ -40,6 +40,13 @@ object Levels {
         listOf(R.color.poor, R.color.ok, R.color.good, R.color.ok, R.color.poor))
     val CO2 = Scale(400.0, 3000.0, listOf(800.0, 1200.0, 2000.0),
         listOf(R.color.good, R.color.ok, R.color.poor, R.color.bad))
+    /**
+     * The fridge card's gauge (#326), °C: below 0 too cold, 0–5 fine, 5–8 warming, from 8 too
+     * warm: the limits of the fridge node's `alert` (contracts/mqtt.md). The chip comes from
+     * that alert ([fridge]), which also needs 30 min past a limit; the gauge shows the reading.
+     */
+    val FRIDGE = Scale(-2.0, 10.0, listOf(0.0, 5.0, 8.0),
+        listOf(R.color.accent_hum, R.color.good, R.color.poor, R.color.bad))
     /** Occupancy confidence / hourly occupancy, % (see [occupancy]). */
     val OCCUPANCY = Scale(0.0, 100.0, listOf(20.0, 60.0),
         listOf(R.color.muted, R.color.ok, R.color.good))
