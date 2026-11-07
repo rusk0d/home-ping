@@ -247,15 +247,20 @@ class HomeFragment : Fragment() {
         val alert = fridge?.takeUnless { it.isNull("alert") }?.optString("alert").orEmpty()
         b.fridgeValue.text = valueWithUnit(temp?.let { "%.1f".format(Locale.US, it) }, "°C")
         Levels.applyChip(b.fridgeAlert, temp?.let { Levels.fridge(alert) })
-        b.fridgeStatus.text = when (alert) {
-            "" -> "normal"
-            "cold" -> "below 0 °C for 30+ min"
-            "warm_low" -> "above 5 °C for 30+ min"
-            "warm_critical" -> "above 8 °C for 30+ min"
-            "warm_critical_duration" -> "above 5 °C for 2+ h"
-            else -> alert
+        b.fridgeStatus.text = when {
+            fridge == null || temp == null -> "no data"
+            else -> fridgeStatus(alert)
         }
         fridgeTs = fridge?.optTs("ts")
+    }
+
+    private fun fridgeStatus(alert: String) = when (alert) {
+        "" -> "normal"
+        "cold" -> "below 0 °C for 30+ min"
+        "warm_low" -> "above 5 °C for 30+ min"
+        "warm_critical" -> "above 8 °C for 30+ min"
+        "warm_critical_duration" -> "above 5 °C for 2+ h"
+        else -> alert
     }
 
     private fun renderPressure(air: JSONObject) {
