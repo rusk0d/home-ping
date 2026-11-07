@@ -285,7 +285,8 @@ Example:
 Backend handling: env handler (no `presence`). Stores a `readings` row with `temp_c`
 (the `temp` column), `alert`, and `uptime`; `humidity`, `co2` and `pressure` are NULL.
 Serves the alert state via `/api/latest_all` (fields `alert` and `alert_ts`). The backend's
-fridge alert handler in `fridge.py` sends notifications when `alert` state changes.
+fridge alert handler in `fridge.py` sends notifications when `alert` state changes, and on
+every reading checks for a door left open (fast rise of `temp_c`, #336; `notifications.md`).
 Not a room sensor (`NON_ROOM_DEVICES`): no room temperature alert, and left out of the
 `hourly` roll-up, `history_24h` and the "whichever device" readings (`/api/latest`).
 

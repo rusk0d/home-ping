@@ -10,6 +10,7 @@ these need the real `data.db` and a running backend, so they don't run in CI.
 | `validate_db_deep.py` | edge cases: future or backwards timestamps, value bounds, 0→1→0 occupancy spikes, OCCUPANCY_CHANGE events vs. readings, window events alternating, min ≤ avg ≤ max, alert cooldowns | no |
 | `validate_api.py` | re-implements occupancy stats, confidence, combined occupancy and the 3 h pressure change from their docstrings and compares with `/api/stats24h_combined`, `/api/latest`, `/api/air` | yes |
 | `api_regressions.py` | value ranges, shapes and freshness of the API responses | yes |
+| `fridge_door_replay.py` | not a check: replays the stored fridge readings through the door rule (#336) and prints the rises and pushes it would have sent; `--rise`, `--rise-minutes`, `--open-minutes`, `--closed` try other limits | no |
 
 Each prints its findings and exits 1 when something failed.
 
@@ -23,6 +24,7 @@ sudo -u iot venv/bin/python tools/validate_db.py
 sudo -u iot venv/bin/python tools/validate_db_deep.py
 sudo -u iot venv/bin/python tools/validate_api.py
 sudo -u iot venv/bin/python tools/api_regressions.py
+sudo -u iot venv/bin/python tools/fridge_door_replay.py [--open-minutes 15 ...]
 ```
 
 - They open `data.db` **read-only** and take the API login and settings from `config.py`

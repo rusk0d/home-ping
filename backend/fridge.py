@@ -1,4 +1,4 @@
-"""Fridge temperature monitor alerts (#290, #294, #300).
+"""Fridge temperature monitor alerts (#290, #294, #300) and the door left open (#336).
 
 The node decides the alert state (contracts/mqtt.md, home/esp32/fridge_temp); this pushes
 when it changes. system_state:
@@ -17,11 +17,15 @@ the more severe notification stays.
 
 import logging
 import time
+from datetime import timedelta
 
 import alerts
 import state
-from config import FRIDGE_DEVICE, NOTIFICATION_COOLDOWN
-from store import db, get_state, set_state
+from config import (
+    FRIDGE_DEVICE, FRIDGE_DOOR_CLOSED_C, FRIDGE_DOOR_OPEN_MINUTES, FRIDGE_DOOR_RISE_C,
+    FRIDGE_DOOR_RISE_MINUTES, NOTIFICATION_COOLDOWN,
+)
+from store import db, get_state, parse_ts, set_state, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -99,3 +103,65 @@ def check_fridge_alerts(now=None):
         result = _push(current, last)
         if result:
             _save(current, result)
+
+
+# ---------- door left open (#336) ----------
+# On every fridge reading (ingest), not in the 5-minute loop: the push should come about
+# FRIDGE_DOOR_OPEN_MINUTES after the door opened, not up to 5 min later. The node decides the
+# temperature alerts above; this one is the backend's, from the readings.
+# system_state: fridge_door_rise = "<start ts>|<base °C>" while a fast rise is being watched;
+# fridge_door = the Excursion state of its push ("sent" / "muted", "" when none).
+
+DOOR = alerts.Excursion("fridge_door", "fridge", DEVICE, {"event": "FRIDGE_DOOR", "device": DEVICE})
+
+
+def door_step(rise, recent):
+    """One reading through the door rule; also used by tools/fridge_door_replay.py.
+
+    [rise]: (start datetime, base °C) of the fast rise being watched, or None. [recent]: the
+    fridge's (datetime, °C) readings of the last FRIDGE_DOOR_RISE_MINUTES or more, oldest
+    first, the newest last. Returns (rise, event): event "open" while the door looks left
+    open (every reading: the push itself is once), "closed" when a watched rise is over.
+    """
+    ts, temp = recent[-1]
+    if rise is None:
+        window = [r for r in recent if r[0] >= ts - timedelta(minutes=FRIDGE_DOOR_RISE_MINUTES)]
+        # The newest of the lowest readings: the last one before the door opened, so the
+        # minutes count from the opening, not from a steady stretch before it
+        start, base = min(window, key=lambda r: (r[1], -r[0].timestamp()))
+        if temp - base < FRIDGE_DOOR_RISE_C:
+            return None, None
+        rise = (start, base)
+    start, base = rise
+    if temp <= base + FRIDGE_DOOR_CLOSED_C:
+        return None, "closed"
+    return rise, "open" if ts - start >= timedelta(minutes=FRIDGE_DOOR_OPEN_MINUTES) else None
+
+
+def check_door(now=None):
+    """The door rule on the newest fridge reading; pushes "Fridge door open?" once per rise and
+    "Fridge door closed" after a sent one."""
+    since = (now or utcnow()) - timedelta(minutes=FRIDGE_DOOR_RISE_MINUTES + 1)
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT ts, temp FROM readings WHERE device = ? AND temp IS NOT NULL AND ts >= ? ORDER BY ts",
+            (DEVICE, since.strftime("%Y-%m-%d %H:%M:%S"))).fetchall()
+    if not rows:
+        return None
+    recent = [(parse_ts(ts), temp) for ts, temp in rows]
+    saved = get_state("fridge_door_rise", "") or ""
+    start, _, base = saved.partition("|")
+    rise = (parse_ts(start), float(base)) if saved else None
+
+    rise, event = door_step(rise, recent)
+    new = f"{rise[0].strftime('%Y-%m-%d %H:%M:%S')}|{rise[1]}" if rise else ""
+    if new != saved:
+        set_state("fridge_door_rise", new)
+    ts, temp = recent[-1]
+    if event == "open":
+        minutes = round((ts - rise[0]).total_seconds() / 60)
+        DOOR.start("FRIDGE_DOOR_OPEN", f"temp={temp} (was {rise[1]} {minutes} min ago)",
+                   "Fridge door open?", f"Up from {rise[1]:.1f} to {temp:.1f} °C in {minutes} min and not cooling down")
+    elif event == "closed":
+        DOOR.end("FRIDGE_DOOR_CLOSED", f"temp={temp}", "Fridge door closed", f"Back to {temp:.1f} °C")
+    return event
