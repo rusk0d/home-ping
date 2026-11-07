@@ -8,7 +8,10 @@ from datetime import datetime, timedelta, timezone
 
 import config
 import state
-from config import CONFIDENCE_MINUTES, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, RAW_RETENTION_DAYS, UPTIME_DROP_TOLERANCE
+from config import (
+    CONFIDENCE_MINUTES, EVENTS_RETENTION_DAYS, PRESENCE_DEVICE, NON_ROOM_DEVICES, RAW_RETENTION_DAYS, ROOM_DEVICES_SQL,
+    UPTIME_DROP_TOLERANCE,
+)
 
 log = logging.getLogger(__name__)
 
@@ -192,6 +195,20 @@ def init_db():
         # Without statistics SQLite picks the wrong index for several queries
         c.execute("ANALYZE")
 
+        # Once: the hourly roll-up averaged the fridge in with the room (#290). Rewind it to the
+        # fridge's first reading so the next rollup_hourly() rebuilds those hours without it.
+        if not c.execute("SELECT 1 FROM system_state WHERE key = 'hourly_room_rebuilt'").fetchone():
+            first = c.execute(f"SELECT MIN(ts) FROM readings WHERE NOT {ROOM_DEVICES_SQL}").fetchone()[0]
+            until = c.execute("SELECT value FROM system_state WHERE key = 'hourly_until'").fetchone()
+            if first and until and first[:13] + ":00:00" < until[0]:
+                c.execute("UPDATE system_state SET value = ? WHERE key = 'hourly_until'",
+                          (first[:13] + ":00:00",))
+            # and the room temperature alert it latched as "low"
+            c.execute(f"DELETE FROM system_state WHERE key IN ({', '.join('?' * len(NON_ROOM_DEVICES))})",
+                      [f"env_alerted:TEMP_{d}" for d in NON_ROOM_DEVICES])
+            c.execute("INSERT INTO system_state (key, value) VALUES ('hourly_room_rebuilt', '1')")
+            conn.commit()
+
 
 def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None, alert=None):
     with db() as conn:
@@ -245,11 +262,11 @@ def rollup_hourly(now=None):
     since = (parse_ts(until) - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S") if until else "0000-01-01 00:00:00"
     with db() as conn:
         hours = {}
-        for row in conn.execute("""
+        for row in conn.execute(f"""
             SELECT strftime('%Y-%m-%d %H:00:00', ts),
                    AVG(temp), MIN(temp), MAX(temp), AVG(humidity), MIN(humidity), MAX(humidity),
                    AVG(co2), MIN(co2), MAX(co2), AVG(pressure), MIN(pressure), MAX(pressure)
-            FROM readings WHERE ts >= ? AND ts < ? GROUP BY 1
+            FROM readings WHERE ts >= ? AND ts < ? AND {ROOM_DEVICES_SQL} GROUP BY 1
         """, (since, end_s)):
             hours[row[0]] = list(row) + [None]
         for h, occ in conn.execute("""

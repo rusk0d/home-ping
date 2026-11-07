@@ -282,6 +282,8 @@ Backend handling: env handler (no `presence`). Stores a `readings` row with `tem
 (the `temp` column), `alert`, and `uptime`; `humidity`, `co2` and `pressure` are NULL.
 Serves the alert state via `/api/latest_all` (fields `alert` and `alert_ts`). The backend's
 fridge alert handler in `fridge.py` sends notifications when `alert` state changes.
+Not a room sensor (`NON_ROOM_DEVICES`): no room temperature alert, and left out of the
+`hourly` roll-up, `history_24h` and the "whichever device" readings (`/api/latest`).
 
 ---
 
@@ -340,7 +342,7 @@ So the web page's sparklines start with the last day instead of empty.
   users read it via `home/backend/#` (no ACL change).
 - Interval and retain: like `occupancy_hourly` (both from `ingest.publish_summaries()`):
   every 300 s and on every (re)connect, retained, QoS 0. A failure of one doesn't stop the other.
-- Data: hourly averages from `readings`, all devices (like `/api/hourly` without `?device=`),
+- Data: hourly averages from `readings`, all room devices (not `NON_ROOM_DEVICES`; like `/api/hourly` without `?device=`),
   for the **last 24 complete hours** (UTC hour boundaries). The current, unfinished hour is
   not included: the page has the live values for it.
 

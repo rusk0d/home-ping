@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 import state
 from config import (
     ARRIVAL_CONFIRM_SECONDS, CO2_VALID, DEVICE_ID_MAX, ENV_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
-    HISTORY_24H_TOPIC, NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
-    PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, PRESSURE_DROP_THRESHOLD, PRESSURE_HYSTERESIS,
+    HISTORY_24H_TOPIC, ROOM_DEVICES_SQL, NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
+    NON_ROOM_DEVICES, PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, PRESSURE_DROP_THRESHOLD, PRESSURE_HYSTERESIS,
     PRESSURE_WINDOW_HOURS, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD, TOPIC,
 )
 from store import (
@@ -257,7 +257,8 @@ def on_message(client, userdata, msg):
         # -------------------------
         # TEMPERATURE ALERT (once per excursion, #117)
         # -------------------------
-        if temp is not None:
+        # Room alert only: a fridge's 4 °C isn't a cold flat (fridge.py has its own)
+        if temp is not None and device not in NON_ROOM_DEVICES:
             key = f"TEMP_{device}"
             alerted = env_alerted(key)
             if alerted and temp > TEMP_THRESHOLD + TEMP_HYSTERESIS:
@@ -317,11 +318,12 @@ def history_24h():
     """Hourly averages of the last 24 complete hours, oldest first (#132). Only hours
     with data; a value is null when no device reported it that hour."""
     with db() as conn:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT strftime('%Y-%m-%dT%H:00:00Z', ts), AVG(temp), AVG(humidity), AVG(pressure), AVG(co2)
             FROM readings
             WHERE ts >= datetime(strftime('%Y-%m-%d %H:00:00', 'now'), '-24 hours')
               AND ts < strftime('%Y-%m-%d %H:00:00', 'now')
+              AND {ROOM_DEVICES_SQL}
             GROUP BY 1 ORDER BY 1
         """).fetchall()
 

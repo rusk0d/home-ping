@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, Response, abort
 import state
 from config import (
     AUTH_PASS, AUTH_USER, DAILY_MAX_DAYS, HEALTH_MAX_MESSAGE_AGE, HEARTBEAT_TIMEOUT, HHMM, HOURLY_MAX_DAYS,
-    METRICS_TOKEN, MOULD_HOURS, MOULD_HUMIDITY, NOTIFY_KINDS,
+    METRICS_TOKEN, MOULD_HOURS, MOULD_HUMIDITY, NOTIFY_KINDS, ROOM_DEVICES_SQL,
 )
 from store import (
     calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
@@ -140,14 +140,14 @@ def latest():
 
     Temperature and humidity come from the newest reading of whichever device has them,
     like /api/air: during the node merge the BME280 moved boards (#57).
-    Excludes specialized devices like fridge_temp_esp32 (#290).
+    Non-room devices (NON_ROOM_DEVICES, the fridge #290) are left out.
     """
     with db() as conn:
         c = conn.cursor()
-        c.execute("""
+        c.execute(f"""
             SELECT ts, temp, humidity, uptime, device
             FROM readings
-            WHERE (temp IS NOT NULL OR humidity IS NOT NULL) AND device != 'fridge_temp_esp32'
+            WHERE (temp IS NOT NULL OR humidity IS NOT NULL) AND {ROOM_DEVICES_SQL}
             ORDER BY id DESC LIMIT 1
         """)
         row = c.fetchone() or (None, None, None, None, None)
@@ -338,13 +338,13 @@ def hourly():
             GROUP BY 1
         """, (f"-{days - 1} days",))
         past_rows = {r[0]: r[1:] for r in c.fetchall()}
-        c.execute("""
+        c.execute(f"""
             SELECT
                 strftime('%Y-%m-%d %H:00', ts, 'localtime'),
                 AVG(temp),
                 AVG(humidity)
             FROM readings
-            WHERE (? IS NULL OR device = ?) AND (temp IS NOT NULL OR humidity IS NOT NULL)
+            WHERE (device = ? OR (? IS NULL AND {ROOM_DEVICES_SQL})) AND (temp IS NOT NULL OR humidity IS NOT NULL)
               AND ts >= datetime('now','localtime','start of day',?,'utc')
             GROUP BY 1
         """, (device, device, since))

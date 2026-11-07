@@ -99,7 +99,7 @@ screen and that fallback.
 
 Latest temperature/humidity plus combined radar occupancy (the widget's data). Since the node
 merge (#57) the env values come from the newest `readings` row of **whichever device** has
-`temp` or `humidity` (the BME280 moved boards), like `/api/air`.
+`temp` or `humidity` (the BME280 moved boards), like `/api/air`. Room devices only: `NON_ROOM_DEVICES` in `config.py` (the fridge, #290) are left out.
 Always 200; fields are null when there is no data.
 
 ```json
@@ -208,9 +208,9 @@ Since #173 today comes from the raw readings and the days before from the `hourl
 the rollup has stored it (within 5 min after the hour).
 `hour` is a local-time label (`"YYYY-MM-DD HH:00"`, no zone). On the autumn DST change the
 repeated hour 02:00–03:00 falls into one bucket.
-Temperature/humidity averages come from `readings` of `device` if given, else of any device
-that reports them (since #57; before: default `home_ping_esp32`). `device` applies to today
-only: the `hourly` table combines all devices.
+Temperature/humidity averages come from `readings` of `device` if given, else of any room device
+(not `NON_ROOM_DEVICES`, #290) that reports them (since #57; before: default `home_ping_esp32`). `device` applies to today
+only: the `hourly` table combines all room devices.
 CO2/pressure averages come from `readings` of any device (like `/api/air`).
 Occupancy comes from `presence_readings` for `home_ping_esp32` only (`PRESENCE_DEVICE`).
 An hour appears if any of these has data.

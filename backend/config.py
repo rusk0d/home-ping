@@ -88,6 +88,11 @@ PRESSURE_WINDOW_HOURS = 3
 # Air-out helper (#245): window spells and CO₂ excursions, pushes under the "air" switch since
 # step 2 (logs-only 2026-10-19..24). Thresholds from the main node's readings of 2026-10-17..19 (a window opening fell 250-1000 ppm and 0.8-1.7 °C
 # in 10 min; closing it brought the temperature back +0.3-1.5 °C within 10 min).
+# Nodes whose temperature isn't the room's (#290): left out of room alerts, the hourly
+# roll-up, history_24h and the "whichever device" readings
+NON_ROOM_DEVICES = ("fridge_temp_esp32",)
+ROOM_DEVICES_SQL = "device NOT IN (" + ", ".join(f"'{d}'" for d in NON_ROOM_DEVICES) + ")"
+
 AIR_DEVICE = PRESENCE_DEVICE      # the node with the CO₂ sensor (main node)
 AIR_CHECK_INTERVAL = 60           # seconds
 WINDOW_MINUTES = 10               # the changes below are over this many minutes
