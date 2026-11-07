@@ -27,6 +27,8 @@ sudo -u iot venv/bin/python tools/api_regressions.py
 sudo -u iot venv/bin/python tools/fridge_door_replay.py [--open-minutes 15 ...]
 ```
 
+- `validate_db.py --db <file> --now "YYYY-MM-DD HH:MM:SS"` checks another database (a restored
+  backup) as of that UTC time; the monthly restore drill (`backup_drill.py`, #339) runs it so.
 - They open `data.db` **read-only** and take the API login and settings from `config.py`
   (so `.env`), see `_common.py`.
 - They refuse to run as root: opening the WAL database as root can leave

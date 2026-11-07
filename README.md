@@ -18,7 +18,7 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 | Folder | What |
 |---|---|
 | `firmware/` | Arduino sketches: `main_node` (radar, BME280, MH-Z19 CO₂; merged with the former CO₂ node in #57), `eink_node` (hallway radar + e-ink display) |
-| `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `server_checks`, `ingest` (MQTT) and `api` modules; `test_push.py`, nightly `backup_db.py` |
+| `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `server_checks`, `ingest` (MQTT) and `api` modules; `test_push.py`, nightly `backup_db.py`, monthly `backup_drill.py` |
 | `web/` | Dashboard (`index.html` + `app.js`, English/Hungarian texts in `i18n.js`), connects to MQTT directly from the browser; `nginx/` has its security headers |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
 | `contracts/` | MQTT topics/payloads, REST API, push notifications, DB schema: the source of truth |
@@ -123,7 +123,40 @@ overwritten one. The watchdog pushes `Off-site backup failed` when no upload suc
    run a backup once: `systemctl start iot-backup.service && journalctl -u iot-backup -n 5`
    should say `uploaded to s3://…`.
 
-Getting a copy back needs your own AWS login (the server's key can't read): download it
+**Restore drill (#339).** Once a month (`iot-backup-drill.timer`, 04:00 on the 1st)
+`backup_drill.py` downloads the newest backup from S3 with a second, read-only key, restores
+it into a temp folder (never the live `data.db`), runs `PRAGMA integrity_check` and
+`tools/validate_db.py` on it, and writes `backups/.drill.json`. The watchdog pushes
+`Restore drill failed` (with the reason) or `Restore drill overdue` (none for 35 days), and
+the app's Server card shows the last result. One-time setup:
+
+1. IAM → Users → Create user `homeping-backup-drill` (no console access), inline policy with
+   your bucket name. It can list and download, but not upload or delete:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {"Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::<bucket>",
+        "Condition": {"StringLike": {"s3:prefix": "backups/*"}}},
+       {"Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::<bucket>/backups/*"}
+     ]
+   }
+   ```
+   Security credentials → Create access key ("Application running outside AWS").
+2. Add `DRILL_AWS_ACCESS_KEY_ID` and `DRILL_AWS_SECRET_ACCESS_KEY` to `/opt/iot/.env` (template
+   in `.env.example`) and restart the backend (it only checks the drill when the key is set).
+3. Install the timer and run it once right away (otherwise the watchdog says it's overdue):
+   ```
+   cp systemd/iot-backup-drill.service systemd/iot-backup-drill.timer /etc/systemd/system/
+   systemctl daemon-reload && systemctl enable --now iot-backup-drill.timer
+   systemctl start iot-backup-drill.service && journalctl -u iot-backup-drill -n 5
+   ```
+   It should say `drill: OK, backups/data-<date>.db.gz (…) restored and validated`.
+
+The read key adds little risk: whoever gets onto the server already has the live `data.db`,
+and neither key can delete a backup.
+
+Getting a copy back needs your own AWS login or the drill key: download it
 from the S3 console, or `aws s3 cp s3://<bucket>/backups/data-<date>.db.gz .`, then
 `scp` it to `/opt/iot/backups/` and restore as below. Older versions of a file are under
 "Show versions" in the console.
