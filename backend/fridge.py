@@ -3,8 +3,7 @@
 import logging
 
 import alerts
-from config import NOTIFICATION_COOLDOWN
-from store import db, get_state, set_state, utcnow
+from store import db, get_state, set_state
 
 log = logging.getLogger(__name__)
 

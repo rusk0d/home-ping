@@ -33,7 +33,7 @@ def test_issue14_migration_and_nulls(env):
 
     cols = [r[1] for r in q("PRAGMA table_info(readings)")]
     check("migration dropped occupied/occupancy_confidence/dark", not {"occupied", "occupancy_confidence", "dark"} & set(cols))
-    check("migration kept the other columns", cols == ["id", "device", "ts", "temp", "humidity", "uptime", "co2", "pressure", "co2_ok"])
+    check("migration kept the other columns", cols == ["id", "device", "ts", "temp", "humidity", "uptime", "co2", "pressure", "co2_ok", "alert"])
     check("migration kept the rows", q("SELECT COUNT(*) FROM readings")[0][0] == 2)
     store.init_db()   # second start: no-op
     check("second start leaves layout alone", [r[1] for r in q("PRAGMA table_info(readings)")] == cols)
