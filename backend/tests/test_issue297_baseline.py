@@ -1,6 +1,5 @@
 """#297: the baseline alert checks each new hour once, against the same hour of the day over
 28 days; two unusual hours in a row push, back under |z| 2 pushes "Back to normal"."""
-import time
 from datetime import timedelta
 
 from support import check
@@ -8,7 +7,7 @@ from support import check
 
 def test_issue297_baseline(env):
     import server
-    import config, alerts, baseline
+    import alerts, baseline
     from store import db, get_state, set_state, utcnow
     server.prepare()
 
@@ -57,7 +56,7 @@ def test_issue297_baseline(env):
     check("excursion saved as sent", get_state("baseline_alerted:temp") == "sent")
 
     put(0, 23.0)   # back within |z| 2
-    baseline.check_baseline(time.time() + config.NOTIFICATION_COOLDOWN + 1)
+    baseline.check_baseline()
     check("back to normal pushed", len(pushes) == 2 and pushes[1]["body"].startswith("Temperature is back to normal")
           and get_state("baseline_alerted:temp") == "")
 
@@ -65,26 +64,24 @@ def test_issue297_baseline(env):
     with db() as conn:
         conn.execute("DELETE FROM system_state WHERE key LIKE 'baseline%'")
         conn.execute("DELETE FROM hourly WHERE hour >= ?", (h(2),))
-    alerts.state.LAST_NOTIFICATION.clear()
     put(2, 30.0); baseline.check_baseline()
     m.send.side_effect = Exception("FCM down")
     put(1, 30.0); baseline.check_baseline()
     check("failed push: excursion not saved", get_state("baseline_alerted:temp", "") in ("", None))
     m.send.side_effect = accept
-    put(0, 30.0); baseline.check_baseline(time.time() + config.NOTIFICATION_COOLDOWN + 1)
+    put(0, 30.0); baseline.check_baseline()
     check("retried on the next hour", len(pushes) == 3 and get_state("baseline_alerted:temp") == "sent")
 
     # --- a muted excursion ends without "Back to normal"
     with db() as conn:
         conn.execute("DELETE FROM system_state WHERE key LIKE 'baseline%'")
         conn.execute("DELETE FROM hourly WHERE hour >= ?", (h(2),))
-    alerts.state.LAST_NOTIFICATION.clear()
     set_state("notify:baseline", "0")
     put(2, 30.0); baseline.check_baseline()
     put(1, 30.0); baseline.check_baseline()
     check("switched off: muted", get_state("baseline_alerted:temp") == "muted" and len(pushes) == 3)
     set_state("notify:baseline", "1")
-    put(0, 22.0); baseline.check_baseline(time.time() + config.NOTIFICATION_COOLDOWN + 1)
+    put(0, 22.0); baseline.check_baseline()
     check("muted excursion ends quietly", len(pushes) == 3 and get_state("baseline_alerted:temp") == "")
 
     # --- an old newest hour (node down) isn't checked
