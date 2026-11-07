@@ -3,6 +3,7 @@ occupancy_status. A Flask blueprint (#306); contracts/api.md.
 """
 
 import logging
+import re
 
 from flask import Blueprint, jsonify, request
 
@@ -86,25 +87,32 @@ def notification_settings_api():
 @require_auth
 def notification_history():
     """The last 20 pushes that went out (#289): events alert() logged as "sent, <detail>" (#296).
-    Muted and failed ones, and the non-push events (occupancy changes, restarts, ...), aren't."""
+    With ?muted=1 also the ones it muted, "muted (<why>), <detail>" (#321). Failed ones and the
+    non-push events (occupancy changes, restarts, "no push" ends, ...) aren't listed."""
+    muted = request.args.get("muted") == "1"
+    where = "value LIKE 'sent, %'" + (" OR value LIKE 'muted (%), %'" if muted else "")
     with db() as conn:
-        c = conn.cursor()
-        c.execute("""
+        rows = conn.execute(f"""
             SELECT ts, type, device, value
             FROM events
-            WHERE value LIKE 'sent, %'
+            WHERE {where}
             ORDER BY id DESC
             LIMIT 20
-        """)
-        rows = c.fetchall()
+        """).fetchall()
 
     events = []
     for ts, event_type, device, value in rows:   # newest first
+        m = MUTED.match(value)
         events.append({
             "ts": iso(ts),
             "type": event_type,
             "device": device,
-            "detail": value.removeprefix("sent, "),
+            "status": "muted" if m else "sent",
+            "muted_reason": m.group(1) if m else None,   # "off" / "quiet hours"
+            "detail": m.group(2) if m else value.removeprefix("sent, "),
         })
 
     return jsonify({"events": events})
+
+
+MUTED = re.compile(r"muted \((.+?)\), (.*)", re.S)

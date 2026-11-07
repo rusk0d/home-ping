@@ -320,8 +320,17 @@ The widget reads `co2` for its CO2 row (fetched alongside `/api/latest`; `--` if
 Every row in the `devices` table.
 
 ```json
-[{"device":"home_ping_esp32","name":"Main node","role":"room","last_seen":"2026-10-13T17:42:15Z","online":true}]
+[{"device":"home_ping_esp32","name":"Main node","role":"room","last_seen":"2026-10-13T17:42:15Z","online":true,
+  "health":{"rssi":-61,"uptime":86400,"heap_free":151000,"heap_min":120500,"heap_block":110000,
+            "reset_reason":"power-on","radar_connected":true}}]
 ```
+
+`health` (since #322): what the node last reported about itself, the same in-memory values as
+`/api/metrics` (`state.NODE_HEALTH`), only those from the last `METRICS_FRESH_SECONDS`: a
+node that went quiet, or one right after a backend restart, has fewer or none (`{}`).
+`rssi` dBm, `uptime` s, `heap_free` / `heap_min` (lowest since boot) / `heap_block` (largest
+allocatable) bytes, `reset_reason` the name from `store.RESET_REASONS` (`brownout`, ...),
+`radar_connected` on radar nodes. A key is missing when the node doesn't send it.
 
 `name` and `role` (since #306) come from `config.DEVICES`: role `room` or `fridge`; a device not
 listed there is `room`, named by its ID.
@@ -330,7 +339,7 @@ Sensor nodes only. (Until #15, `/api/register_token` added an `"unknown"` row fo
 the phone; the backend deletes that row on start.)
 Client: Android Home lists every device with its `name` and `online` (since #306; before, a
 hard-coded list of IDs), uses the names for the restarts line, and shows the device with role
-`fridge` on the fridge card.
+`fridge` on the fridge card. The Devices screen (#322) shows `health` per node.
 
 ### GET `/api/restarts`
 
@@ -363,24 +372,28 @@ Response: `{"armed": true|false}` (same shape as the `POST /api/occupancy_arm` r
 `false` until the switch is first armed.
 Client: Android Home, on startup, to set the toggle switch.
 
-### GET `/api/notification_history` (since #289)
+### GET `/api/notification_history[?muted=1]` (since #289)
 
 The last 20 pushes that went out, newest first: `events` rows that `alert()` logged as
-`sent, <detail>` (#296). Muted and failed pushes, and events that aren't pushes (occupancy
-changes, restarts, window spells, ...), aren't in it. Pushes go to topic `env`, so this is
-what every phone got.
+`sent, <detail>` (#296). With `?muted=1` (since #321) also the alerts it muted,
+`muted (<why>), <detail>`: still the last 20 in all. Failed pushes and events that aren't
+pushes (occupancy changes, restarts, window spells, "no push" ends, ...) are never in it.
+Pushes go to topic `env`, so the sent ones are what every phone got.
 
 ```json
 {"events": [{"ts": "2026-11-07T08:12:00Z", "type": "FRIDGE_ALERT", "device": "fridge_temp_esp32",
-             "detail": "alert=warm_low (was: normal)"}]}
+             "status": "sent", "muted_reason": null, "detail": "alert=warm_low (was: normal)"}]}
 ```
 
 - `type`: the event type (`HUMIDITY_HIGH_ALERT`, `TEMP_ALERT`, `NODE_OFFLINE`, `FRIDGE_ALERT`, ...;
-  `notifications.md`). `detail`: the logged value without the `sent, ` prefix.
+  `notifications.md`). `detail`: the logged value without the `sent, ` / `muted (…), ` prefix.
+- `status` (since #321): `sent` or `muted`; `muted_reason`: `off` (its switch) or
+  `quiet hours` for a muted one, else null.
 - Always 200; `events` is `[]` when nothing was sent within the events retention
   (`EVENTS_RETENTION_DAYS`).
 
-Client: Android notification settings, History tab, each time the tab is shown.
+Client: Android notification settings, History tab, each time the tab is shown; `?muted=1`
+while its "Show muted" switch is on (#321). A tap on an entry opens the screen its `type` is about.
 
 ### GET / POST `/api/notification_settings` (since #82)
 
@@ -556,3 +569,5 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #306: the routes moved into Flask blueprints (`api_env`, `api_history`, `api_notify`, `api_server`); no endpoint changed.
 - #306: `/api/devices` has `name` and `role`, `/api/latest_all` entries have `room` (device registry `config.DEVICES`).
 - #306: the Android app takes device names, the fridge and the room entries from `/api/devices` / `room` instead of hard-coded IDs.
+- #321: `/api/notification_history?muted=1`, `status` and `muted_reason` per event.
+- #322: `/api/devices` has `health` per node (RSSI, uptime, heap, reset reason, radar).

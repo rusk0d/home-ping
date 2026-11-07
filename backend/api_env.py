@@ -12,9 +12,10 @@ from config import (
 )
 from store import (
     calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
-    occupancy_stats, utcnow,
+    occupancy_stats, reset_reason_text, utcnow,
 )
 from api_common import is_online, iso, require_auth
+from metrics import fresh_health
 
 log = logging.getLogger(__name__)
 bp = Blueprint("env", __name__)
@@ -244,6 +245,21 @@ def air():
     })
 
 
+HEALTH_FIELDS = ("rssi", "uptime", "heap_free", "heap_min", "heap_block")
+
+
+def health(device):
+    """What the node last reported about itself (#322), the same values as /api/metrics: only
+    the fresh ones (a node that went quiet has none). reset_reason as text, e.g. "brownout"."""
+    h = fresh_health(device)
+    out = {k: h[k] for k in HEALTH_FIELDS if k in h}
+    if "reset_reason" in h:
+        out["reset_reason"] = reset_reason_text(h["reset_reason"]).rsplit(" (", 1)[0]
+    if "radar_connected" in h:
+        out["radar_connected"] = bool(h["radar_connected"])
+    return out
+
+
 @bp.route("/api/devices")
 @require_auth
 def devices():
@@ -260,7 +276,8 @@ def devices():
             "device": dev,
             **device_info(dev),   # name, role (config.DEVICES, #306)
             "last_seen": iso(ts),
-            "online": is_online(ts, now)
+            "online": is_online(ts, now),
+            "health": health(dev),
         })
 
     return jsonify(out)
