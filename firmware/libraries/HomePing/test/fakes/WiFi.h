@@ -28,9 +28,13 @@ inline FakeESP ESP;
 
 enum { WL_CONNECTED = 3, WL_DISCONNECTED = 6 };
 enum { WIFI_STA = 1 };
+enum { WIFI_ALL_CHANNEL_SCAN = 1 };       // wifi_scan_method_t
+enum { WIFI_CONNECT_AP_BY_SIGNAL = 0 };   // wifi_sort_method_t
 struct FakeWiFi {
   int st = WL_CONNECTED;
   void mode(int) {}
+  void setScanMethod(int) {}
+  void setSortMethod(int) {}
   void begin(const char*, const char*) {}
   int status() { return st; }
   const char* localIP() { return "10.0.0.2"; }
