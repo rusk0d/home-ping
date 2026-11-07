@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Devices sits to the left of Home (#325): it slides in from the left, Home makes way -->
+<translate xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="220"
+    android:fromXDelta="-100%"
+    android:toXDelta="0"
+    android:interpolator="@android:interpolator/fast_out_slow_in" />

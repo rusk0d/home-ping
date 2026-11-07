@@ -1,6 +1,7 @@
 package com.david.homeenv
 
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -19,7 +20,9 @@ import java.util.Locale
 /**
  * Devices (#322): one card per node with what it reports about itself: WiFi signal, uptime,
  * heap, the last reset reason and restarts. `/api/devices` (`health`, the values Grafana gets
- * from `/api/metrics`) and `/api/restarts`. Opened from the Devices section on Home and from
+ * from `/api/metrics`) and `/api/restarts`; below them the server's checks (`/api/server_status`,
+ * moved from Home, #325) and above them what needs a look (DeviceIssues, the red dot on Home's
+ * devices button). Opened from that button, a swipe right on Home (a swipe left goes back) and
  * node alerts in the notification history (#321).
  */
 class DevicesActivity : AppCompatActivity() {
@@ -30,8 +33,21 @@ class DevicesActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityDevicesBinding.inflate(layoutInflater)
         setContentView(b.root)
+        SwipeNav.slideFromLeft(this)
         b.back.setOnClickListener { finish() }
         b.swipeRefresh.setOnRefreshListener { load() }
+    }
+
+    private val swipe by lazy { SwipeNav(this, onLeft = { finish() }) }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        swipe.onTouch(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
+    override fun finish() {
+        super.finish()
+        SwipeNav.slideBackLeft(this)
     }
 
     override fun onResume() {
@@ -41,15 +57,15 @@ class DevicesActivity : AppCompatActivity() {
 
     private fun load() {
         lifecycleScope.launch {
-            val (devices, restarts) = withContext(Dispatchers.IO) {
-                Api.getArray("/api/devices") to Api.getObject("/api/restarts")
+            val (devices, restarts, server) = withContext(Dispatchers.IO) {
+                Triple(Api.getArray("/api/devices"), Api.getObject("/api/restarts"), Api.getObject("/api/server_status"))
             }
             b.swipeRefresh.isRefreshing = false
-            render(devices, restarts)
+            render(devices, restarts, server)
         }
     }
 
-    private fun render(devices: JSONArray?, restarts: JSONObject?) {
+    private fun render(devices: JSONArray?, restarts: JSONObject?, server: JSONObject?) {
         b.cards.removeAllViews()
         if (devices == null) {
             b.status.text = "Can't reach the server"
@@ -57,9 +73,51 @@ class DevicesActivity : AppCompatActivity() {
         }
         b.status.text = if (devices.length() == 0) "No nodes have reported yet"
             else "Values the nodes sent in the last few minutes; pull down to refresh"
+        val issues = DeviceIssues.list(devices, restarts, server)
+        if (issues.isNotEmpty()) b.cards.addView(issuesCard(issues))
         for (i in 0 until devices.length()) {
             val d = devices.optJSONObject(i) ?: continue
             b.cards.addView(card(d, restarts?.optJSONObject(d.optString("device"))))
+        }
+        server?.let {
+            b.cards.addView(heading("Server"))
+            b.cards.addView(newCard().also { card -> ServerStatus.fill(card, it) })
+        }
+    }
+
+    /** What needs a look, in red: the same list as the dot on Home's devices button. */
+    private fun issuesCard(issues: List<String>): AccentCard = newCard().apply {
+        accentColor = Levels.color(context, R.color.bad)
+        addView(TextView(context).apply {
+            text = if (issues.size == 1) "1 thing needs a look" else "${issues.size} things need a look"
+            setTextColor(Levels.color(context, R.color.bad))
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        issues.forEach { addView(row("", it, R.color.bad)) }
+    }
+
+    private fun heading(text: String): TextView {
+        val dens = resources.displayMetrics.density
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(Levels.color(context, R.color.muted))
+            textSize = 13f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            isAllCaps = true
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = (12 * dens).toInt(); bottomMargin = (8 * dens).toInt() }
+        }
+    }
+
+    /** An empty card with the screen's padding and spacing. */
+    private fun newCard(): AccentCard {
+        val dens = resources.displayMetrics.density
+        return AccentCard(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((16 * dens).toInt(), (14 * dens).toInt(), (16 * dens).toInt(), (12 * dens).toInt())
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { bottomMargin = (12 * dens).toInt() }
         }
     }
 
@@ -68,7 +126,6 @@ class DevicesActivity : AppCompatActivity() {
         val name = d.optString("name").ifEmpty { id }
         val online = d.optBoolean("online")
         val h = d.optJSONObject("health") ?: JSONObject()
-        val dens = resources.displayMetrics.density
 
         val lastSeen = d.optTs("last_seen")
         val meta = listOfNotNull(
@@ -77,11 +134,7 @@ class DevicesActivity : AppCompatActivity() {
             id.takeIf { it != name },
         ).joinToString(" · ")
 
-        return AccentCard(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((16 * dens).toInt(), (14 * dens).toInt(), (16 * dens).toInt(), (12 * dens).toInt())
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { bottomMargin = (12 * dens).toInt() }
+        return newCard().apply {
             accentColor = Levels.color(context, if (online) R.color.good else R.color.bad)
             addView(HomeFormat.statusLine(context, name, meta, online))
 
@@ -110,21 +163,21 @@ class DevicesActivity : AppCompatActivity() {
                 val day = r.optInt("last_24h")
                 val week = r.optInt("last_7d")
                 val last = r.optTs("last_restart")?.let { " · last ${HomeFormat.whenText(it)}" }.orEmpty()
-                rows += Triple("Restarts", "$day in 24 h · $week in 7 d$last", if (day > 2) R.color.bad else null)
+                rows += Triple("Restarts", "$day in 24 h · $week in 7 d$last", if (day > DeviceIssues.MAX_RESTARTS_24H) R.color.bad else null)
             }
             if (rows.isEmpty()) rows += Triple("", "No recent health data from this node", null)
             rows.forEach { (label, value, color) -> addView(row(label, value, color)) }
         }
     }
 
-    /** "Label   value", the value in [color] when it's worth a look. */
+    /** "Label   value" (just the value when [label] is empty), the value in [color] when it's worth a look. */
     private fun row(label: String, value: String, color: Int?): LinearLayout {
         val dens = resources.displayMetrics.density
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 .apply { topMargin = (8 * dens).toInt() }
-            addView(TextView(context).apply {
+            if (label.isNotEmpty()) addView(TextView(context).apply {
                 text = label
                 setTextColor(Levels.color(context, R.color.muted))
                 textSize = 13f

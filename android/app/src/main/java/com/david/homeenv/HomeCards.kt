@@ -1,13 +1,9 @@
 package com.david.homeenv
 
 import android.content.Context
-import android.view.View
-import android.view.ViewGroup
-import android.widget.LinearLayout
 import android.widget.TextView
 import com.david.homeenv.HomeFormat.valueWithUnit
 import com.david.homeenv.databinding.FragmentHomeBinding
-import com.david.homeenv.ui.AccentCard
 import com.david.homeenv.ui.Level
 import com.david.homeenv.ui.Levels
 import com.david.homeenv.ui.SparklineView
@@ -229,126 +225,6 @@ class HourlyCard(b: FragmentHomeBinding) : HomeCard(b) {
         range.text = if (values.size < 2) "" else
             "today ${fmt.format(Locale.US, values.min())}–${fmt.format(Locale.US, values.max())}$unit"
     }
-}
-
-/** The nodes: one row each, from /api/devices (names from the backend, #306) and their uptime. */
-class DevicesCard(b: FragmentHomeBinding) : HomeCard(b) {
-    fun render(devices: List<Device>, latest: JSONObject?) {
-        b.devicesList.removeAllViews()
-        for (device in devices) {
-            val uptime = latest?.optJSONObject(device.id)?.optNum("uptime")?.toInt()
-            val meta = listOfNotNull(
-                if (device.online) "online" else "offline",
-                uptime?.let { "up ${HomeFormat.uptime(it)}" },
-            ).joinToString(" · ")
-            b.devicesList.addView(row(device.name, meta, device.online))
-        }
-    }
-
-    private fun row(name: String, meta: String, online: Boolean): View {
-        val d = ctx.resources.displayMetrics.density
-        return AccentCard(ctx).apply {
-            setPadding((16 * d).toInt(), (12 * d).toInt(), (16 * d).toInt(), (12 * d).toInt())
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { bottomMargin = (8 * d).toInt() }
-            addView(HomeFormat.statusLine(ctx, name, meta, online))
-            isClickable = true
-            setOnClickListener { ctx.startActivity(android.content.Intent(ctx, DevicesActivity::class.java)) }
-        }
-    }
-}
-
-/** Server card (#260): one line per check of /api/server_status, red where it fails. */
-class ServerCard(b: FragmentHomeBinding) : HomeCard(b) {
-    fun render(json: JSONObject) {
-        val d = ctx.resources.displayMetrics.density
-        val lines = mutableListOf<Triple<String, String, Boolean?>>()
-
-        json.optJSONObject("backend")?.let { be ->
-            val mqtt = be.optBoolean("mqtt_connected")
-            val up = be.optTs("started")?.let { "up ${HomeFormat.uptime(((System.currentTimeMillis() - it.time) / 1000).toInt())}" }
-            lines += Triple("Backend", listOfNotNull(up, if (mqtt) "MQTT connected" else "MQTT disconnected").joinToString(" · "), mqtt)
-        }
-        json.optJSONObject("backup")?.let { bk ->
-            val last = bk.optTs("last")
-            val meta = if (last == null) "none yet" else listOfNotNull(
-                HomeFormat.whenText(last),
-                bk.optNum("size_bytes")?.let { "%.1f MB".format(Locale.US, it / 1_000_000) },
-                "${bk.optInt("count")} kept",
-            ).joinToString(" · ")
-            lines += Triple("Backup", meta, bk.optBoolean("ok"))
-        }
-        json.optJSONObject("offsite")?.let { off ->
-            val meta = off.optTs("last")?.let { "uploaded ${HomeFormat.whenText(it)}" } ?: "never uploaded"
-            lines += Triple("S3 copy", meta, off.optBoolean("ok"))
-        }
-        json.optJSONObject("disk")?.let { disk ->
-            val mb = disk.optInt("free_mb")
-            val free = if (mb >= 1024) "%.1f GB free".format(Locale.US, mb / 1024.0) else "$mb MB free"
-            lines += Triple("Disk", free, disk.optBoolean("ok"))
-        }
-        json.optJSONArray("certs")?.let { certs ->
-            for (i in 0 until certs.length()) {
-                val c = certs.optJSONObject(i) ?: continue
-                val expires = c.optTs("expires")
-                val error = if (c.isNull("error")) null else c.optString("error")
-                val detail = when {
-                    error != null -> error
-                    expires != null -> {
-                        val days = (expires.time - System.currentTimeMillis()) / 86_400_000
-                        "until ${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(expires)} ($days d)"
-                    }
-                    else -> "not checked yet"
-                }
-                val ok = if (c.isNull("ok")) null else c.optBoolean("ok")
-                lines += Triple("Certificate", "${c.optString("target")} · $detail", ok)
-            }
-        }
-
-        b.serverCard.removeAllViews()
-        lines.forEachIndexed { i, (name, meta, ok) ->
-            val line = HomeFormat.statusLine(ctx, name, meta, ok)
-            if (i > 0) {
-                line.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                    .apply { topMargin = (10 * d).toInt() }
-            }
-            b.serverCard.addView(line)
-        }
-        // Red strip when anything fails, as the watchdog would push
-        val anyBad = lines.any { it.third == false }
-        b.serverCard.accentColor = Levels.color(ctx, if (anyBad) R.color.bad else R.color.good)
-        b.serverSection.visibility = View.VISIBLE
-        b.serverCard.visibility = View.VISIBLE
-    }
-}
-
-/** Restarts in the last 24 h (/api/restarts), with the newest one's node and reason. */
-class RestartsCard(b: FragmentHomeBinding) : HomeCard(b) {
-    fun render(json: JSONObject, devices: List<Device>) {
-        val names = devices.associate { it.id to it.name }
-        val all = json.keys().asSequence().mapNotNull { id -> json.optJSONObject(id)?.let { id to it } }.toList()
-        val total24h = all.sumOf { it.second.optInt("last_24h") }
-        // Why the newest of those restarts happened (#235, reason from #228): ISO timestamps sort as text
-        val newest = all.filter { it.second.optInt("last_24h") > 0 }.maxByOrNull { it.second.optString("last_restart") }
-        val reason = newest?.second?.takeUnless { it.isNull("last_reason") }?.optString("last_reason")
-        val why = newest?.first?.let { id ->
-            val name = names[id] ?: id
-            if (reason != null) " (last: $name, $reason)" else " (last: $name)"
-        } ?: ""
-        b.restartsValue.text = when (total24h) {
-            0 -> "Restarts: none in the last 24 h"
-            1 -> "Restarts: 1 in the last 24 h$why"
-            else -> "Restarts: $total24h in the last 24 h$why"
-        }
-        b.restartsValue.setTextColor(Levels.color(ctx, when {
-            total24h == 0 -> R.color.muted
-            // A crash or power problem is worth a look even once; an update or power-on isn't
-            reason != null && HomeFormat.BAD_RESET_REASONS.any { reason.contains(it) } -> R.color.bad
-            total24h <= 2 -> R.color.ok
-            else -> R.color.bad
-        }))
-    }
-
 }
 
 /** The last 24 h averages (/api/stats24h_combined). */

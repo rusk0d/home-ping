@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.MotionEvent
+import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -23,9 +25,30 @@ class MainActivity : AppCompatActivity() {
         findViewById<android.view.View>(R.id.notification_settings).setOnClickListener {
             startActivity(android.content.Intent(this, NotificationSettingsActivity::class.java))
         }
+        findViewById<View>(R.id.devices).setOnClickListener { openDevices() }
 
         // Push notifications (off in the preview build, which has no Firebase config)
         if (BuildConfig.PUSH_ENABLED) setupPush()
+    }
+
+    /** Devices (#325): the header button and a swipe right, sliding in from the left. */
+    private fun openDevices() {
+        startActivity(android.content.Intent(this, DevicesActivity::class.java))
+    }
+
+    private val swipe by lazy { SwipeNav(this, onRight = { openDevices() }) }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        swipe.onTouch(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
+    /** The red dot on the devices button: [count] things on the Devices screen need a look (#325). */
+    fun setDeviceIssues(count: Int) {
+        val badge = findViewById<View>(R.id.devices_badge)
+        badge.visibility = if (count > 0) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.devices).contentDescription =
+            if (count > 0) "Devices, $count need a look" else "Devices"
     }
 
     private fun setupPush() {

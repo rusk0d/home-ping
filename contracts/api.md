@@ -57,15 +57,15 @@ inferred then and hasn't been confirmed since.
 | GET | `/api/hourly` | Basic | Android Home, History |
 | GET | `/api/daily` | Basic | Android History (#129) |
 | GET | `/api/air` | Basic | Android Home, widget |
-| GET | `/api/devices` | Basic | Android Home |
-| GET | `/api/restarts` | Basic | Android Home |
+| GET | `/api/devices` | Basic | Android Home, Devices |
+| GET | `/api/restarts` | Basic | Android Home, Devices |
 | POST | `/api/occupancy_arm` | Basic | Android notification settings |
 | GET | `/api/occupancy_status` | Basic | Android notification settings |
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
 | GET | `/api/notification_history` | Basic | Android notification settings, History tab (#289) |
 | GET | `/api/health` | **none** | external uptime monitor (#77) |
 | GET | `/api/dashboard` | Basic | Android Home (#128) |
-| GET | `/api/server_status` | Basic | Android Home, Server card (#260) |
+| GET | `/api/server_status` | Basic | Android Home (devices dot), Devices: Server card (#260, #325) |
 | GET | `/api/metrics` | **Bearer** (`METRICS_TOKEN`) | Prometheus on the home server, over Tailscale |
 
 ---
@@ -337,9 +337,10 @@ listed there is `room`, named by its ID.
 
 Sensor nodes only. (Until #15, `/api/register_token` added an `"unknown"` row for
 the phone; the backend deletes that row on start.)
-Client: Android Home lists every device with its `name` and `online` (since #306; before, a
-hard-coded list of IDs), uses the names for the restarts line, and shows the device with role
-`fridge` on the fridge card. The Devices screen (#322) shows `health` per node.
+Client: Android Home shows the device with role `fridge` on the fridge card and, from `online`
+and `health.rssi`, sets the red dot on the header's devices button (#325; the device list on
+Home was dropped there). The Devices screen (#322) shows `name`, `online` and `health` per node.
+Since #306 the names come from here instead of a hard-coded list of IDs.
 
 ### GET `/api/restarts`
 
@@ -351,8 +352,9 @@ Restart counts per device from `events` where `type='RESTART'`.
 
 Devices with no restart ever are absent. `last_reason` (#228): the reset reason of the newest
 restart (`power-on`, `software`, `panic`, `task watchdog`, `brownout`, …; `code` for an unknown
-code), null when that restart had none (older firmware). Client: Android Home sums `last_24h`
-and shows the newest restart's device and `last_reason` (#235).
+code), null when that restart had none (older firmware). Client: the Android Devices screen shows them
+per node; Home's devices dot counts more than 2 `last_24h` or a crash/power `last_reason` among
+them (#325; until then Home had a restarts line, #235).
 
 ### POST `/api/occupancy_arm`
 
@@ -495,7 +497,7 @@ Client: an external monitor (UptimeRobot or similar) checking the status code.
 ### GET `/api/server_status` (since #260)
 
 The server watchdog's view (`server_checks.status()`, see `notifications.md` "Server
-watchdog") for the Server card on the Android home screen. Behind auth, unlike `/api/health`.
+watchdog") for the Server card on the Android Devices screen (on Home until #325). Behind auth, unlike `/api/health`.
 Reading it sends no pushes and runs no check of its own.
 
 ```json
@@ -523,7 +525,8 @@ Reading it sends no pushes and runs no check of its own.
 | `certs[].error` | string or null | `unreachable`, or why the certificate failed verification |
 | `certs[].ok` | bool or null | valid for at least `CERT_MIN_DAYS` (14); null = not checked yet |
 
-Client: Android Home, Server card at the bottom (#260).
+Client: the Android Devices screen, Server card at the bottom (#260; moved from Home in #325).
+Home loads it too, for the red dot on the devices button: a failing check, or MQTT disconnected.
 
 ## Mismatches and issues between components
 
@@ -571,3 +574,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #306: the Android app takes device names, the fridge and the room entries from `/api/devices` / `room` instead of hard-coded IDs.
 - #321: `/api/notification_history?muted=1`, `status` and `muted_reason` per event.
 - #322: `/api/devices` has `health` per node (RSSI, uptime, heap, reset reason, radar).
+- #325: app only: the devices list, restarts line and Server card moved from Home to the Devices screen; no endpoint changed.
