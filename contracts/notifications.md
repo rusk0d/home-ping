@@ -107,7 +107,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 ### 3. Temperature low: `TEMP`
 
-- Trigger: env message with `temp_c` present (`humidity` not needed), `temp_c < 18`, not already
+- Trigger: env message from a room device (not `NON_ROOM_DEVICES`, i.e. not the fridge, #290) with
+  `temp_c` present (`humidity` not needed), `temp_c < 18`, not already
   alerted for this excursion (`env_alerted:TEMP_<device>`, cleared above 18.5 °C), cooldown 900 s per device.
 - Notification: title `Temperature Alert`, body `Temperature is low on {device}: {temp:.1f}°C`
 - Data: `{"event": "TEMP", "device": "<device>"}`

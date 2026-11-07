@@ -140,7 +140,9 @@ Known keys:
 
 ### `hourly` (long-term history, since #129)
 
-One row per **complete** hour, all devices combined (like `/api/hourly` without `?device=`).
+One row per **complete** hour, all room devices combined (like `/api/hourly` without `?device=`;
+`NON_ROOM_DEVICES` such as the fridge are left out since #290, and the hours averaged with it
+before were rebuilt once on start, `system_state` `hourly_room_rebuilt`).
 Filled by `store.rollup_hourly()` from `readings` and `presence_readings`, which are only kept
 2 days (#173): at startup (`server.prepare()`, catches up after downtime; the first run backfills
 whatever raw rows exist) and in the 300 s summaries loop, where it only does work once
