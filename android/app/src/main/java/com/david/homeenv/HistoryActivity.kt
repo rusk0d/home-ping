@@ -1,5 +1,7 @@
 package com.david.homeenv
 
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
@@ -26,6 +28,9 @@ import kotlinx.coroutines.withContext
  * - 7 days: hourly averages from `/api/hourly?days=7`
  * - 30 days: daily averages from `/api/daily?days=30`
  * - 12 months: monthly averages of the `/api/daily` days (contracts/api.md)
+ *
+ * [open] with a [Metric] starts scrolled to that chart (#329): a tap on its Home card or on
+ * one of its alerts in the notification history.
  */
 class HistoryActivity : AppCompatActivity() {
 
@@ -35,10 +40,18 @@ class HistoryActivity : AppCompatActivity() {
         YEAR("Last 12 months, monthly averages"),
     }
 
+    /** A chart on this screen. */
+    enum class Metric { TEMPERATURE, HUMIDITY, CO2, PRESSURE, OCCUPANCY }
+
     companion object {
         private const val DAYS = 7
         private const val MONTH_DAYS = 30
         private const val KEY_RANGE = "range"
+        private const val EXTRA_METRIC = "metric"
+
+        /** History, scrolled to [metric]'s chart (the top when null). */
+        fun open(ctx: Context, metric: Metric? = null): Intent =
+            Intent(ctx, HistoryActivity::class.java).apply { metric?.let { putExtra(EXTRA_METRIC, it.name) } }
     }
 
     private lateinit var b: ActivityHistoryBinding
@@ -58,7 +71,22 @@ class HistoryActivity : AppCompatActivity() {
         range = savedInstanceState?.getString(KEY_RANGE)
             ?.let { runCatching { Range.valueOf(it) }.getOrNull() } ?: Range.WEEK
         for ((view, r) in rangeViews()) view.setOnClickListener { if (range != r) { range = r; clear(); load() } }
+        // Only on the first start: after a rotation the ScrollView keeps its own position
+        if (savedInstanceState == null) scrollTo(intent.getStringExtra(EXTRA_METRIC))
         load()
+    }
+
+    private fun scrollTo(metric: String?) {
+        val card = when (runCatching { Metric.valueOf(metric ?: return) }.getOrNull()) {
+            Metric.TEMPERATURE, null -> return
+            Metric.HUMIDITY -> b.cardHumidity
+            Metric.CO2 -> b.cardCo2
+            Metric.PRESSURE -> b.cardPressure
+            Metric.OCCUPANCY -> b.cardOccupancy
+        }
+        // After layout, so the card has its position; the charts have a fixed height, so it
+        // stays put when the data arrives
+        b.scroll.post { b.scroll.scrollTo(0, card.top) }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

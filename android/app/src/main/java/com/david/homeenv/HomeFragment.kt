@@ -1,19 +1,21 @@
 package com.david.homeenv
 
-import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.util.TypedValue
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.david.homeenv.HistoryActivity.Metric
 import com.david.homeenv.databinding.FragmentHomeBinding
 import com.david.homeenv.ui.Levels
 import org.json.JSONArray
@@ -90,7 +92,30 @@ class HomeFragment : Fragment() {
             setColor(Levels.withAlpha(bad, 0.14f))
         }
         b.swipeRefresh.setOnRefreshListener { loadDashboardData() }
-        b.historyButton.setOnClickListener { startActivity(Intent(requireContext(), HistoryActivity::class.java)) }
+        historyTaps()
+    }
+
+    /**
+     * A tap on a card opens its chart in History (#329; it replaced the History button). The
+     * fridge has no history in the app (/api/hourly and /api/daily are the room, #303).
+     */
+    private fun historyTaps() {
+        val taps = listOf<Pair<View, Metric>>(
+            b.cardTemp to Metric.TEMPERATURE, b.cardHum to Metric.HUMIDITY,
+            b.cardPres to Metric.PRESSURE, b.cardOccNow to Metric.OCCUPANCY,
+            b.cardCo2 to Metric.CO2, b.cardOcc to Metric.OCCUPANCY,
+            // Last 24 hours: the small cards around these values
+            b.statsAvgTemp.parent as View to Metric.TEMPERATURE,
+            b.statsAvgHumidity.parent as View to Metric.HUMIDITY,
+            b.statsAvgOccupancy.parent as View to Metric.OCCUPANCY,
+            b.statsOccupiedHours.parent as View to Metric.OCCUPANCY,
+        )
+        // The ripple; the cards clip it to their rounded corners
+        val ripple = TypedValue().also { requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, it, true) }.resourceId
+        for ((card, metric) in taps) {
+            card.foreground = ContextCompat.getDrawable(requireContext(), ripple)
+            card.setOnClickListener { startActivity(HistoryActivity.open(requireContext(), metric)) }
+        }
     }
 
     override fun onResume() {
