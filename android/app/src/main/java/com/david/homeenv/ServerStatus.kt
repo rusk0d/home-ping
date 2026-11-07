@@ -36,6 +36,18 @@ object ServerStatus {
             val meta = off.optTs("last")?.let { "uploaded ${HomeFormat.whenText(it)}" } ?: "never uploaded"
             lines += Triple("S3 copy", meta, off.optBoolean("ok"))
         }
+        // The monthly restore drill (#339/#340): when, which backup, or why it failed
+        json.optJSONObject("drill")?.let { dr ->
+            val last = dr.optTs("last")
+            val error = if (dr.isNull("error")) null else dr.optString("error")
+            val backup = if (dr.isNull("backup")) null else dr.optString("backup").substringAfterLast('/')
+            val meta = when {
+                last == null -> "never ran"
+                error != null -> "${HomeFormat.whenText(last)} · $error"
+                else -> listOfNotNull(HomeFormat.whenText(last), backup?.let { "$it restored" }).joinToString(" · ")
+            }
+            lines += Triple("Restore drill", meta, dr.optBoolean("ok"))
+        }
         json.optJSONObject("disk")?.let { disk ->
             val mb = disk.optInt("free_mb")
             val free = if (mb >= 1024) "%.1f GB free".format(Locale.US, mb / 1024.0) else "$mb MB free"

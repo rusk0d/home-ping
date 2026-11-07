@@ -6,7 +6,7 @@ import org.json.JSONObject
 /**
  * What needs a look on the Devices screen (#325): the red dot on the header's devices button
  * and the list at the top of the screen. From /api/devices (`online`, `health`, #322),
- * /api/restarts and /api/server_status (#260); a missing part adds nothing.
+ * /api/restarts and /api/server_status (#260; the restore drill since #340); a missing part adds nothing.
  */
 object DeviceIssues {
     /** WiFi below this (dBm) drops and reconnects often: the "poor" band on the Devices screen. */
@@ -41,6 +41,9 @@ object DeviceIssues {
             s.optJSONObject("backend")?.takeIf { !it.optBoolean("mqtt_connected", true) }?.let { out += "Backend: MQTT disconnected" }
             if (s.failed("backup")) out += "Backup overdue"
             if (s.failed("offsite")) out += "S3 copy overdue"
+            s.optJSONObject("drill")?.takeIf { !it.optBoolean("ok", true) }?.let {
+                out += if (it.isNull("error")) "Restore drill overdue" else "Restore drill failed"
+            }
             if (s.failed("disk")) out += "Disk almost full"
             val certs = s.optJSONArray("certs")
             for (i in 0 until (certs?.length() ?: 0)) {
