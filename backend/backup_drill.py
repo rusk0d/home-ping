@@ -4,7 +4,8 @@ Downloads the newest backups/data-*.db.gz from the S3 bucket (#122) with a read-
 its own (DRILL_AWS_ACCESS_KEY_ID / DRILL_AWS_SECRET_ACCESS_KEY in .env; the upload key stays
 put-only), restores it into a temp folder and checks it:
 - gunzip, PRAGMA integrity_check
-- the main tables are there and readings / hourly have rows, schema_version is set
+- the main tables are there and readings / hourly have rows (schema_version is only reported:
+  a backup from before #306 has none, and init_db() migrates it like any older database)
 - tools/validate_db.py against the copy, at the copy's own time (--now: its newest reading)
 The live data.db is never touched. The result goes to backups/.drill.json, which the backend's
 watchdog reads (push when it failed or is overdue, the app's Server card); exit 1 on a failure.
@@ -62,8 +63,6 @@ def check_copy(db):
         facts = {"rows": rows, "schema_version": version and version[0], "newest_reading": newest}
         if empty:
             return facts, f"empty: {', '.join(empty)}"
-        if version is None:
-            return facts, "no schema_version"
         return facts, None
     finally:
         conn.close()
