@@ -320,7 +320,7 @@ def hourly():
     # Today comes from the raw readings, the days before from the hourly table (#173):
     # raw readings are kept only RAW_RETENTION_DAYS. ?device= applies to today only.
     days = request.args.get("days", "1")
-    if not days.isdigit() or not 1 <= int(days) <= HOURLY_MAX_DAYS:
+    if not (days.isascii() and days.isdigit()) or not 1 <= int(days) <= HOURLY_MAX_DAYS:
         return jsonify({"error": f"days must be 1-{HOURLY_MAX_DAYS}"}), 400
     days = int(days)
     since = "+0 days"   # raw part: since local midnight
@@ -349,14 +349,14 @@ def hourly():
             GROUP BY 1
         """, (device, device, since))
         env_rows = {r[0]: (r[1], r[2]) for r in c.fetchall()}
-        # CO2 and pressure from whichever device reports them (like /api/air)
-        c.execute("""
+        # CO2 and pressure from whichever room device reports them (like /api/air)
+        c.execute(f"""
             SELECT
                 strftime('%Y-%m-%d %H:00', ts, 'localtime'),
                 AVG(co2),
                 AVG(pressure)
             FROM readings
-            WHERE (co2 IS NOT NULL OR pressure IS NOT NULL)
+            WHERE (co2 IS NOT NULL OR pressure IS NOT NULL) AND {ROOM_DEVICES_SQL}
               AND ts >= datetime('now','localtime','start of day',?,'utc')
             GROUP BY 1
         """, (since,))
@@ -389,7 +389,7 @@ def daily():
     """One entry per local day from the hourly table (#129), newest first: long ranges
     beyond the raw readings (kept RAW_RETENTION_DAYS). Today has only its complete hours."""
     days = request.args.get("days", "30")
-    if not days.isdigit() or not 1 <= int(days) <= DAILY_MAX_DAYS:
+    if not (days.isascii() and days.isdigit()) or not 1 <= int(days) <= DAILY_MAX_DAYS:
         return jsonify({"error": f"days must be 1-{DAILY_MAX_DAYS}"}), 400
     with db() as conn:
         rows = conn.execute("""
@@ -424,34 +424,34 @@ def air():
         c = conn.cursor()
 
         # CO2 — whichever device reports it
-        c.execute("""
+        c.execute(f"""
             SELECT ts, co2 FROM readings
-            WHERE co2 IS NOT NULL
+            WHERE co2 IS NOT NULL AND {ROOM_DEVICES_SQL}
             ORDER BY id DESC LIMIT 1
         """)
         co2_row = c.fetchone()
 
         # Pressure + env — whichever device reports it
-        c.execute("""
+        c.execute(f"""
             SELECT ts, pressure, temp, humidity FROM readings
-            WHERE pressure IS NOT NULL
+            WHERE pressure IS NOT NULL AND {ROOM_DEVICES_SQL}
             ORDER BY id DESC LIMIT 1
         """)
         env_row = c.fetchone()
 
         # Pressure as it was 3 hours ago
-        c.execute("""
+        c.execute(f"""
             SELECT pressure FROM readings
-            WHERE pressure IS NOT NULL
+            WHERE pressure IS NOT NULL AND {ROOM_DEVICES_SQL}
               AND ts <= datetime('now','-3 hours')
             ORDER BY id DESC LIMIT 1
         """)
         old = c.fetchone()
 
         # Mould risk (#177): humidity per complete hour over the last MOULD_HOURS hours
-        c.execute("""
+        c.execute(f"""
             SELECT strftime('%Y-%m-%d %H', ts), AVG(humidity) FROM readings
-            WHERE humidity IS NOT NULL
+            WHERE humidity IS NOT NULL AND {ROOM_DEVICES_SQL}
               AND ts >= datetime(strftime('%Y-%m-%d %H:00:00', 'now'), ?)
               AND ts < strftime('%Y-%m-%d %H:00:00', 'now')
             GROUP BY 1
@@ -596,14 +596,14 @@ def notification_history():
 @app.route("/api/stats24h_combined")
 @require_auth
 def stats24h_combined():
-    '''Combined 24h env stats from ALL devices + radar occupancy'''
+    '''Combined 24h env stats from all room devices + radar occupancy'''
     with db() as conn:
         c = conn.cursor()
         # Averaged in SQL (#123); AVG is NULL when there are no rows
-        avg_temp, avg_hum = c.execute("""
+        avg_temp, avg_hum = c.execute(f"""
             SELECT AVG(temp), AVG(humidity)
             FROM readings
-            WHERE ts >= datetime('now','-24 hours')
+            WHERE ts >= datetime('now','-24 hours') AND {ROOM_DEVICES_SQL}
               AND temp IS NOT NULL
               AND humidity IS NOT NULL
         """).fetchone()
