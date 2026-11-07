@@ -161,6 +161,11 @@ BACKUP_MAX_AGE_HOURS = 26        # nightly at 03:30, plus slack for a slow or la
 BACKUP_S3_BUCKET = os.environ.get("BACKUP_S3_BUCKET", "")
 OFFSITE_MARKER = ".offsite-ok"
 OFFSITE_MAX_AGE_HOURS = 26
+# Monthly restore drill (#339): backup_drill.py restores the newest S3 backup with its own
+# read-only key and writes backups/DRILL_RESULT; no drill key in .env = no drill and no check
+BACKUP_DRILL = bool(BACKUP_S3_BUCKET and os.environ.get("DRILL_AWS_ACCESS_KEY_ID"))
+DRILL_RESULT = ".drill.json"
+DRILL_MAX_AGE_DAYS = 35          # monthly, plus slack for a late or retried run
 DISK_MIN_FREE_MB = 1024          # push below this much free space on the database's disk
 DISK_FREE_HYSTERESIS_MB = 256    # ...and "OK again" only above min + this
 # TLS certificates to watch (#206): comma-separated host:port in .env CERT_CHECK, one host per

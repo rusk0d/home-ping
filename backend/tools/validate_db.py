@@ -13,8 +13,14 @@ Assertions:
 5. no gap in hourly longer than the node's longest observed downtime
 6. for every RESTART event, the uptime in the following row is lower than in the preceding one
 7. devices.last_seen is never older than the newest row for that device
+
+Options (#339, for the restore drill): --db PATH checks another database (a restored backup)
+instead of data.db, --now "YYYY-MM-DD HH:MM:SS" (UTC) takes that as the current time, so the
+retention and 24 h checks hold for a copy taken earlier.
 """
 
+import argparse
+import sqlite3
 import sys
 from datetime import timedelta
 
@@ -24,12 +30,25 @@ import config
 from store import parse_ts, utcnow
 
 DB = DB_PATH
+NOW = None   # --now: the time the checks are relative to (UTC); None = the real time
 RAW_RETENTION_DAYS = config.RAW_RETENTION_DAYS
 PRESENCE_DEVICE = config.PRESENCE_DEVICE
 
 
 def connect():
-    return connect_ro()
+    if DB == DB_PATH:
+        return connect_ro()
+    conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def now():
+    return NOW or utcnow()
+
+
+def now_sql():
+    return now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def run_checks():
@@ -38,7 +57,7 @@ def run_checks():
 
     print("🔍 Database Invariant Validation")
     print(f"   Database: {DB}")
-    print(f"   Time: {utcnow()}")
+    print(f"   Time: {now()}{' (--now)' if NOW else ''}")
     print()
 
     # 1. Check: occupied_hours <= coverage_hours for every device and window
@@ -54,9 +73,9 @@ def run_checks():
                    MIN(ts) as first_ts,
                    MAX(ts) as last_ts
             FROM presence_readings
-            WHERE ts >= datetime('now', '-24 hours')
+            WHERE ts >= datetime(?, '-24 hours')
             GROUP BY device
-        """)
+        """, (now_sql(),))
 
         for row in c.fetchall():
             device = row['device']
@@ -105,9 +124,9 @@ def run_checks():
                    MIN(ts) as first_ts,
                    MAX(ts) as last_ts
             FROM presence_readings
-            WHERE ts >= datetime('now', '-24 hours')
+            WHERE ts >= datetime(?, '-24 hours')
             GROUP BY device
-        """)
+        """, (now_sql(),))
 
         for row in c.fetchall():
             device = row['device']
@@ -143,7 +162,7 @@ def run_checks():
 
         # Only check recent hours where raw data should still exist
         # Raw retention is RAW_RETENTION_DAYS; only check the last 48 hours to be safe
-        cutoff = utcnow() - timedelta(days=RAW_RETENTION_DAYS)
+        cutoff = now() - timedelta(days=RAW_RETENTION_DAYS)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
 
         c.execute("SELECT hour FROM hourly WHERE hour >= ? ORDER BY hour DESC", (cutoff_str,))
@@ -234,7 +253,7 @@ def run_checks():
 
         # Each new presence row deletes the expired ones, so a row a moment past the cutoff
         # is just waiting for the next message: allow a few minutes
-        cutoff = utcnow() - timedelta(days=RAW_RETENTION_DAYS, minutes=5)
+        cutoff = now() - timedelta(days=RAW_RETENTION_DAYS, minutes=5)
         c.execute("SELECT COUNT(*) as count FROM presence_readings WHERE ts < ?",
                  (cutoff.strftime("%Y-%m-%d %H:%M:%S"),))
         old_rows = c.fetchone()['count']
@@ -454,4 +473,12 @@ def run_checks():
 
 
 if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description="Database invariant validation (see the docstring).")
+    ap.add_argument("--db", help="another database file, e.g. a restored backup (default: data.db)")
+    ap.add_argument("--now", help='the current time for the checks, "YYYY-MM-DD HH:MM:SS" UTC')
+    args = ap.parse_args()
+    if args.db:
+        DB = args.db
+    if args.now:
+        NOW = parse_ts(args.now)
     sys.exit(run_checks())

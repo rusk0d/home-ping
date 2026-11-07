@@ -1,0 +1,10 @@
+[Unit]
+Description=Monthly restore drill of the IoT backend's off-site backup
+
+[Timer]
+# The 1st of each month, after that night's 03:30 backup has been uploaded
+OnCalendar=*-*-01 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
