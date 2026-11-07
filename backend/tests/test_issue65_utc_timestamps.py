@@ -20,7 +20,7 @@ def test_issue65_utc_timestamps(env):
 
     import server
     import config, state, store, nodes, ingest, api
-    server.prepare()   # importing does no work (#73)
+    store.init_db()   # the migration on its own: server.prepare() also prunes rows this old (#304)
     db = lambda: sqlite3.connect(config.DB)
     q = lambda sql: db().execute(sql).fetchall()
 
@@ -30,6 +30,7 @@ def test_issue65_utc_timestamps(env):
     store.init_db()
     check("second start doesn't convert again", q("SELECT ts FROM readings WHERE device='a'")[0][0] == "2026-10-15 18:00:00")
     check("schema_version set (#306)", store.get_state("schema_version", None) == str(store.SCHEMA_VERSION))
+    server.prepare()   # importing does no work (#73)
 
     # New rows are UTC
     mqtt = lambda topic, p: ingest.on_message(None, None, types.SimpleNamespace(retain=False, topic=topic, payload=json.dumps(p).encode()))

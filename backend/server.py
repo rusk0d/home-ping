@@ -14,7 +14,7 @@ from firebase_admin import credentials
 
 import state
 from config import BIND_HOST, PORT, LOG_LEVEL, FIREBASE_CRED, MQTT_HOST, MQTT_PASS, MQTT_PORT, MQTT_USER
-from store import init_db, load_alert_state, rollup_hourly
+from store import init_db, load_alert_state, prune, rollup_hourly
 from nodes import node_check_loop
 from ingest import summaries_loop, on_connect, on_disconnect, on_message
 from air import air_loop
@@ -36,6 +36,7 @@ def prepare():
     n = rollup_hourly()   # catches up after downtime (before new rows prune the raw tables)
     if n:
         log.info("hourly rollup: %d hours", n)
+    prune()   # after the catch-up rollup (#304)
     state.reset()
     cooldowns, alerted, offline = load_alert_state()
     state.LAST_NOTIFICATION.update(cooldowns)

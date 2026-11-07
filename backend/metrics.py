@@ -66,9 +66,9 @@ def latest_sensors():
                 WHERE ts = (SELECT MAX(ts) FROM readings
                             WHERE device = r.device AND {col} IS NOT NULL {valid}
                               AND ts >= datetime('now', ?))
-                  AND {col} IS NOT NULL {valid}
+                  AND {col} IS NOT NULL {valid} AND ts >= datetime('now', ?)
                 GROUP BY device
-            """, (since,)).fetchall()
+            """, (since, since)).fetchall()
             out[col] = sorted(rows)
     return out
 

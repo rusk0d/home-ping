@@ -19,6 +19,8 @@ def test_issue173_raw_retention(env):
 
     store.log_to_db("home_ping_esp32", 21.0, 45.0, 100)
     store.log_presence("home_ping_esp32", 1, 1, 0, 0, 100, 50, -60, 100, 1)
+    check("an insert doesn't prune (#304)", con.execute("SELECT COUNT(*) FROM presence_readings").fetchone()[0] == 3)
+    store.prune()   # the summaries pass, after the rollup (#304)
     check("readings: > 2 days old pruned, < 2 days kept",
           sorted(r[0] for r in con.execute("SELECT temp FROM readings")) == [2, 21.0])
     check("presence_readings: same", con.execute("SELECT COUNT(*) FROM presence_readings").fetchone()[0] == 2)

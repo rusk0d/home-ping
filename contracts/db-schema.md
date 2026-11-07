@@ -16,11 +16,14 @@ inferred then and hasn't been confirmed since.
   incompatible `readings` table and was removed (issue #4).
 - Indexes (since #18, created by `init_db()`, which then runs `ANALYZE`):
   `presence_readings(device, id)`, `presence_readings(device, ts)`, `readings(device, id)`,
-  `readings(device, ts)`, `events(type, ts)`. Deliberately **no** plain `ts` index: it made
+  `readings(device, ts)`, `events(type, ts)`, and the partial `presence_readings(id) WHERE
+  occupied = 1` (#304: the newest occupied row, on every presence message). Deliberately **no** plain `ts` index: it made
   SQLite choose worse plans. Without `ANALYZE` statistics it also picks the wrong index.
-- No foreign keys, migrations table or schema version.
+- No foreign keys. Migrations are numbered in `store.MIGRATIONS`, the last one run recorded as `system_state` `schema_version` (#306).
 - Every query opens and closes its own `sqlite3.connect(DB)`. Connections are short-lived.
-  Kept on purpose (#18): with the indexes, a whole MQTT message takes ~10 ms.
+  Kept on purpose (#18): with the indexes, a whole MQTT message takes ~10 ms; a connection
+  costs ~0.2 ms. One transaction per message (#304, P4) was left out: it would hold the write
+  lock through the pushes the handler sends, and the other writer threads would wait on it.
 - Journal mode **WAL** (since #174, set by `init_db()`, stored in the file): API reads and
   MQTT writes don't block each other. Each connection sets `synchronous=NORMAL` (fewer
   fsyncs; with WAL a power cut can lose the last commits but not corrupt the file). While
@@ -62,7 +65,8 @@ Written by: MQTT env handler (`log_to_db`) for every message that has no
 | `alert` | TEXT | yes | payload `alert` (e.g., `"cold"` on fridge_temp), empty string or NULL when no alert (#290, via ALTER loop) |
 
 Retention: rows older than `RAW_RETENTION_DAYS` (**2 days**, since #173; 8 before) are
-deleted on every insert. Longer history is in `hourly`.
+deleted by `store.prune()`, once per summaries pass (5 min) and at startup, always after
+`rollup_hourly()` (#304; before, on every insert). Longer history is in `hourly`.
 
 `occupied`, `occupancy_confidence` and `dark` (always 0) were dropped in #14: `init_db()`
 rebuilds the table without them if an older database still has them (works on any SQLite
@@ -106,7 +110,7 @@ on that (#18): a presence message ~10 ms, `/api/latest_all` ~7 ms (265 ms withou
 
 Upserted by `touch_device()` on every env and presence message. Sensor nodes only: `init_db()` deletes the `"unknown"` row that
 `POST /api/register_token` used to create (#15). Retention: rows not seen for
-`DEVICES_RETENTION_DAYS` (30) are deleted in `touch_device()`, so a retired node drops off the list.
+`DEVICES_RETENTION_DAYS` (30) are deleted by `store.prune()` (#304; before, in `touch_device()`), so a retired node drops off the list.
 
 ### `system_state` (key/value settings)
 
@@ -179,7 +183,7 @@ Retention: none (about 24 rows, ~2.4 KB, a day). Read by `GET /api/daily`.
 | `type` | TEXT | yes | see below |
 | `value` | TEXT | yes | free text |
 
-Retention: rows older than `EVENTS_RETENTION_DAYS` (30) are deleted in `log_event()`.
+Retention: rows older than `EVENTS_RETENTION_DAYS` (30) are deleted by `store.prune()` (#304; before, in `log_event()`).
 
 Event types written by `server.py`:
 
@@ -256,3 +260,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #245 step 2: `AIR_HIGH`/`AIR_OK` push (new values), event types `WINDOW_CLOSE`, `WINDOW_LEFT_OPEN`, keys `air:co2_push`, `air:co2_shown`, `air:window_nudged`, `notify:air`.
 - #305: excursion state keys (`env_alerted:*`, `node_offline:*`, `watchdog:*`, `sensor_silent:*`, `baseline_alerted:*`) share one format, `''` / `sent` / `muted` with an optional `:<band>`; `init_db()` converts the old `'1'`/`'m'`/`'0'` and bare-band values.
 - #306: numbered migrations, `system_state` `schema_version`; the `ts_utc` and `hourly_room_rebuilt` flags are replaced and removed.
+- #304: retention in `store.prune()` once per summaries pass instead of on every insert; partial index `ix_presence_occupied_id`.
