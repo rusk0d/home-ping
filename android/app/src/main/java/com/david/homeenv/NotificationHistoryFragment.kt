@@ -15,7 +15,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 /** The last 20 pushes the server sent (`/api/notification_history`, #289, #296), newest first. */
@@ -114,12 +113,5 @@ class NotificationHistoryFragment : Fragment() {
         }
 
         return row
-    }
-
-    private fun parseTs(s: String?): Date? {
-        if (s.isNullOrEmpty()) return null
-        return runCatching {
-            Date.from(java.time.Instant.parse(s))
-        }.getOrNull()
     }
 }

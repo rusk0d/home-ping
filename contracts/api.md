@@ -180,7 +180,7 @@ Full example (abridged):
 }
 ```
 
-Client: Android Home reads temperature/humidity (+ `env_ts`) from the entry with the newest
+Client: Android Home reads temperature/humidity (+ `env_ts`) from the `room` entry (#306) with the newest
 `env_ts`, and `co2`, `co2_ok` (+ `co2_ts`) from the entry with the newest `co2_ts` (since #57/#11:
 the main node after the merge, `co2_sensor_esp32` before; falls back to those IDs if the backend
 has no `env_ts`/`co2_ts`). Plus `uptime` per device for the device list (the retired
@@ -328,8 +328,9 @@ listed there is `room`, named by its ID.
 
 Sensor nodes only. (Until #15, `/api/register_token` added an `"unknown"` row for
 the phone; the backend deletes that row on start.)
-Client: Android Home reads `device`, `online` for `home_ping_esp32`,
-`hallway_presence_esp32`, `co2_sensor_esp32`.
+Client: Android Home lists every device with its `name` and `online` (since #306; before, a
+hard-coded list of IDs), uses the names for the restarts line, and shows the device with role
+`fridge` on the fridge card.
 
 ### GET `/api/restarts`
 
@@ -554,3 +555,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #236: the occupancy arm switch moved from the Android home screen to its notification settings (no API change).
 - #306: the routes moved into Flask blueprints (`api_env`, `api_history`, `api_notify`, `api_server`); no endpoint changed.
 - #306: `/api/devices` has `name` and `role`, `/api/latest_all` entries have `room` (device registry `config.DEVICES`).
+- #306: the Android app takes device names, the fridge and the room entries from `/api/devices` / `room` instead of hard-coded IDs.

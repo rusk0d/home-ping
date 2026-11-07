@@ -10,6 +10,8 @@ import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.time.Instant
+import java.util.Date
 import java.io.InterruptedIOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -106,3 +108,10 @@ object Api {
 /** [key] as a number, or null when it is missing, JSON null or not a number. */
 fun JSONObject.optNum(key: String): Double? =
     if (has(key) && !isNull(key)) optDouble(key).takeUnless { it.isNaN() } else null
+
+/** An API timestamp, ISO 8601 UTC ("2026-10-15T18:42:15Z", #65), or null if missing or invalid. */
+fun parseTs(s: String?): Date? =
+    if (s.isNullOrEmpty()) null else runCatching { Date.from(Instant.parse(s)) }.getOrNull()
+
+/** [key] as an API timestamp, or null when it is missing, JSON null or invalid. */
+fun JSONObject.optTs(key: String): Date? = if (isNull(key)) null else parseTs(optString(key))
