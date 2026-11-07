@@ -39,6 +39,13 @@ def note_node(device, **values):
     health.update({k: (v, now) for k, v in values.items() if v is not None})
 
 
+def fresh_health(device, now=None):
+    """[device]'s health values (NODE_GAUGES keys) from the last METRICS_FRESH_SECONDS:
+    {key: value}. For /api/metrics and the app's Devices screen (/api/devices, #322)."""
+    now = time.time() if now is None else now
+    return {k: v for k, (v, at) in state.NODE_HEALTH.get(device, {}).items() if now - at < METRICS_FRESH_SECONDS}
+
+
 def label(value):
     """A label value, escaped as the text format wants (device IDs are free text)."""
     return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
@@ -80,10 +87,9 @@ def render():
         seen = conn.execute("SELECT device, last_seen FROM devices ORDER BY device").fetchall()
     gauge(lines, "homeping_node_last_seen_age_seconds", "Seconds since the node's last message",
           [(d, int((utcnow() - parse_ts(ts)).total_seconds())) for d, ts in seen])
-    health = sorted(state.NODE_HEALTH.items())
+    health = [(d, fresh_health(d, now)) for d in sorted(state.NODE_HEALTH)]
     for name, help_text, key in NODE_GAUGES:
-        gauge(lines, name, help_text, [(d, h[key][0]) for d, h in health
-                                       if key in h and now - h[key][1] < METRICS_FRESH_SECONDS])
+        gauge(lines, name, help_text, [(d, h[key]) for d, h in health if key in h])
     sensors = latest_sensors()
     for name, help_text, col in SENSOR_GAUGES:
         gauge(lines, name, help_text, sensors[col])
