@@ -86,9 +86,16 @@ def test_issue339_restore_drill(env):
     r, res = run()
     check(f"restored and validated ({res.get('error')})", r.returncode == 0 and res["ok"] and res["error"] is None)
     check("the newest object", res["object"] == "backups/data-2026-11-02.db.gz" and res["size_bytes"] == len(good))
-    check(f"rows counted ({res.get('rows')})", res["rows"]["readings"] == 36 and res["rows"]["hourly"] >= 3)
+    check(f"rows counted ({res.get('rows')})", res["rows"]["readings"] == 36 and res["rows"]["hourly"] >= 2)   # 2 or 3 complete hours, by the minute
     check("validate_db.py passed on the copy", any("All checks PASSED" in line for line in res["validate"]))
     check("run time recorded", res["ran"].endswith("Z"))
+
+    # A backup from before #306 has no schema_version: still a good backup (init_db migrates it)
+    with db() as conn:
+        conn.execute("DELETE FROM system_state WHERE key = 'schema_version'")
+    upload("data-2026-11-02b.db.gz", gzip.compress((env / "data.db").read_bytes()))
+    r, res = run()
+    check(f"no schema_version: still OK ({res.get('error')})", r.returncode == 0 and res["ok"] and res["schema_version"] is None)
 
     upload("data-2026-11-03.db.gz", b"not gzip at all")
     r, res = run()
