@@ -37,7 +37,9 @@ class NotificationSettingsFragment : Fragment() {
             "radar" to b.radar,
             "nodes" to b.nodes,
             "pressure" to b.pressure,
-            "air" to b.air
+            "air" to b.air,
+            "baseline" to b.baseline,
+            "fridge" to b.fridge
         )
     }
 
