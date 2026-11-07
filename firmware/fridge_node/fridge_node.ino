@@ -59,11 +59,6 @@ JsonDocument doc;
 /* =======================
    HELPERS
    ======================= */
-bool initBme(bool verbose) {
-  // Not used in this node, but kept for compatibility with HomePing patterns
-  return true;
-}
-
 void track(Condition& c, bool enter, bool leave, unsigned long now) {
   if (!c.on && enter) { c.on = true; c.since = now; }
   else if (c.on && leave) c.on = false;
@@ -105,7 +100,7 @@ void publishTemp() {
   // Publish
   doc.clear();
   doc["device"]       = DEVICE_NAME;
-  doc["temp_c"]       = tempC;
+  doc["temp_c"]       = roundf(tempC * 10) / 10;   // 1 decimal (contract); DS18B20 steps are 0.0625 °C
   doc["alert"]        = currentAlertType;
   doc["rssi"]         = WiFi.RSSI();
   doc["uptime"]       = hpUptimeSeconds();   // 64-bit timer: doesn't wrap like millis() (#8)

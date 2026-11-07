@@ -18,7 +18,8 @@ def test_issue294_fridge_alerts(env):
     events = []   # the data["alert"] / data["event"] of each accepted push
 
     def accept(msg):
-        events.append(msg["data"].get("alert") or msg["data"]["event"])
+        check("one notification slot for alert and recovery (#300)", msg["data"]["event"] == "FRIDGE_ALERT")
+        events.append(msg["data"]["alert"] or "normal")
         return "id"
     m.send.side_effect = accept
 
@@ -45,11 +46,11 @@ def test_issue294_fridge_alerts(env):
 
     reading("")
     fridge.check_fridge_alerts(t + 900)
-    check("recovery pushed", events[-1] == "FRIDGE_NORMAL" and get_state("fridge_alert_state") == "")
+    check("recovery pushed", events[-1] == "normal" and get_state("fridge_alert_state") == "")
 
     reading("warm_critical")
     fridge.check_fridge_alerts(time.time())
-    check("back within the cooldown: held", events[-1] == "FRIDGE_NORMAL"
+    check("back within the cooldown: held", events[-1] == "normal"
           and get_state("fridge_alert_state") == "")
     fridge.check_fridge_alerts(time.time() + config.NOTIFICATION_COOLDOWN + 1)
     check("after the cooldown: pushed", events[-1] == "warm_critical")

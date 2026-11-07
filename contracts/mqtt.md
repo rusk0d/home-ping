@@ -268,7 +268,7 @@ skipped because `temp_c` and `humidity` are absent.
 | Field | Type | Unit | Notes |
 |---|---|---|---|
 | `device` | string | n/a | `"fridge_temp_esp32"` |
-| `temp_c` | float | °C | DS18B20 reading, 1 decimal |
+| `temp_c` | float | °C | DS18B20 reading, rounded to 1 decimal on the node (since #300; before: the raw 0.0625 °C steps) |
 | `alert` | string | n/a | `""` (normal), `"cold"`, `"warm_low"`, `"warm_critical"`, or `"warm_critical_duration"` |
 | `rssi` | integer | dBm | |
 | `uptime` | integer | s | `hpUptimeSeconds()` (64-bit, doesn't wrap; `millis() / 1000` before #294) |
