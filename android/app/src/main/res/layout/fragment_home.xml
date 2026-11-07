@@ -380,26 +380,6 @@
                     android:layout_marginTop="8dp" />
             </com.david.homeenv.ui.AccentCard>
 
-            <!-- Devices; the heading and the rows open the Devices screen (#322) -->
-            <TextView
-                android:id="@+id/devices_section"
-                style="@style/HomeSection"
-                android:background="?attr/selectableItemBackground"
-                android:text="Devices  ›" />
-
-            <LinearLayout
-                android:id="@+id/devices_list"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
-
-            <TextView
-                android:id="@+id/restarts_value"
-                style="@style/HomeFoot"
-                android:layout_marginTop="8dp"
-                android:layout_marginStart="4dp"
-                android:text="Restarts: --" />
-
             <!-- Last 24 hours -->
             <TextView
                 style="@style/HomeSection"
@@ -491,20 +471,6 @@
                 android:textAllCaps="false"
                 android:textColor="@color/text"
                 app:strokeColor="@color/card_edge" />
-
-            <!-- Server (#260): the backend watchdog's view, from /api/server_status; hidden
-                 until it loads (e.g. a backend without the endpoint) -->
-            <TextView
-                android:id="@+id/server_section"
-                style="@style/HomeSection"
-                android:text="Server"
-                android:visibility="gone" />
-
-            <com.david.homeenv.ui.AccentCard
-                android:id="@+id/server_card"
-                style="@style/HomeCard"
-                android:visibility="gone" />
-
         </LinearLayout>
     </ScrollView>
 </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
