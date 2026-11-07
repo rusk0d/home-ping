@@ -61,7 +61,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
   repeated after quiet hours end or the switch is turned back on.
 - Node back online: pushed only if that outage's offline push was actually sent.
   If the offline alert was muted there is nothing to replace on the phone, so the
-  back-online push is skipped (logged as `NODE_ONLINE` `no push (offline alert was muted), ...`).
+  back-online push is skipped (logged as `NODE_ONLINE` `no push (alert was muted), data again`).
 
 ## Cooldowns and state
 
@@ -70,11 +70,19 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
   Starts only after a successful send (failed sends retry after 1, 2, 5, 10, then every 15 min).
 - The radar "outage already pushed" flags (`RADAR_ALERTED`) are persisted the same way
   (`radar_alerted:<device>`).
+- **Excursion state** (#305): humidity, temperature, pressure, node offline, server watchdog,
+  sensor silent and baseline share one helper (`alerts.Excursion`) and one `system_state` value
+  format: `''` while there's none, else how its start went, `sent` or `muted`, with `:<band>`
+  where the condition has bands (`sent:high`, `muted:falling`). It's saved only once the push
+  went out, so a failed one is retried at the next check. Another band while one is on is a new
+  excursion. The end push (where there is one) only follows a `sent` start; after a `muted` one
+  the end is logged as `no push (alert was muted), <detail>`. The fridge (`fridge_alert_*`) and
+  air (`air:*`) keys keep their own format.
 - Cooldown keys: `HUMIDITY_<device>` (shared by high and low), `TEMP_<device>`,
   `RADAR_<device>`. The occupancy alert has **no cooldown key**.
 - Humidity and temperature alert **once per excursion** (#117): the push (or a muted alert)
-  sets `system_state` `env_alerted:HUMIDITY_<device>` (`high`/`low`) or `env_alerted:TEMP_<device>`
-  (`low`). While it is set, no further push for that condition. It is cleared when the value is
+  sets `system_state` `env_alerted:HUMIDITY_<device>` (band `high`/`low`) or `env_alerted:TEMP_<device>`
+  (band `low`), see "Excursion state". While it is set, no further push for that condition. It is cleared when the value is
   back in range by the hysteresis margin (`HUMIDITY_HYSTERESIS` 2 %RH, `TEMP_HYSTERESIS` 0.5 °C):
   humidity < 63 after high, > 27 after low, temperature > 18.5. The 15-min cooldown still applies
   on top, against flapping around the threshold. A failed send sets nothing (retried with the back-off above).
@@ -87,7 +95,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 - Trigger: an env MQTT message (no `presence`) with `humidity`
   present (`temp_c` not needed), `humidity > 65`, not already alerted for this excursion
-  (`env_alerted:HUMIDITY_<device>` ≠ `high`, see "Cooldowns and state"), and no humidity push for
+  (`env_alerted:HUMIDITY_<device>` ≠ `sent:high` / `muted:high`, see "Cooldowns and state"), and no humidity push for
   this device in the last 900 s. Currently only `home_ping_esp32` via `home/esp32/bme280`.
 - Notification: title `Humidity Alert`, body `Humidity is high: {hum:.1f}%`
 - Data: `{"event": "HUMIDITY_HIGH", "device": "<device>"}` (plus `title`, `body`)
@@ -160,7 +168,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   That's longer than the API's 120 s "online" threshold, so a reboot or a short WiFi
   drop doesn't alert. Decided on data age, not on the MQTT last will (see `mqtt.md`).
 - **Once per outage:** after a successful (or muted, #82) push the device is in `NODE_OFFLINE`
-  (persisted as `system_state` `node_offline:<device>`: `'1'` pushed, `'m'` muted) until it sends data again.
+  (persisted as `system_state` `node_offline:<device>`: `sent` / `muted`) until it sends data again.
   Cooldown key `NODE_<device>` (15 min, also limits flapping; failed sends retry with the back-off above).
 - No checks during the first 300 s after a backend start (every `last_seen` is old then).
 - Offline: title `Node offline`, body `{device}: no data for {N} min`,
@@ -180,8 +188,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   `DISK_MIN_FREE_MB` (**1024 MB**) is free on the database's disk, `offsite` (since #122)
   when `backups/.offsite-ok` (touched by `backup_db.py` after each upload to S3) is older than
   `OFFSITE_MAX_AGE_HOURS` (**26 h**) or missing; no `BACKUP_S3_BUCKET` in `.env` = no check.
-- **Once per excursion**, persisted as `system_state` `watchdog:<check>` (`'1'` pushed,
-  `'m'` muted by the `nodes` switch, `'0'` fine). A failed send is retried at the next check.
+- **Once per excursion**, persisted as `system_state` `watchdog:<check>` (`sent`,
+  `muted` by the `nodes` switch, `''` fine). A failed send is retried at the next check.
 - Switch `nodes`. **Quiet hours postpone it** to the first check after they end, instead
   of muting it (the backup runs at 03:30); turning the switch off mutes it like other alerts.
 - Push: title `Backup failed`, body `No database backup for over 26 h (last: …)`, or title
@@ -217,7 +225,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   backend outage, or a reboot (CO₂ warm-up ~3 min) doesn't alert. Covers a BME280 that
   publishes nothing and an MH-Z19C that keeps sending `co2_ok: false`.
 - **Once per excursion**, persisted as `system_state` `sensor_silent:<device>:<sensor>`
-  (`'1'` pushed, `'m'` muted by the `nodes` switch, `'0'` fine). A failed send is retried at
+  (`sent`, `muted` by the `nodes` switch, `''` fine). A failed send is retried at
   the next check. Switch `nodes`; **quiet hours postpone it**, like the watchdog.
 - Push: title `Sensor not reporting`, body `{device}: no {BME280 | CO₂ sensor} readings for 15 min`,
   data `{"event": "SENSOR_STATUS", "status": "silent", "device": "<device>:<env|co2>"}`.
@@ -234,8 +242,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   `PRESSURE_WINDOW_HOURS` (**3**) before it. No check when either hour has no pressure or the
   newest is more than 2 h old (node down, fresh start).
 - Push at a change ≤ `PRESSURE_DROP_THRESHOLD` (**−3.0 hPa**), a storm sign. A rise doesn't push.
-- **Once per excursion** (#117 pattern): `system_state` `env_alerted:PRESSURE` = `falling` while
-  pushed or muted; cleared once the change is back above threshold + `PRESSURE_HYSTERESIS`
+- **Once per excursion** (#117 pattern): `system_state` `env_alerted:PRESSURE` = `sent:falling` /
+  `muted:falling`; cleared once the change is back above threshold + `PRESSURE_HYSTERESIS`
   (**−2.0 hPa**). Cooldown key `PRESSURE` (15 min).
 - Switch `pressure`; **quiet hours mute it** like the other environment alerts (not postponed).
 - Push: title `Pressure falling fast`, body `{change:+.1f} hPa in 3 h: storm likely, bring things in from outside`,
@@ -390,3 +398,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #250: outside uptime monitor (UptimeRobot on `/` and `/api/health`), documented here; no code change.
 - #122: watchdog push when the nightly backup wasn't uploaded to S3 for 26 h (`offsite`).
 - #251: failed pushes back off (1, 2, 5, 10, then every 15 min per key) instead of retrying every 60 s.
+- #305: one excursion helper and state format (`sent`/`muted`[`:<band>`]); a muted watchdog's end is logged too.

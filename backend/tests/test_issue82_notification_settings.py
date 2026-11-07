@@ -90,18 +90,19 @@ def test_issue82_notification_settings(env):
     def make_stale(dev):
         con = db(); con.execute("INSERT OR REPLACE INTO devices (device, last_seen) VALUES (?, ?)", (dev, old)); con.commit(); con.close()
     reset(); make_stale("nodeA"); nodes.check_nodes()
-    check("quiet: offline muted, recorded as 'm'", pushes == [] and state.NODE_OFFLINE.get("nodeA") is False and store.get_state("node_offline:nodeA") == "m")
+    check("quiet: offline muted, recorded as 'muted'", pushes == [] and state.NODE_OFFLINE.get("nodeA") is False and store.get_state("node_offline:nodeA") == "muted")
     check("muted state survives restart", store.load_alert_state()[2].get("nodeA") is False)
     post({"quiet_hours": {"enabled": False}})
     nodes.touch_device("nodeA")
     check("back online after muted offline: no push, logged", pushes == [] and "nodeA" not in state.NODE_OFFLINE
           and "muted" in (last_event("NODE_ONLINE") or ""))
     reset(); make_stale("nodeB"); nodes.check_nodes()
-    check("offline push sent, recorded as '1'", pushes == ["NODE_STATUS"] and store.get_state("node_offline:nodeB") == "1")
+    check("offline push sent, recorded as 'sent'", pushes == ["NODE_STATUS"] and store.get_state("node_offline:nodeB") == "sent")
     nodes.touch_device("nodeB")
-    check("back online push sent", pushes == ["NODE_STATUS", "NODE_STATUS"] and store.get_state("node_offline:nodeB") == "0")
+    check("back online push sent", pushes == ["NODE_STATUS", "NODE_STATUS"] and store.get_state("node_offline:nodeB") in ("", "0"))
     post({"nodes": False}); reset(); state.LAST_NOTIFICATION.clear(); make_stale("nodeC"); nodes.check_nodes()
     check("nodes off: offline muted (off)", pushes == [] and (last_event("NODE_OFFLINE") or "").startswith("muted (off)"))
-    # legacy '1' value still loads as pushed
+    # a legacy '1' value is converted at startup (#305) and loads as pushed
     store.set_state("node_offline:legacy", "1")
+    store.init_db()
     check("legacy node_offline '1' loads as pushed", store.load_alert_state()[2].get("legacy") is True)

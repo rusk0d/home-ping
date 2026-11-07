@@ -49,7 +49,7 @@ def test_issue13_node_status(env):
     past_grace(); nodes.check_nodes()
     pushed = status_pushes()
     check("offline push for the 2 silent nodes only", sorted(pushed) == ["offline", "offline"] and "hallway_presence_esp32" not in state.NODE_OFFLINE)
-    check("offline flag persisted", store.get_state("node_offline:home_ping_esp32") == "1")
+    check("offline flag persisted", store.get_state("node_offline:home_ping_esp32") == "sent")
     nodes.check_nodes()
     check("no repeat while still offline", len(status_pushes()) == 2)
     restart(); past_grace()
@@ -60,7 +60,7 @@ def test_issue13_node_status(env):
     # back online
     mqtt("home/esp32/bme280", {"device": "home_ping_esp32", "temp_c": 22.0, "humidity": 45.0, "uptime": 5})
     check("data again -> 'online' push", status_pushes() == ["online"])
-    check("flag cleared", "home_ping_esp32" not in state.NODE_OFFLINE and store.get_state("node_offline:home_ping_esp32") == "0")
+    check("flag cleared", "home_ping_esp32" not in state.NODE_OFFLINE and store.get_state("node_offline:home_ping_esp32") in ("", "0"))
     data = [c.kwargs["data"] for c in m.Message.call_args_list][-1]
     check("online push uses the same event/device as offline (same app slot)", data["event"] == "NODE_STATUS" and data["device"] == "home_ping_esp32")
     check("events logged", {r[0] for r in db().execute("SELECT type FROM events WHERE type LIKE 'NODE_%'")} == {"NODE_OFFLINE", "NODE_ONLINE"})

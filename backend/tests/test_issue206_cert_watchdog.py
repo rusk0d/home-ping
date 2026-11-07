@@ -50,21 +50,21 @@ def test_issue206_cert_watchdog(env):
     check("once per excursion", pushes() == [])
     run(89)
     check("renewed: 'Certificate renewed'", pushes() == [("cert_443", "Certificate renewed")])
-    check("flag cleared", store.get_state("watchdog:cert_443") == "0")
+    check("flag cleared", store.get_state("watchdog:cert_443") in ("", "0"))
 
     expiry["value"] = "certificate has expired"
     run()
     check("fails verification: 'Certificate problem'", pushes() == [("cert_443", "Certificate problem")])
     expiry["value"] = ConnectionRefusedError("down")
     run()
-    check("unreachable: no push, state kept", pushes() == [] and store.get_state("watchdog:cert_443") == "1")
+    check("unreachable: no push, state kept", pushes() == [] and store.get_state("watchdog:cert_443") == "sent")
     run(89)
     check("...and 'renewed' once it's fine", pushes() == [("cert_443", "Certificate renewed")])
 
     # Quiet hours postpone it, like the other watchdogs
     store.set_state("quiet_hours", "1"); store.set_state("quiet_start", "00:00"); store.set_state("quiet_end", "23:59")
     run(5)
-    check("quiet hours: postponed", pushes() == [] and store.get_state("watchdog:cert_443") == "0")
+    check("quiet hours: postponed", pushes() == [] and store.get_state("watchdog:cert_443") in ("", "0"))
     store.set_state("quiet_hours", "0")
     run(5)
     check("after quiet hours: pushed", pushes() == [("cert_443", "Certificate expires soon")])

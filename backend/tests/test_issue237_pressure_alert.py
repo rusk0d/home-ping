@@ -46,7 +46,7 @@ def test_issue237_pressure_alert(env):
           abs(ingest.pressure_change(base + timedelta(hours=5)) - -3.5) < 1e-9)
     check("once per excursion", run(1015, 1015, 1014, 1013, 1011.5, 1010) == [])
     check("-2.5 (inside the hysteresis): still the same excursion",
-          run(1015, 1014, 1013, 1012.5, 1011.5) == [] and store.get_state("env_alerted:PRESSURE") == "falling")
+          run(1015, 1014, 1013, 1012.5, 1011.5) == [] and store.get_state("env_alerted:PRESSURE") == "sent:falling")
     check("back above -2.0: excursion over", run(1012, 1012, 1012, 1012, 1011) == []
           and store.get_state("env_alerted:PRESSURE", "") == "")
     check("a second fall alerts again", len(run(1015, 1015, 1014, 1013, 1011)) == 1)
@@ -59,7 +59,7 @@ def test_issue237_pressure_alert(env):
 
     # Muted by its own switch and by quiet hours (treated as sent: no push later in the excursion)
     store.set_state("notify:pressure", "0")
-    check("switch off: no push", run(1015, 1015, 1014, 1013, 1011) == [] and store.get_state("env_alerted:PRESSURE") == "falling")
+    check("switch off: no push", run(1015, 1015, 1014, 1013, 1011) == [] and store.get_state("env_alerted:PRESSURE") == "muted:falling")
     store.set_state("notify:pressure", "1")
     check("...and none once it's back on, same excursion", run(1015, 1015, 1014, 1013, 1011) == [])
     store.set_state("env_alerted:PRESSURE", "")
