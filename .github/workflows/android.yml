@@ -1,7 +1,8 @@
 # Android preview APK and lint (#76). Uses only the example config files with fake values, no secrets.
-# Runs only on PRs that touch these paths, and not again on the merge to main: the
-# private repo has 2,000 Actions minutes a month, and a full run of all three
-# workflows costs ~12. Run it by hand from the Actions tab with "Run workflow".
+# Runs only on PRs that touch these paths, and not again on the merge to main: a full run
+# of all three workflows takes ~12 minutes (Actions minutes were capped while the repo was
+# private; public repos don't use them up on standard runners). Run it by hand from the
+# Actions tab with "Run workflow".
 name: Android
 
 on:
