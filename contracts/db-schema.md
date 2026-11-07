@@ -137,7 +137,8 @@ Known keys:
 | `air:co2_push` | UTC ts of the excursion's last "Time to air out" push (sent or muted; after a failed one back-dated so it is retried in 15 min), `''` when none yet / after the excursion | no | `air.push_co2()` (#245 step 2) | `air.push_co2()` (reminder due after 3 h) |
 | `air:co2_shown` | `'1'` once a push of this excursion was sent, so `AIR_OK` replaces it on the phone; `''` otherwise | no | `air.push_co2()`, `air.check_co2()` | `air.check_co2()` |
 | `baseline_last_hour` | the newest `hourly` hour the baseline check has looked at (each hour once) | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
-| `baseline_count:<metric>` | unusual hours in a row for `temp` / `humidity` / `co2` | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
+| `baseline_count:<metric>` | unusual consecutive hours for `temp` / `humidity` / `co2` | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
+| `baseline_seen:<metric>` | the hour that metric was last checked: the next one only continues the count if it's exactly one hour later (#302) | no | `baseline.check_baseline()` | `baseline.check_baseline()` |
 | `baseline_alerted:<metric>` | `'sent'` / `'muted'` while that excursion was pushed or muted, `''` after it | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
 | `fridge_alert_state` | the fridge node's alert state last handled (`''` = normal) | no | `fridge.check_fridge_alerts()` (#294) | `fridge.check_fridge_alerts()` |
 | `fridge_alert_shown` | `'sent'` / `'muted'` for that state's push, `''` when none (#300) | no | `fridge.check_fridge_alerts()` | `fridge.check_fridge_alerts()` |
@@ -200,8 +201,8 @@ Event types written by `server.py`:
 | `WINDOW_CLOSED` | CO₂ node ID | `after 18 min (temperature rising), inside 21.6 °C, CO₂ 480 ppm` | the open spell ended: temperature (or, when it didn't fall, CO₂) climbing again, or `no close seen` after 180 min (#245) |
 | `AIR_HIGH` | CO₂ node ID | `sent, CO₂ 1250 ppm, outside 9.8 °C 80 %: open a window for 5-10 minutes` / `no push yet (nobody home), CO₂ 1250 ppm for 10 min, …` | "Time to air out" push attempted (CO₂ ≥ 1200 ppm for 10 min, again every 3 h while high: `CO₂ still … after N h`), or the excursion started without a push (`nobody home`, `quiet hours`; pushed later once that's over). Until 2026-10-24 (observe-only): `…: would push` / `nobody home: no push` / `would hold back (…)` |
 | `AIR_OK` | CO₂ node ID | `CO₂ 850 ppm, 95 min after AIR_HIGH`; `sent, …` when it replaced a push ("Air is fresh again") | that excursion ended (< 900 ppm) (#245) |
-| `BASELINE_DEVIATION` | `system` | `sent, temp=30.0 °C, typical 22.0 °C at 14:00 UTC, z=+16.0` | "Unusual reading" push attempted: \|z\| > 3 for 2 hours in a row against the same hour of the day over 28 days (#229, #297) |
-| `BASELINE_NORMAL` | `system` | `sent, temp=23.0 °C, typical 22.0 °C at 16:00 UTC, z=+2.0` | "Back to normal" push attempted: \|z\| < 2 after a pushed excursion (#297) |
+| `BASELINE_DEVIATION` | `system` | `sent, temp=30.0 °C, typical 22.0 °C at 15:00, z=+16.0` (local hour) | "Unusual reading" push attempted: \|z\| > 3 for 2 consecutive hours against the same local hour of the day over 28 days (#229, #297, #302) |
+| `BASELINE_NORMAL` | `system` | `sent, temp=23.0 °C, typical 22.0 °C at 17:00, z=+2.0` | "Back to normal" push attempted: \|z\| < 2 after a pushed excursion (#297) |
 | `FRIDGE_ALERT` / `FRIDGE_ALERT_RECOVERY` | `fridge_temp_esp32` | `sent, alert=warm_low (was: normal)` / `sent, back to normal (was: warm_low)` | the fridge node's alert state changed (#290, #294; `notifications.md`) |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12), or
