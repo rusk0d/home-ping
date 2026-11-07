@@ -91,7 +91,7 @@ class Co2Card(b: FragmentHomeBinding) : HomeCard(b) {
         val ppm = node?.optNum("co2")?.toInt()
         val sensorOk = node?.takeIf { it.has("co2_ok") && !it.isNull("co2_ok") }?.optBoolean("co2_ok")
         b.co2Value.text = ppm?.toString() ?: "--"
-        b.co2Gauge.ppm = ppm
+        b.co2Gauge.value = ppm?.toDouble()
         if (ppm != null) {
             // The server's band (/api/air), when it is about this same reading (#127)
             val serverBand = air?.takeIf { it.optNum("co2")?.toInt() == ppm }?.optString("band")
@@ -142,6 +142,10 @@ class OccupancyNowCard(b: FragmentHomeBinding) : HomeCard(b) {
 class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
     private var fridgeTs: Date? = null
 
+    init {
+        b.fridgeGauge.scale = Levels.FRIDGE
+    }
+
     fun render(latest: JSONObject, devices: List<Device>) {
         val fridge = devices.firstOrNull { it.role == "fridge" }?.let { latest.optJSONObject(it.id) }
         val temp = fridge?.optNum("temp")
@@ -149,6 +153,7 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
         val alert = fridge?.takeUnless { it.isNull("alert") }?.optString("alert").orEmpty()
         b.fridgeValue.text = valueWithUnit(ctx, temp?.let { "%.1f".format(Locale.US, it) }, "°C")
         Levels.applyChip(b.fridgeAlert, temp?.let { Levels.fridge(alert) })
+        b.fridgeGauge.value = temp
         b.fridgeStatus.text = if (fridge == null || temp == null) "no data" else status(alert)
         fridgeTs = fridge?.optTs("ts")
     }

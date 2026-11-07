@@ -10,7 +10,7 @@ import com.david.homeenv.R
 /**
  * Draws a [Scale] as the dashboard's gauge: a pill-shaped bar in the band colours and a
  * needle at the current value, with a thin card-coloured outline so it stands out.
- * Used by [Co2GaugeView] (the CO₂ card) and [WidgetGauge] (bitmaps for the widget).
+ * Used by [GaugeView] (the CO₂ and fridge cards) and [WidgetGauge] (bitmaps for the widget).
  * The gauge is [heightDp] tall (default [HEIGHT_DP]); the bar, half as tall, sits in the middle.
  */
 class GaugeBar(private val context: Context, heightDp: Float = HEIGHT_DP) {

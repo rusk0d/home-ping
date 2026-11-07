@@ -297,9 +297,10 @@ every copy: `backend/api_env.py` (`/api/air` `band`, CO₂ only), `web/app.js`
 | CO₂ (ppm) | Fresh `good` < 800 ≤ OK `fair` < 1200 ≤ Stuffy `stuffy` < 2000 ≤ Poor `bad` |
 | Humidity (%) | Very dry < 30 ≤ Dry < 40 ≤ Comfortable ≤ 60 < Humid ≤ 70 < Very humid |
 | Temperature (°C) | Cold < 18 ≤ Cool < 20 ≤ Comfortable ≤ 24 < Warm ≤ 27 < Hot |
+| Fridge (°C, gauge colours only, #326) | too cold < 0 ≤ fine < 5 ≤ warming < 8 ≤ too warm: the fridge node's `alert` limits (mqtt.md); the chip shows the alert itself |
 
-Gauge ranges (drawing only): CO₂ 400–3000 ppm (web and Android), humidity 0–100 % and
-temperature 14–30 °C (Android only).
+Gauge ranges (drawing only): CO₂ 400–3000 ppm (web and Android), humidity 0–100 %,
+temperature 14–30 °C and fridge −2–10 °C (Android only).
 
 ### Dew point
 
@@ -575,3 +576,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #321: `/api/notification_history?muted=1`, `status` and `muted_reason` per event.
 - #322: `/api/devices` has `health` per node (RSSI, uptime, heap, reset reason, radar).
 - #325: app only: the devices list, restarts line and Server card moved from Home to the Devices screen; no endpoint changed.
+- #326: app only: a fridge gauge (Level bands: fridge); no endpoint changed.
