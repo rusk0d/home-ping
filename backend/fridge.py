@@ -20,12 +20,12 @@ import time
 
 import alerts
 import state
-from config import NOTIFICATION_COOLDOWN
+from config import FRIDGE_DEVICE, NOTIFICATION_COOLDOWN
 from store import db, get_state, set_state
 
 log = logging.getLogger(__name__)
 
-DEVICE = "fridge_temp_esp32"
+DEVICE = FRIDGE_DEVICE
 EVENT = "FRIDGE_ALERT"   # alert and recovery share it: one notification slot on the phone
 
 MESSAGES = {
