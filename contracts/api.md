@@ -1,6 +1,7 @@
 # REST API contract
 
-The REST API between the backend (`backend/api.py`) and the Android app.
+The REST API between the backend (`backend/api.py`: the app and `/api/dashboard`; the routes in the
+blueprints `api_env`, `api_history`, `api_notify`, `api_server` since #306) and the Android app.
 It is the source of truth: update it in the same change as the code (see CLAUDE.md).
 First written on 2026-10-13 by reading the code; anything still marked **UNCERTAIN** was
 inferred then and hasn't been confirmed since.
@@ -284,7 +285,7 @@ Latest CO2 and pressure from whichever device last reported them.
 ### Level bands
 
 The one place the level thresholds are defined (#127). Change them here first, then in
-every copy: `backend/api.py` (`/api/air` `band`, CO₂ only), `web/app.js`
+every copy: `backend/api_env.py` (`/api/air` `band`, CO₂ only), `web/app.js`
 (`co2Level`, `humLevel`, `tempLevel`) and `android/.../ui/Levels.kt` (chips and gauge stops).
 
 | Value | Bands (label, from low to high) |
@@ -544,3 +545,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - Metrics: `GET /api/metrics` (Prometheus) added, with its own bearer token.
 - #245: `/api/notification_settings` has an `air` switch; `POST /api/occupancy_arm` from the geofence can push "Window still open?".
 - #236: the occupancy arm switch moved from the Android home screen to its notification settings (no API change).
+- #306: the routes moved into Flask blueprints (`api_env`, `api_history`, `api_notify`, `api_server`); no endpoint changed.
