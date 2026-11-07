@@ -61,6 +61,7 @@ inferred then and hasn't been confirmed since.
 | POST | `/api/occupancy_arm` | Basic | Android notification settings |
 | GET | `/api/occupancy_status` | Basic | Android notification settings |
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
+| GET | `/api/notification_history` | Basic | Android notification settings, History tab (#289) |
 | GET | `/api/health` | **none** | external uptime monitor (#77) |
 | GET | `/api/dashboard` | Basic | Android Home (#128) |
 | GET | `/api/server_status` | Basic | Android Home, Server card (#260) |
@@ -128,7 +129,7 @@ For each device with `readings` rows:
 ```json
 {"ts": "...", "uptime": 86400, "online": true,
  "temp": 22.4, "humidity": 48.3, "pressure": 1013.6, "env_ts": "...",
- "co2": null, "co2_ok": null, "co2_ts": null}
+ "co2": null, "co2_ok": null, "co2_ts": null, "alert": null, "alert_ts": null}
 ```
 
 A node can send env and CO₂ in separate messages (since #57 the CO₂ board also has the
@@ -138,6 +139,8 @@ BME280), so each group comes from its own newest row (#11):
 - `co2`, `co2_ok`, `co2_ts`: its newest row with `co2` or `co2_ok`. `co2_ok` is a bool if
   that message had `co2_ok` (survives backend restarts), else null; `co2` is null while the
   sensor warms up or reads invalid.
+- `alert`, `alert_ts`: its newest row with `alert` not null (#290): the node's own alert state,
+  `""` when normal (the fridge, `mqtt.md`). Null for nodes that don't send one.
 - A group the device never sent is all null.
 
 For each device with `presence_readings` rows, the radar fields are merged in.
@@ -351,6 +354,25 @@ Response: `{"armed": true|false}` (same shape as the `POST /api/occupancy_arm` r
 `false` until the switch is first armed.
 Client: Android Home, on startup, to set the toggle switch.
 
+### GET `/api/notification_history` (since #289)
+
+The last 20 pushes that went out, newest first: `events` rows that `alert()` logged as
+`sent, <detail>` (#296). Muted and failed pushes, and events that aren't pushes (occupancy
+changes, restarts, window spells, ...), aren't in it. Pushes go to topic `env`, so this is
+what every phone got.
+
+```json
+{"events": [{"ts": "2026-11-07T08:12:00Z", "type": "FRIDGE_ALERT", "device": "fridge_temp_esp32",
+             "detail": "alert=warm_low (was: normal)"}]}
+```
+
+- `type`: the event type (`HUMIDITY_HIGH_ALERT`, `TEMP_ALERT`, `NODE_OFFLINE`, `FRIDGE_ALERT`, ...;
+  `notifications.md`). `detail`: the logged value without the `sent, ` prefix.
+- Always 200; `events` is `[]` when nothing was sent within the events retention
+  (`EVENTS_RETENTION_DAYS`).
+
+Client: Android notification settings, History tab, each time the tab is shown.
+
 ### GET / POST `/api/notification_settings` (since #82)
 
 Which alerts send a push, and quiet hours. Stored in `system_state` (see `db-schema.md`),
@@ -358,10 +380,11 @@ so the settings apply to every phone. Behaviour: `notifications.md` → "Setting
 
 ```json
 {"humidity":true,"temperature":true,"radar":true,"nodes":true,"pressure":true,"air":true,
- "quiet_hours":{"enabled":false,"start":"22:00","end":"07:00"}}
+ "baseline":true,"fridge":true,"quiet_hours":{"enabled":false,"start":"22:00","end":"07:00"}}
 ```
 
-- `humidity`, `temperature`, `radar`, `nodes`, `pressure` (#237), `air` (#245): bool, default `true`. `false` mutes that alert type.
+- `humidity`, `temperature`, `radar`, `nodes`, `pressure` (#237), `air` (#245), `baseline` (#229),
+  `fridge` (#290): bool, default `true`. `false` mutes that alert type (`NOTIFY_KINDS` in `config.py`).
 - `quiet_hours.enabled`: bool, default `false`. `start`/`end`: `"HH:MM"` (24 h, server
   local time = Budapest), defaults `22:00`/`07:00`. The window may cross midnight.
 - Occupancy alerts are not in here: they keep their own switch (`/api/occupancy_arm`)
@@ -406,10 +429,11 @@ is all that guards it.
 | `homeping_mqtt_last_message_age_seconds` | none | last live MQTT message (absent before the first) |
 
 - The node health values (from presence messages and, since the fridge node #290, from env
-  messages such as `fridge_temp`) are kept in memory (`state.NODE_HEALTH`), merged per node
-  so an env message doesn't drop a node's radar fields; sensor
+  messages such as `fridge_temp`) are kept in memory (`state.NODE_HEALTH`), each field with its
+  own time (#296): an env message neither drops a node's radar fields nor keeps them fresh; sensor
   values come from `readings`. Both are left out once older than `METRICS_FRESH_SECONDS`
-  (600 s), so a dead node's last numbers don't stay on the graphs (`last_seen_age` keeps growing).
+  (600 s), per field, so a dead node's (or a stopped radar's) last numbers don't stay on the
+  graphs (`last_seen_age` keeps growing).
 - A sample is missing when the node didn't send that field (older firmware: no heap fields).
 - `device` label values are escaped (`\`, `"`, newline) as the format requires.
 

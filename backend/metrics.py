@@ -32,11 +32,11 @@ SENSOR_GAUGES = (
 
 def note_node(device, **values):
     """The newest health values a node sent (presence and env messages); None values are left out.
-    Merged, not replaced: the main node sends radar fields only on presence, so an env
-    message must not drop them."""
+    Each value keeps its own time (#296): the main node sends radar fields only on presence,
+    so its env messages must neither drop them nor keep them fresh when presence stops."""
+    now = time.time()
     health = state.NODE_HEALTH.setdefault(device, {})
-    health.update({k: v for k, v in values.items() if v is not None})
-    health["at"] = time.time()
+    health.update({k: (v, now) for k, v in values.items() if v is not None})
 
 
 def label(value):
@@ -80,9 +80,10 @@ def render():
         seen = conn.execute("SELECT device, last_seen FROM devices ORDER BY device").fetchall()
     gauge(lines, "homeping_node_last_seen_age_seconds", "Seconds since the node's last message",
           [(d, int((utcnow() - parse_ts(ts)).total_seconds())) for d, ts in seen])
-    fresh = {d: h for d, h in sorted(state.NODE_HEALTH.items()) if now - h["at"] < METRICS_FRESH_SECONDS}
+    health = sorted(state.NODE_HEALTH.items())
     for name, help_text, key in NODE_GAUGES:
-        gauge(lines, name, help_text, [(d, h[key]) for d, h in fresh.items() if key in h])
+        gauge(lines, name, help_text, [(d, h[key][0]) for d, h in health
+                                       if key in h and now - h[key][1] < METRICS_FRESH_SECONDS])
     sensors = latest_sensors()
     for name, help_text, col in SENSOR_GAUGES:
         gauge(lines, name, help_text, sensors[col])
