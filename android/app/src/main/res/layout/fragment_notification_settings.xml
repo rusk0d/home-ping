@@ -297,7 +297,7 @@
                         <TextView
                             style="@style/HomeFoot"
                             android:layout_marginTop="2dp"
-                            android:text="Below 0 °C, or above 5 °C for 30 min" />
+                            android:text="Below 0 °C, or above 5 °C for 30 min; the door left open" />
                     </LinearLayout>
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
