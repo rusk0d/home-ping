@@ -284,6 +284,9 @@ Example:
 
 Backend handling: env handler (no `presence`). Stores a `readings` row with `temp_c`
 (the `temp` column), `alert`, and `uptime`; `humidity`, `co2` and `pressure` are NULL.
+A `temp_c` outside `FRIDGE_VALID` (−30…50 °C) is a sensor glitch (the DS18B20 reads exactly
+85.0 °C after a brownout) and is stored as null, with a warning; the rest of the reading is
+kept (#352). The node skips 85.0 itself since #352.
 Serves the alert state via `/api/latest_all` (fields `alert` and `alert_ts`). The backend's
 fridge alert handler in `fridge.py` sends notifications when `alert` state changes, and on
 every reading checks for a door left open (fast rise of `temp_c`, #336; `notifications.md`).
