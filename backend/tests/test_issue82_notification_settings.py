@@ -84,15 +84,35 @@ def test_issue82_notification_settings(env):
     check("radar alert muted, outage marked handled", pushes == [] and "hallway_presence_esp32" in state.RADAR_ALERTED
           and (last_event("RADAR_DISCONNECTED") or "").startswith("muted"))
 
-    # --- nodes: muted offline -> no back-online push; sent offline -> back-online push
+    # --- nodes: quiet hours postpone the offline push (#350); the switch off mutes it
     state.STARTED_AT = 0
     old = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
     def make_stale(dev):
         con = db(); con.execute("INSERT OR REPLACE INTO devices (device, last_seen) VALUES (?, ?)", (dev, old)); con.commit(); con.close()
     reset(); make_stale("nodeA"); nodes.check_nodes()
-    check("quiet: offline muted, recorded as 'muted'", pushes == [] and state.NODE_OFFLINE.get("nodeA") is False and store.get_state("node_offline:nodeA") == "muted")
-    check("muted state survives restart", store.load_alert_state()[2].get("nodeA") is False)
+    check("quiet: offline held back, not handled yet", pushes == [] and "nodeA" not in state.NODE_OFFLINE
+          and store.get_state("node_offline:nodeA", "") == "" and last_event("NODE_OFFLINE") is None)
+    nodes.check_nodes()
+    check("quiet: still held back on the next check", pushes == [])
     post({"quiet_hours": {"enabled": False}})
+    nodes.check_nodes()
+    check("quiet hours over, still offline: pushed", pushes == ["NODE_STATUS"] and store.get_state("node_offline:nodeA") == "sent")
+    nodes.touch_device("nodeA")
+    check("...and its back-online push", pushes == ["NODE_STATUS", "NODE_STATUS"] and "nodeA" not in state.NODE_OFFLINE)
+    # Offline and back within quiet hours: nothing at all
+    post({"quiet_hours": {"enabled": True}})
+    reset(); state.LAST_NOTIFICATION.clear(); make_stale("nodeD"); nodes.check_nodes()
+    nodes.touch_device("nodeD")
+    post({"quiet_hours": {"enabled": False}})
+    nodes.check_nodes()
+    events = db().execute("SELECT COUNT(*) FROM events WHERE device = 'nodeD'").fetchone()[0]
+    check("offline and back during quiet hours: no push, nothing logged", pushes == [] and events == 0
+          and "nodeD" not in state.NODE_OFFLINE)
+    # Muted by the switch: handled, survives a restart, the back-online one only logged
+    post({"nodes": False}); reset(); make_stale("nodeA"); nodes.check_nodes()
+    check("nodes off: offline muted, recorded as 'muted'", pushes == [] and state.NODE_OFFLINE.get("nodeA") is False and store.get_state("node_offline:nodeA") == "muted")
+    check("muted state survives restart", store.load_alert_state()[2].get("nodeA") is False)
+    post({"nodes": True})
     nodes.touch_device("nodeA")
     check("back online after muted offline: no push, logged", pushes == [] and "nodeA" not in state.NODE_OFFLINE
           and "muted" in (last_event("NODE_ONLINE") or ""))
