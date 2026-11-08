@@ -48,11 +48,17 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun sendNotification(title: String, body: String, event: String?, device: String?) {
-        val intent = Intent(this, MainActivity::class.java)
-        intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+        // One slot per alert type and device: a new humidity alert replaces the last one,
+        // but doesn't wipe an occupancy alert. Unknown events each get their own slot.
+        val id = if (event != null) "$event/$device".hashCode() else System.currentTimeMillis().toInt()
 
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
+        // A tap opens the screen the alert is about (#354), with Home under it for Back. The
+        // slot is the request code: with one shared code, FLAG_UPDATE_CURRENT would point every
+        // notification at the newest one's screen.
+        val home = Screens.home(this).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val target = Screens.forPushEvent(this, event)
+        val pendingIntent = PendingIntent.getActivities(
+            this, id, listOfNotNull(home, target).toTypedArray(),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -73,9 +79,6 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             .setContentIntent(pendingIntent)
             .build()
 
-        // One slot per alert type and device: a new humidity alert replaces the last one,
-        // but doesn't wipe an occupancy alert. Unknown events each get their own slot.
-        val id = if (event != null) "$event/$device".hashCode() else System.currentTimeMillis().toInt()
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(id, notification)
     }
