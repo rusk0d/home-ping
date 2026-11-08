@@ -159,7 +159,16 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
         b.fridgeValue.text = valueWithUnit(ctx, temp?.let { "%.1f".format(Locale.US, it) }, "°C")
         Levels.applyChip(b.fridgeAlert, temp?.let { Levels.fridge(alert) })
         b.fridgeGauge.value = temp
-        b.fridgeStatus.text = if (fridge == null || temp == null) "no data" else status(alert)
+        // The door left open (#361, the backend's door push #336): it leads the status, in red
+        val doorOpen = fridge?.optBoolean("door_open") == true
+        val door = if (!doorOpen) null else "door open?" + (fridge?.optTs("door_open_since")
+            ?.let { " since " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(it) } ?: "")
+        b.fridgeStatus.text = when {
+            fridge == null || temp == null -> "no data"
+            door != null -> listOf(door, status(alert)).filter { it != "normal" }.joinToString(" · ")
+            else -> status(alert)
+        }
+        b.fridgeStatus.setTextColor(Levels.color(ctx, if (door != null) R.color.bad else R.color.muted))
         fridgeTs = fridge?.optTs("ts")
     }
 
