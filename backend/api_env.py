@@ -8,7 +8,7 @@ import re
 from flask import Blueprint, jsonify
 
 from config import (
-    MOULD_HOURS, MOULD_HUMIDITY, ROOM_DEVICES_SQL, device_info,
+    DEVICES, MOULD_HOURS, MOULD_HUMIDITY, ROOM_DEVICES_SQL, device_info,
 )
 from store import (
     calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
@@ -275,6 +275,9 @@ def devices():
         out.append({
             "device": dev,
             **device_info(dev),   # name, role (config.DEVICES, #306)
+            # In the registry: a node that's meant to be there. One that isn't (e.g. retired)
+            # stays listed for DEVICES_RETENTION_DAYS, but its silence is no issue (#359)
+            "known": dev in DEVICES,
             "last_seen": iso(ts),
             "online": is_online(ts, now),
             "health": health(dev),
