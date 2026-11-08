@@ -58,7 +58,10 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
   and come through during quiet hours.
 - A muted alert counts as handled: its cooldown starts (so it's logged at most once per
   15 min, like a sent one) and once-per-outage alerts (radar, node offline) are not
-  repeated after quiet hours end or the switch is turned back on.
+  repeated after quiet hours end or the switch is turned back on. Some alerts are
+  **postponed** by quiet hours instead of muted (node offline since #350, the server
+  watchdog, silent sensors, air): held back and pushed at the first check after quiet hours
+  if the condition still holds.
 - Node back online: pushed only if that outage's offline push was actually sent.
   If the offline alert was muted there is nothing to replace on the phone, so the
   back-online push is skipped (logged as `NODE_ONLINE` `no push (alert was muted), data again`).
@@ -169,6 +172,9 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   drop doesn't alert. Decided on data age, not on the MQTT last will (see `mqtt.md`).
 - **Once per outage:** after a successful (or muted, #82) push the device is in `NODE_OFFLINE`
   (persisted as `system_state` `node_offline:<device>`: `sent` / `muted`) until it sends data again.
+- Switch `nodes` (off mutes it). **Quiet hours postpone it** (since #350; muted before, so a node
+  that died at night was never reported): no push and not in `NODE_OFFLINE` while they last, pushed
+  at the first 30 s check after them if the node is still offline. A node back before then gets no push.
   Cooldown key `NODE_<device>` (15 min, also limits flapping; failed sends retry with the back-off above).
 - No checks during the first 300 s after a backend start (every `last_seen` is old then).
 - Offline: title `Node offline`, body `{device}: no data for {N} min`,

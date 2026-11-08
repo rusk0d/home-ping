@@ -41,7 +41,10 @@ def touch_device(device):
 # "offline" just as the node comes back. A node is offline when it hasn't sent
 # anything for NODE_OFFLINE_ALERT_SECONDS. One push per outage, one when it's
 # back; both use event NODE_STATUS so the "back" push replaces the "offline" one
-# in the app (same notification slot).
+# in the app (same notification slot). Quiet hours postpone the offline push to the
+# first check after them (#350): muting it lost it for good, so a node dead since
+# 23:00 (the fridge's, with it every fridge alert) was never reported. The switch
+# "nodes" off still mutes it.
 def check_nodes():
     # Right after a backend restart every last_seen is old: give the nodes time to report
     if time.time() - state.STARTED_AT < NODE_OFFLINE_ALERT_SECONDS:
@@ -75,7 +78,7 @@ def _outage(device):
     """node_offline:<device>, an Excursion (#305); state.NODE_OFFLINE is its in-memory copy
     (device -> whether the offline push was sent), for the checks on every message."""
     return Excursion(f"node_offline:{device}", "nodes", device, {"event": "NODE_STATUS", "device": device},
-                     cooldown_key=f"NODE_{device}")
+                     cooldown_key=f"NODE_{device}", postpone_quiet=True)
 
 
 # -------------------------
