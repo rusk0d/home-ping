@@ -66,6 +66,13 @@ void publishTemp() {
     Serial.println("DS18B20 read error");
     return;
   }
+  // 85.0 °C is the DS18B20's power-on value: after a brownout or a glitch on the data line it
+  // reports that instead of a conversion (#352). No fridge gets there; skip it like a read error
+  // (the backend drops it too, outside FRIDGE_VALID).
+  if (tempC == 85.0f) {
+    Serial.println("DS18B20 power-on value (85 C), skipped");
+    return;
+  }
 
   unsigned long now = millis();
   cold.track(tempC < COLD_BELOW, tempC >= COLD_BELOW + HYSTERESIS, now);
