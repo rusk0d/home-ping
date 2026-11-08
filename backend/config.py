@@ -117,6 +117,9 @@ FRIDGE_DOOR_RISE_C = 2.0
 FRIDGE_DOOR_RISE_MINUTES = 5
 FRIDGE_DOOR_OPEN_MINUTES = 10
 FRIDGE_DOOR_CLOSED_C = 1.0
+# A fridge temperature outside this is a sensor glitch, not the fridge (#352): the DS18B20
+# reads exactly 85.0 °C after a brownout or a data-line glitch, inside ENV_VALID. Stored as null.
+FRIDGE_VALID = (-30, 50)
 ROOM_DEVICES_SQL = "device NOT IN (" + ", ".join(f"'{d}'" for d in NON_ROOM_DEVICES) + ")"
 
 # Air-out helper (#245): window spells and CO₂ excursions, pushes under the "air" switch since
