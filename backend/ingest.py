@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 import state
 from config import (
-    ALERT_MAX, ARRIVAL_CONFIRM_SECONDS, CO2_VALID, DEVICE_ID_MAX, ENV_VALID, FRIDGE_DEVICE, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
+    ALERT_MAX, ARRIVAL_CONFIRM_SECONDS, CO2_VALID, DEVICE_ID_MAX, ENV_VALID, FRIDGE_DEVICE, FRIDGE_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
     HISTORY_24H_TOPIC, ROOM_DEVICES_SQL, NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
     NON_ROOM_DEVICES, PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, PRESSURE_DROP_THRESHOLD, PRESSURE_HYSTERESIS,
     PRESSURE_WINDOW_HOURS, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD, TOPIC,
@@ -210,6 +210,12 @@ def on_message(client, userdata, msg):
         if bad:
             log.warning("%s: implausible env reading %s, dropped", device, bad)
             temp = hum = pressure = None
+
+        # The fridge's DS18B20 (#352): its 85 °C power-on value would stay in hourly for good
+        if device == FRIDGE_DEVICE and temp is not None and not (
+                isinstance(temp, (int, float)) and FRIDGE_VALID[0] <= temp <= FRIDGE_VALID[1]):
+            log.warning("%s: implausible fridge temperature %r, stored as null", device, temp)
+            temp = None
 
         lo, hi = CO2_VALID
         if isinstance(co2, (int, float)) and not lo <= co2 <= hi:
