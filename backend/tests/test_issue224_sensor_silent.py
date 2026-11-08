@@ -98,3 +98,42 @@ def test_issue224_sensor_silent(env):
     env_row(main, 0)
     nodes.check_sensors()
     check("back after a muted warning: no push", pushes() == [] and store.get_state(f"sensor_silent:{main}:env") in ("", "0"))
+
+
+def test_issue395_fridge_sensor_error(env):
+    """#395: a dead DS18B20 publishes without temp_c (sensor_error): the fridge node stays
+    online, and the silent-sensor push names its own sensor."""
+    import json
+    import sqlite3
+    import types
+    import server
+    import config, alerts, ingest, nodes
+    server.prepare()
+    m = alerts.messaging
+    fridge = config.FRIDGE_DEVICE
+
+    def sql(q, *args):
+        conn = sqlite3.connect(config.DB)
+        conn.execute(q, args)
+        conn.commit()
+
+    # Readings for an hour, the last 20 min of them without a temperature (sensor_error)
+    for s in range(0, 3600, 60):
+        temp = None if s < 20 * 60 else 3.5
+        sql("INSERT INTO readings (device, ts, temp, alert) VALUES (?, datetime('now', ?), ?, '')",
+            fridge, f"-{s} seconds", temp)
+    sql("INSERT INTO devices (device, last_seen) VALUES (?, datetime('now'))", fridge)
+
+    # Through ingest, an error message is a reading like any other: stored, the node seen
+    ingest.on_message(None, None, types.SimpleNamespace(retain=False, topic="home/esp32/fridge_temp", payload=json.dumps(
+        {"device": fridge, "sensor_error": True, "alert": "", "rssi": -50, "uptime": 4000}).encode()))
+    conn = sqlite3.connect(config.DB)
+    row = conn.execute("SELECT temp, alert, uptime FROM readings WHERE device = ? ORDER BY id DESC LIMIT 1", (fridge,)).fetchone()
+    check(f"stored without a temperature ({row})", row == (None, "", 4000))
+
+    nodes.check_sensors()
+    bodies = [c.kwargs["data"]["body"] for c in m.Message.call_args_list
+              if c.kwargs.get("data", {}).get("event") == "SENSOR_STATUS"]
+    check(f"silent push names the DS18B20 ({bodies})", bodies == [f"{fridge}: no DS18B20 readings for 15 min"])
+    check("the main node's is still the BME280", nodes.sensor_name("home_ping_esp32", "env") == "BME280"
+          and nodes.sensor_name("home_ping_esp32", "co2") == "CO₂ sensor")
