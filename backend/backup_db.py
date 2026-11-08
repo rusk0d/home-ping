@@ -29,6 +29,8 @@ OFFSITE_MARKER = ".offsite-ok"   # same name as config.OFFSITE_MARKER (the watch
 
 def backup(db, out_dir, keep):
     out_dir.mkdir(parents=True, exist_ok=True)
+    for stale in out_dir.glob("*.tmp"):   # left by a run that was killed
+        stale.unlink()
     tmp = out_dir / "data.db.tmp"
     target = out_dir / f"data-{date.today().isoformat()}.db.gz"
 
@@ -44,9 +46,16 @@ def backup(db, out_dir, keep):
         tmp.unlink(missing_ok=True)
         raise RuntimeError(f"integrity check of the copy failed: {ok}")
 
-    with open(tmp, "rb") as f_in, gzip.open(target, "wb") as f_out:
-        shutil.copyfileobj(f_in, f_out)
-    tmp.unlink()
+    # Gzipped next to the target and renamed into place (#355): a failed or killed run (disk
+    # full) must not leave a truncated data-<date>.db.gz that the watchdog counts as a backup
+    part = target.with_name(target.name + ".tmp")
+    try:
+        with open(tmp, "rb") as f_in, gzip.open(part, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        os.replace(part, target)
+    finally:
+        part.unlink(missing_ok=True)
+        tmp.unlink(missing_ok=True)
 
     # Same date run twice overwrites; the names sort by date
     old = sorted(out_dir.glob("data-*.db.gz"))[:-keep] if keep > 0 else []

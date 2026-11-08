@@ -41,3 +41,30 @@ def test_issue78_backup(env):
 
     r = subprocess.run([sys.executable, str(backend / "backup_db.py"), "--db", "missing.db"], capture_output=True, text=True)
     check("missing DB -> non-zero exit", r.returncode != 0 and "not found" in r.stderr)
+
+    # #355: gzip failing halfway (disk full) leaves no truncated backup that looks fresh
+    import os, time
+    sys.path.insert(0, str(backend))
+    import backup_db
+    out = Path("backups355")
+    out.mkdir()
+    (out / "data-2026-11-01.db.gz").write_bytes(gzip.compress(b"yesterday"))
+    os.utime(out / "data-2026-11-01.db.gz", (time.time() - 86400,) * 2)
+    (out / "data-2026-10-31.db.gz.tmp").write_bytes(b"left by a killed run")
+    real = backup_db.shutil.copyfileobj
+    def disk_full(f_in, f_out):
+        f_out.write(f_in.read(4096))
+        raise OSError(28, "No space left on device")
+    backup_db.shutil.copyfileobj = disk_full
+    try:
+        backup_db.backup(Path("data.db"), out, 7)
+        failed = False
+    except OSError:
+        failed = True
+    finally:
+        backup_db.shutil.copyfileobj = real
+    names = sorted(p.name for p in out.iterdir())
+    check(f"disk full: raised, only yesterday's backup left ({names})", failed and names == ["data-2026-11-01.db.gz"])
+    target = backup_db.backup(Path("data.db"), out, 7)
+    check("the next run writes a whole one", gzip.decompress(target.read_bytes())[:16] == b"SQLite format 3\x00"
+          and not list(out.glob("*.tmp")))
