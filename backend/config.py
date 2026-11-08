@@ -59,10 +59,12 @@ HEALTH_MAX_MESSAGE_AGE = 300   # /api/health fails when no live MQTT message cam
 # #290). occupancy: the radar whose rows are the occupancy history; co2: the node the air-out
 # helper watches. A device not listed counts as "room" under its ID. Served by /api/devices
 # and /api/latest_all ("room"), so the app needn't hard-code which node is what.
+# env_sensor: the name of its temperature sensor in the silent-sensor pushes (#395); BME280
+# when not given.
 DEVICES = {
     "home_ping_esp32": {"name": "Main node", "role": "room", "occupancy": True, "co2": True},
     "hallway_presence_esp32": {"name": "Hallway radar", "role": "room"},
-    "fridge_temp_esp32": {"name": "Fridge", "role": "fridge"},
+    "fridge_temp_esp32": {"name": "Fridge", "role": "fridge", "env_sensor": "DS18B20"},
 }
 
 

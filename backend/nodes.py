@@ -6,7 +6,7 @@ import time
 
 import state
 from config import (
-    NODE_CHECK_INTERVAL, NODE_OFFLINE_ALERT_SECONDS,
+    DEVICES, NODE_CHECK_INTERVAL, NODE_OFFLINE_ALERT_SECONDS,
     SENSOR_SILENT_SECONDS,
 )
 from store import db, log_event, parse_ts, utcnow
@@ -91,7 +91,7 @@ def _outage(device):
 # although the node was sending other data at the start of that time and still is, so an
 # outage (NODE_STATUS) or a reboot doesn't count. Once per excursion, an Excursion in
 # sensor_silent:<device>:<sensor> (#305); quiet hours postpone it, like the server watchdog.
-SENSORS = {   # sensor: (name in pushes, a valid value, the sensor reported at all)
+SENSORS = {   # sensor: (usual name in pushes, see sensor_name(); a valid value; the sensor reported at all)
     "env": ("BME280", "temp IS NOT NULL", "temp IS NOT NULL"),
     "co2": ("CO₂ sensor", "co2 IS NOT NULL AND co2_ok = 1", "co2 IS NOT NULL OR co2_ok IS NOT NULL"),
 }
@@ -123,8 +123,16 @@ def check_sensors():
                 _sensor_state(device, sensor, silent=bool(alive) and not ok, back=ok)
 
 
+def sensor_name(device, sensor):
+    """The sensor's name in the pushes: the device's own temperature sensor (config.DEVICES
+    env_sensor, the fridge's DS18B20, #395), else the usual one for that kind."""
+    if sensor == "env":
+        return DEVICES.get(device, {}).get("env_sensor", SENSORS[sensor][0])
+    return SENSORS[sensor][0]
+
+
 def _sensor_state(device, sensor, silent, back):
-    name = SENSORS[sensor][0]
+    name = sensor_name(device, sensor)
     # One notification slot per sensor: the "back" push replaces the warning in the app
     excursion = Excursion(f"sensor_silent:{device}:{sensor}", "nodes", device,
                           {"event": "SENSOR_STATUS", "device": f"{device}:{sensor}"}, postpone_quiet=True)

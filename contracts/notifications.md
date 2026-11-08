@@ -235,7 +235,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 
 - Trigger: `check_sensors()` every 30 s, in `node_check_loop` after the offline check
   (`nodes.py`). For each device online (`last_seen` within 300 s, not in `NODE_OFFLINE`) and
-  each sensor it has in the raw `readings` (kept 2 days): `env` (BME280: a row with `temp`)
+  each sensor it has in the raw `readings` (kept 2 days): `env` (BME280, the fridge's DS18B20: a row with `temp`)
   and `co2` (MH-Z19C: a row with `co2` or `co2_ok`). A radar-only node has neither.
 - **Silent:** no valid value for `SENSOR_SILENT_SECONDS` (**900 s**; `env`: `temp` not null,
   `co2`: `co2` not null and `co2_ok` = 1), while the node was sending other data at the start
@@ -245,7 +245,9 @@ All pushes go to topic `env`. For `data` keys, see each entry.
 - **Once per excursion**, persisted as `system_state` `sensor_silent:<device>:<sensor>`
   (`sent`, `muted` by the `nodes` switch, `''` fine). A failed send is retried at
   the next check. Switch `nodes`; **quiet hours postpone it**, like the watchdog.
-- Push: title `Sensor not reporting`, body `{device}: no {BME280 | CO₂ sensor} readings for 15 min`,
+- Push: title `Sensor not reporting`, body `{device}: no {sensor} readings for 15 min`, where
+  `{sensor}` is the device's own (`config.DEVICES` `env_sensor`: the fridge's `DS18B20`, #395),
+  else `BME280` for `env` and `CO₂ sensor` for `co2`,
   data `{"event": "SENSOR_STATUS", "status": "silent", "device": "<device>:<env|co2>"}`.
   Logs `SENSOR_SILENT_ENV` / `SENSOR_SILENT_CO2` (device = the node).
 - Back (a valid value within the window again): title `Sensor reporting again`, body
@@ -449,4 +451,5 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #305: one excursion helper and state format (`sent`/`muted`[`:<band>`]); a muted watchdog's end is logged too.
 - #336: fridge door left open push (`FRIDGE_DOOR`), switch `fridge`.
 - #339: watchdog `drill`: the monthly restore drill from S3 failed or is overdue.
+- #395: a dead fridge sensor is a silent sensor (`DS18B20`), not "Node offline": the node publishes without `temp_c`.
 - #393: the fridge door push (`FRIDGE_DOOR`) comes through quiet hours, like a fridge too warm (#351).
