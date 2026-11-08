@@ -444,9 +444,10 @@ void render(const DepartureResult &r) {
   int count = r.count;
   bool loaded = r.loaded;
 
-  // Get current time
+  // Current time. No waiting (#384): the default timeout is 5 s, and until NTP has synced
+  // every redraw stopped the radar and MQTT that long; the header just leaves the time out
   struct tm timeinfo;
-  bool hasTime = getLocalTime(&timeinfo);
+  bool hasTime = getLocalTime(&timeinfo, 0);
 
   // Draw display: the whole screen, as a full or a partial update (#133)
   unsigned long nowMs = millis();
