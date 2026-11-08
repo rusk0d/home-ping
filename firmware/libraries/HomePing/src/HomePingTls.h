@@ -82,3 +82,17 @@ M71DMi+y1+TRSJVClEMwvA4yL++7q9XZx5r5wBRWB4kQTKH5qyoZnDw7iiuh1lID
 yDFx8r7i9vIJU5HS3moZLkYWAOilMaV9N56A9Bgb6dNcHkvg3NoaYA==
 -----END CERTIFICATE-----
 )PEM";
+
+#include <WiFiClientSecure.h>
+
+// The MQTT client's TLS setup (#394): the roots above, and timeouts. The core's defaults are a
+// 30 s TCP connect and a 120 s handshake; with WiFi up but the internet or the server down,
+// packets are dropped, not refused, so every MQTT attempt blocked loop() (radar, OTA) that long.
+const uint32_t HP_TLS_CONNECT_TIMEOUT_MS = 5000;
+const unsigned long HP_TLS_HANDSHAKE_TIMEOUT_S = 10;
+
+inline void hpSetupTls(WiFiClientSecure& client) {
+  client.setCACert(HP_MQTT_ROOT_CA);
+  client.setConnectionTimeout(HP_TLS_CONNECT_TIMEOUT_MS);
+  client.setHandshakeTimeout(HP_TLS_HANDSHAKE_TIMEOUT_S);
+}

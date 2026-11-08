@@ -196,7 +196,7 @@ void setup() {
   // Network next, so nothing blocks once the radar starts streaming
   hpConnectWiFi(WIFI_SSID, WIFI_PASS);
   hpStartOTA(DEVICE_NAME, OTA_PASS);
-  espClient.setCACert(HP_MQTT_ROOT_CA);
+  hpSetupTls(espClient);   // roots and timeouts (#394)
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
   hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);   // first attempt; loop() retries (#120)
