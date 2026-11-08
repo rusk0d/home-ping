@@ -201,7 +201,9 @@ Backend handling: presence handler (key `presence` present). Derives
 `occupied = moving OR (stationary AND signal >= 15)` and stores the row in
 `presence_readings`. Runs the radar-offline and occupancy-arrival alert
 checks (see `notifications.md`). Missing fields default to: `presence`/`stationary`/`moving` = false,
-`distance`/`signal`/`rssi`/`uptime` = 0, `radar_connected` = **true**, `device` = `"home_ping_esp32"`.
+`distance`/`signal`/`rssi` = 0 (also when not a number, e.g. `"far"`: the rest of the message is
+kept, #358), `uptime` = null (not 0, which would look like a reboot, #226), `radar_connected` =
+**true**, `device` = `"home_ping_esp32"`.
 
 ---
 
