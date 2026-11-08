@@ -56,6 +56,8 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
   `start` inclusive, `end` exclusive).
 - **Occupancy alerts (`OCCUPIED`) are never muted**: they keep their own Armed switch
   and come through during quiet hours.
+- **A fridge too warm** (`warm_critical*`, #351) comes through quiet hours too; only the `fridge`
+  switch mutes it (section 11).
 - A muted alert counts as handled: its cooldown starts (so it's logged at most once per
   15 min, like a sent one) and once-per-outage alerts (radar, node offline) are not
   repeated after quiet hours end or the switch is turned back on. Some alerts are
@@ -308,11 +310,16 @@ watchdog or rollup doesn't skip it (#303).
   for the recovery: one notification slot, so the recovery replaces the alert (#300; before:
   `FRIDGE_NORMAL`). Logs `FRIDGE_ALERT` / `FRIDGE_ALERT_RECOVERY`.
 - `system_state`: `fridge_alert_state` (the state last handled) and `fridge_alert_shown`
-  (`sent` / `muted` / `''`). Both are saved only after the push went out, so a failed push is
+  (`sent` / `muted` / `''`), `fridge_alert_urgent` (`1` while a `warm_critical*` push is the one
+  on the phone, #351). Both are saved only after the push went out, so a failed push is
   retried with the #251 backoff instead of being lost.
 - **Muted** (switch `fridge` off, or quiet hours): saved as `muted`. If the state still holds once
   it isn't muted any more, it's pushed then; if it ends first, nothing is pushed, also no
   "back to normal" (#300).
+- **Too warm comes through quiet hours** (since #351): `warm_critical` and `warm_critical_duration`
+  are muted only by the `fridge` switch, like the occupancy alert ignores quiet hours. So is the
+  "back to normal" that replaces one of them (also after cooling down via `warm_low`). `cold`,
+  `warm_low` and their recoveries are muted by quiet hours as above.
 - **Cooling down** from `warm_critical*` to `warm_low`/`cold`: saved without a push, the more
   severe notification stays until "back to normal".
 - **Node reboots**: the node keeps its timers in RAM, so after a reboot it reports `""` (or a
