@@ -172,13 +172,19 @@ def nudge_close(since, minutes, temps, co2s):
 
 
 def window_open_on_leave():
-    """"Window still open?" when the phone's geofence arms occupancy (#238) during a spell."""
+    """"Window still open?" when the phone's geofence arms occupancy (#238) during a spell.
+    Once per spell (#396): GPS jitter at the geofence edge (exit, enter, exit) or a retried
+    arm whose response was lost would push it again. A failed send is tried on the next leave."""
     spell = get_state("air:window", "")
     if not spell:
         return
-    minutes = (utcnow() - parse_ts(spell.split("|")[0])).total_seconds() / 60
-    alert(AIR_DEVICE, "WINDOW_LEFT_OPEN", f"open {minutes:.0f} min", "Window still open?",
-          f"You left home and a window has been open for {minutes:.0f} min.", WINDOW_DATA, kind="air")
+    since = spell.split("|")[0]
+    if get_state("air:window_left", "") == since:
+        return
+    minutes = (utcnow() - parse_ts(since)).total_seconds() / 60
+    if alert(AIR_DEVICE, "WINDOW_LEFT_OPEN", f"open {minutes:.0f} min", "Window still open?",
+             f"You left home and a window has been open for {minutes:.0f} min.", WINDOW_DATA, kind="air"):
+        set_state("air:window_left", since)
 
 
 def air_advice(temp, humidity):
