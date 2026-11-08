@@ -119,6 +119,9 @@ def check_certs(now=None):
     _certs_checked = now
     for target in CERT_CHECK:
         host, _, port = target.rpartition(":")
+        # One alert per target, not per port (#397): two hosts on :443 would end each other's
+        # alert and replace each other's push
+        name = f"cert_{host}_{port}"
         try:
             expires = cert_expiry(host, int(port))
         except (OSError, ValueError) as e:
@@ -128,12 +131,12 @@ def check_certs(now=None):
             continue
         if isinstance(expires, str):
             CERT_STATUS[target] = {"expires": None, "error": expires}
-            _watch(f"cert_{port}", True, False, "Certificate problem", f"{target}: {expires}", "", "")
+            _watch(name, True, False, "Certificate problem", f"{target}: {expires}", "", "")
             continue
         CERT_STATUS[target] = {"expires": expires, "error": None}
         days = (expires - now) / 86400
         until = time.strftime("%Y-%m-%d", time.localtime(expires))
-        _watch(f"cert_{port}", days < CERT_MIN_DAYS, days >= CERT_MIN_DAYS,
+        _watch(name, days < CERT_MIN_DAYS, days >= CERT_MIN_DAYS,
                "Certificate expires soon",
                f"{target} expires in {max(days, 0):.0f} days ({until}); is the renewal running?",
                "Certificate renewed", f"{target} is valid until {until}")
