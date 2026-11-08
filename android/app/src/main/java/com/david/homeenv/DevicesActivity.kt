@@ -125,6 +125,7 @@ class DevicesActivity : AppCompatActivity() {
         val id = d.optString("device")
         val name = d.optString("name").ifEmpty { id }
         val online = d.optBoolean("online")
+        val known = d.optBoolean("known", true)   // in the backend's registry (#359)
         val h = d.optJSONObject("health") ?: JSONObject()
 
         val lastSeen = d.optTs("last_seen")
@@ -132,11 +133,17 @@ class DevicesActivity : AppCompatActivity() {
             if (online) "online" else "offline",
             lastSeen?.takeIf { !online }?.let { "last seen ${HomeFormat.whenText(it)}" },
             id.takeIf { it != name },
+            "not in the device list".takeIf { !known },
         ).joinToString(" · ")
 
         return newCard().apply {
-            accentColor = Levels.color(context, if (online) R.color.good else R.color.bad)
-            addView(HomeFormat.statusLine(context, name, meta, online))
+            // A node not in the registry (e.g. retired) being offline is no issue: grey, not red
+            accentColor = Levels.color(context, when {
+                online -> R.color.good
+                known -> R.color.bad
+                else -> R.color.faint
+            })
+            addView(HomeFormat.statusLine(context, name, meta, if (online || known) online else null))
 
             val rows = mutableListOf<Triple<String, String, Int?>>()
             h.optNum("rssi")?.toInt()?.let { rssi ->

@@ -18,13 +18,17 @@ import java.util.Locale
 // The Home screen's cards, one renderer each (#306, R5), fed from /api/dashboard
 // (contracts/api.md). HomeFragment only loads the data and calls them.
 
-/** A node from /api/devices: [name] and [role] ("room" / "fridge") from the backend's registry (#306). */
-class Device(val id: String, val name: String, val role: String, val online: Boolean) {
+/**
+ * A node from /api/devices: [name] and [role] ("room" / "fridge") from the backend's registry
+ * (#306); [known]: in that registry, false for e.g. a retired node (#359; true from an older backend).
+ */
+class Device(val id: String, val name: String, val role: String, val online: Boolean, val known: Boolean) {
     companion object {
         fun list(devices: JSONArray?): List<Device> = (0 until (devices?.length() ?: 0)).mapNotNull { i ->
             val d = devices?.optJSONObject(i) ?: return@mapNotNull null
             val id = d.optString("device")
-            Device(id, d.optString("name").ifEmpty { id }, d.optString("role").ifEmpty { "room" }, d.optBoolean("online"))
+            Device(id, d.optString("name").ifEmpty { id }, d.optString("role").ifEmpty { "room" }, d.optBoolean("online"),
+                d.optBoolean("known", true))
         }
     }
 }
