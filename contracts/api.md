@@ -190,6 +190,8 @@ Client: Android Home reads temperature/humidity (+ `env_ts`) from the `room` ent
 the main node after the merge, `co2_sensor_esp32` before; falls back to those IDs if the backend
 has no `env_ts`/`co2_ts`). Plus `uptime` per device for the device list (the retired
 `co2_sensor_esp32` only while `/api/devices` lists it) and `combined.{occupied, confidence}`.
+The fridge card (role `fridge`) shows `temp`, `alert`, `door_open(_since)` and ages them by
+`env_ts`, falling back to `ts` (#402: during a sensor error the newest message has no temperature).
 
 ### GET `/api/stats24h_combined`
 
@@ -602,3 +604,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #339: `/api/server_status` has `drill`.
 - #359: `/api/devices` has `known` (in the device registry).
 - #361: `/api/latest_all`'s fridge entry has `door_open` and `door_open_since`.
+- #402: app only: the fridge card's age comes from `env_ts`; no endpoint changed.
