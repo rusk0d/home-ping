@@ -349,15 +349,17 @@ The backend's own rule, from the readings (the node's `alert` doesn't know about
 - **Open**: still above base + `FRIDGE_DOOR_CLOSED_C` (1.0 °C) `FRIDGE_DOOR_OPEN_MINUTES` (10)
   after the start → `Fridge door open?` / `Up from 3.0 to 7.5 °C in 10 min and not cooling down`.
   Once per rise (`alerts.Excursion`).
-- **Closed**: back within `FRIDGE_DOOR_CLOSED_C` of the base → the rise is over; after a sent
-  push `Fridge door closed` / `Back to 3.6 °C` replaces it. A door shut within a few minutes
+- **Closed**: back within `FRIDGE_DOOR_CLOSED_C` of the base, or `FRIDGE_DOOR_FALL_C` (0.5 °C)
+  below the rise's peak (since #411: warm food keeps a shut fridge warm for hours, a door left
+  open doesn't cool down) → the rise is over; after a sent push `Fridge door closed` /
+  `Back to 3.6 °C` replaces it. A door shut within a few minutes
   cools back before 10 min: nothing is pushed.
 - data `{"event": "FRIDGE_DOOR", "device": "fridge_temp_esp32"}`: its own notification slot (not
   the temperature alert's). Logs `FRIDGE_DOOR_OPEN` / `FRIDGE_DOOR_CLOSED`.
 - Switch `fridge` only: **comes through quiet hours** (since #393; muted before, so a door left
   open in the evening was never pushed), open and closed alike. Switched off, an open is saved
   as `muted` and its close only logged.
-- `system_state`: `fridge_door_rise` (the watched rise) and `fridge_door` (the push's state).
+- `system_state`: `fridge_door_rise` (the watched rise: start, base, peak) and `fridge_door` (the push's state).
 - Tuning: `tools/fridge_door_replay.py` replays the stored raw readings (2 days) through
   `door_step()` and prints the rises and the pushes it would have sent; options override the limits.
 
@@ -457,3 +459,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #396: "Window still open?" once per window spell, not on every location arm.
 - #397: the certificate watchdog is keyed by target (`cert_<host>_<port>`), not by port.
 - #406: the fridge's warm pushes say "Above 7 °C" (the node's limit, was 5 °C); the reboot hold's normal range is 0.5–6.5 °C.
+- #411: the fridge door counts as closed once it cools `FRIDGE_DOOR_FALL_C` (0.5 °C) below its peak, too.
