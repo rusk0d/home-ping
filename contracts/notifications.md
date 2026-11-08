@@ -34,7 +34,10 @@ inferred then and hasn't been confirmed since.
 ### Android handling
 
 - `onMessageReceived` reads `title`/`body`/`event`/`device` from `data`, falling back to
-  a `notification` block (older backends). Tapping the notification opens `MainActivity`.
+  a `notification` block (older backends). Tapping the notification opens the screen it's about
+  (`Screens.forPushEvent`, #354), with Home under it: `TEMP` / `HUMIDITY_*` / `PRESSURE` /
+  `FRIDGE_ALERT` / `FRIDGE_DOOR` the History chart, `BASELINE` History, `NODE_STATUS` /
+  `SENSOR_STATUS` / `WATCHDOG` / `RADAR_DISCONNECTED` Devices, the rest (`OCCUPIED`, `AIR`) Home.
 - Channels (created at app start, IMPORTANCE_HIGH): `occupancy` ("Occupancy alerts") for
   `OCCUPIED`, `air` ("Air quality", IMPORTANCE_LOW: no sound or vibration, #245) for `AIR`,
   `homeenv_channel` ("Sensor alerts") for everything else. The manifest makes
