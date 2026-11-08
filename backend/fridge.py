@@ -39,17 +39,17 @@ EVENT = "FRIDGE_ALERT"   # alert and recovery share it: one notification slot on
 
 MESSAGES = {
     "cold": ("Fridge too cold", "Below 0 °C for 30+ minutes"),
-    "warm_low": ("Fridge warming up", "Above 5 °C for 30+ minutes"),
+    "warm_low": ("Fridge warming up", "Above 7 °C for 30+ minutes"),
     "warm_critical": ("Fridge too warm", "Above 8 °C for 30+ minutes"),
-    "warm_critical_duration": ("Fridge too warm (sustained)", "Above 5 °C for 2+ hours"),
+    "warm_critical_duration": ("Fridge too warm (sustained)", "Above 7 °C for 2+ hours"),
 }
 URGENT = ("warm_critical", "warm_critical_duration")
 SEVERITY = {"": 0, "cold": 1, "warm_low": 1, "warm_critical": 2, "warm_critical_duration": 2}
 
 # Mirrors the firmware (fridge_node.ino): its longest timer, and the range where no condition
-# can hold (thresholds 0 / 5 °C, 0.5 °C hysteresis)
+# can hold (thresholds 0 / 7 °C, 0.5 °C hysteresis; 5 °C before #406)
 NODE_TIMERS_S = 2 * 60 * 60
-NORMAL_RANGE = (0.5, 4.5)
+NORMAL_RANGE = (0.5, 6.5)
 
 
 def _push(current, last, urgent):

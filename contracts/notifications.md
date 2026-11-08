@@ -307,9 +307,9 @@ watchdog or rollup doesn't skip it (#303).
 | `alert` | Title / body |
 |---|---|
 | `cold` | `Fridge too cold` / `Below 0 °C for 30+ minutes` |
-| `warm_low` | `Fridge warming up` / `Above 5 °C for 30+ minutes` |
+| `warm_low` | `Fridge warming up` / `Above 7 °C for 30+ minutes` |
 | `warm_critical` | `Fridge too warm` / `Above 8 °C for 30+ minutes` |
-| `warm_critical_duration` | `Fridge too warm (sustained)` / `Above 5 °C for 2+ hours` |
+| `warm_critical_duration` | `Fridge too warm (sustained)` / `Above 7 °C for 2+ hours` |
 | `""` after one of the above | `Fridge back to normal` / `Temperature is within normal range` |
 
 - data `{"event": "FRIDGE_ALERT", "device": "fridge_temp_esp32", "alert": "<state>"}`, `"alert": ""`
@@ -330,7 +330,7 @@ watchdog or rollup doesn't skip it (#303).
   severe notification stays until "back to normal".
 - **Node reboots**: the node keeps its timers in RAM, so after a reboot it reports `""` (or a
   milder state) for up to 2 h. A step down while the node's `uptime` < 2 h and the reading is
-  outside 0.5–4.5 °C is held as a reboot, not a recovery (#300). Without `uptime` (older
+  outside 0.5–6.5 °C (0.5–4.5 before #406) is held as a reboot, not a recovery (#300). Without `uptime` (older
   firmware) a step down is taken as it comes.
 - Cooldown per state: key `fridge:<state>` (`fridge:normal` for the recovery), 15 min. A state
   that comes back within its cooldown waits (pushed on the first check after it, if still on);
@@ -456,3 +456,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #393: the fridge door push (`FRIDGE_DOOR`) comes through quiet hours, like a fridge too warm (#351).
 - #396: "Window still open?" once per window spell, not on every location arm.
 - #397: the certificate watchdog is keyed by target (`cert_<host>_<port>`), not by port.
+- #406: the fridge's warm pushes say "Above 7 °C" (the node's limit, was 5 °C); the reboot hold's normal range is 0.5–6.5 °C.
