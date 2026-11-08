@@ -329,7 +329,7 @@ The widget reads `co2` for its CO2 row (fetched alongside `/api/latest`; `--` if
 Every row in the `devices` table.
 
 ```json
-[{"device":"home_ping_esp32","name":"Main node","role":"room","last_seen":"2026-10-13T17:42:15Z","online":true,
+[{"device":"home_ping_esp32","name":"Main node","role":"room","known":true,"last_seen":"2026-10-13T17:42:15Z","online":true,
   "health":{"rssi":-61,"uptime":86400,"heap_free":151000,"heap_min":120500,"heap_block":110000,
             "reset_reason":"power-on","radar_connected":true}}]
 ```
@@ -342,7 +342,9 @@ allocatable) bytes, `reset_reason` the name from `store.RESET_REASONS` (`brownou
 `radar_connected` on radar nodes. A key is missing when the node doesn't send it.
 
 `name` and `role` (since #306) come from `config.DEVICES`: role `room` or `fridge`; a device not
-listed there is `room`, named by its ID.
+listed there is `room`, named by its ID. `known` (since #359): whether it's listed there. A node
+that isn't (e.g. retired, like `co2_sensor_esp32` after the node merge) stays in the list until
+`DEVICES_RETENTION_DAYS` (30) after its last message; the app doesn't count it as an issue when offline.
 
 Sensor nodes only. (Until #15, `/api/register_token` added an `"unknown"` row for
 the phone; the backend deletes that row on start.)
@@ -592,3 +594,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #326: app only: a fridge gauge (Level bands: fridge); no endpoint changed.
 - #331: `/api/hourly` and `/api/daily` have `avg_fridge`, `min_fridge`, `max_fridge`.
 - #339: `/api/server_status` has `drill`.
+- #359: `/api/devices` has `known` (in the device registry).
