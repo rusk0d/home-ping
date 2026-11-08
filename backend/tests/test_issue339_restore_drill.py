@@ -135,6 +135,19 @@ def test_issue339_restore_drill(env):
     r, res = run()
     check(f"not a database: failed ({res['error']})", r.returncode == 1 and not res["ok"])
 
+    # #356: uploads stopped days ago: the newest backup still restores, but the drill fails
+    for f in bucket.iterdir():
+        t = time.time() - 4 * 86400
+        os.utime(f, (t, t))
+    upload("data-2026-11-06.db.gz", good, age_s=3 * 86400)
+    r, res = run()
+    check(f"3 days old: restored, but failed ({res['error']})", r.returncode == 1 and not res["ok"]
+          and "3.0 days old" in res["error"] and any("All checks PASSED" in line for line in res["validate"]))
+    check("its age recorded", 71 < res["backup_age_hours"] < 73)
+    upload("data-2026-11-07.db.gz", good, age_s=40 * 3600)
+    r, res = run()
+    check(f"40 h old (a late night): OK ({res.get('error')})", r.returncode == 0 and res["ok"])
+
 
 def test_issue339_drill_watchdog(env):
     os.environ.update(BACKUP_S3_BUCKET="bucket", DRILL_AWS_ACCESS_KEY_ID="drill-key")
