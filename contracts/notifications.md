@@ -211,7 +211,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   body `No backup uploaded to S3 for over 26 h (last: …)`, or title `Restore drill failed`, body
   `The S3 backup didn't restore cleanly: {reason}`, or title `Restore drill overdue`, body
   `No restore drill for over 35 days (last: …)`;
-  data `{"event": "WATCHDOG", "device": "backup" | "disk" | "offsite" | "drill" | "cert_<port>"}`. Logs `WATCHDOG_BACKUP` /
+  data `{"event": "WATCHDOG", "device": "backup" | "disk" | "offsite" | "drill" | "cert_<host>_<port>"}`. Logs `WATCHDOG_BACKUP` /
   `WATCHDOG_DISK` / `WATCHDOG_OFFSITE` / `WATCHDOG_DRILL` (device `server`).
 - Over (a backup newer than 26 h; free space ≥ 1024 + 256 MB; an upload newer than 26 h):
   title `Backup OK again` / `Disk space OK again` / `Off-site backup OK again` (body `The database
@@ -221,7 +221,7 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   `{object} restored and validated`, `WATCHDOG_DRILL_OK`.
 - Certificates (since #206): every `host:port` in `.env` `CERT_CHECK` (none = no check), at
   most once an hour (`CERT_CHECK_INTERVAL`). The backend connects like a client (trusted chain,
-  host name) and reads the certificate's expiry. `device` = `cert_<port>` (one host per port).
+  host name) and reads the certificate's expiry. `device` = `cert_<host>_<port>`, one alert per target (#397).
   - Expires in less than `CERT_MIN_DAYS` (**14**; certbot renews at 30): title
     `Certificate expires soon`, body `{host:port} expires in {N} days ({date}); is the renewal running?`.
   - Fails verification (expired, wrong name, untrusted): title `Certificate problem`, body
@@ -229,7 +229,8 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   - Unreachable (connection error): no push, logged as a warning; the node and uptime
     monitoring cover outages.
   - Over (valid for at least 14 days again): title `Certificate renewed`, body
-    `{host:port} is valid until {date}`. Logs `WATCHDOG_CERT_<PORT>` / `WATCHDOG_CERT_<PORT>_OK`.
+    `{host:port} is valid until {date}`. Logs `WATCHDOG_CERT_<HOST>_<PORT>` / `WATCHDOG_CERT_<HOST>_<PORT>_OK`
+    (`WATCHDOG_CERT_<PORT>` before #397).
 
 ### 8. Sensor silent / back: `SENSOR_STATUS` (since #224)
 
@@ -454,3 +455,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #395: a dead fridge sensor is a silent sensor (`DS18B20`), not "Node offline": the node publishes without `temp_c`.
 - #393: the fridge door push (`FRIDGE_DOOR`) comes through quiet hours, like a fridge too warm (#351).
 - #396: "Window still open?" once per window spell, not on every location arm.
+- #397: the certificate watchdog is keyed by target (`cert_<host>_<port>`), not by port.

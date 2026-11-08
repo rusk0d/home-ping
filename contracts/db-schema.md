@@ -145,7 +145,7 @@ Known keys:
 | `baseline_seen:<metric>` | the hour that metric was last checked: the next one only continues the count if it's exactly one hour later (#302) | no | `baseline.check_baseline()` | `baseline.check_baseline()` |
 | `baseline_alerted:<metric>` | `'sent'` / `'muted'` while that excursion was pushed or muted, `''` after it | no | `baseline.check_baseline()` (#297) | `baseline.check_baseline()` |
 | `env_alerted:PRESSURE` | `'sent:falling'` / `'muted:falling'` while a pressure-falling excursion is on, `''` after it (#237, #305) | no | `ingest.check_pressure()` | `ingest.check_pressure()` |
-| `watchdog:<check>` | `'sent'` / `'muted'` while that server check (`backup`, `offsite`, `disk`, `cert_<port>`) is failing, `''` fine (#176, #305) | no | `server_checks._watch()` | `server_checks._watch()` |
+| `watchdog:<check>` | `'sent'` / `'muted'` while that server check (`backup`, `offsite`, `disk`, `cert_<host>_<port>`; `cert_<port>` before #397) is failing, `''` fine (#176, #305) | no | `server_checks._watch()` | `server_checks._watch()` |
 | `sensor_silent:<device>:<sensor>` | `'sent'` / `'muted'` while that sensor (`env`, `co2`) is silent, `''` once it's back (#224, #305) | no | `nodes._sensor_state()` | `nodes._sensor_state()` |
 | `fridge_alert_state` | the fridge node's alert state last handled (`''` = normal) | no | `fridge.check_fridge_alerts()` (#294) | `fridge.check_fridge_alerts()` |
 | `fridge_alert_shown` | `'sent'` / `'muted'` for that state's push, `''` when none (#300) | no | `fridge.check_fridge_alerts()` | `fridge.check_fridge_alerts()` |
@@ -272,3 +272,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #331: `hourly.fridge_avg`, `fridge_min`, `fridge_max`; migration 5 backfills them.
 - #336: `system_state` keys `fridge_door_rise`, `fridge_door`; event types `FRIDGE_DOOR_OPEN`, `FRIDGE_DOOR_CLOSED`.
 - #396: `system_state` key `air:window_left`.
+- #397: `watchdog:cert_<port>` becomes `watchdog:cert_<host>_<port>`; no migration (no cert alert was ever on, so the new key starts fresh).
