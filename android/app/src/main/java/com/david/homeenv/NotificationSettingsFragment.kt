@@ -23,6 +23,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import org.json.JSONObject
 
 class NotificationSettingsFragment : Fragment() {
@@ -71,7 +72,7 @@ class NotificationSettingsFragment : Fragment() {
     }
 
     private fun load() {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val s = withContext(Dispatchers.IO) { Api.getObject("/api/notification_settings") }
             if (s == null) {
                 b.status.text = "Can't reach the server. Settings can't be changed right now."
@@ -108,7 +109,7 @@ class NotificationSettingsFragment : Fragment() {
         if (settings == null) return
         val (h, m) = label.text.split(":").map { it.toIntOrNull() ?: 0 }.let { it[0] to it.getOrElse(1) { 0 } }
         val dialog = TimePickerDialog(requireContext(), { _, hour, minute ->
-            val hhmm = "%02d:%02d".format(hour, minute)
+            val hhmm = "%02d:%02d".format(Locale.US, hour, minute)   // ASCII digits: the backend wants HH:MM (#386)
             label.text = hhmm
             save(JSONObject().put("quiet_hours", JSONObject().put(field, hhmm)))
         }, h, m, true)
@@ -119,7 +120,7 @@ class NotificationSettingsFragment : Fragment() {
     }
 
     private fun save(change: JSONObject) {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val updated = withContext(Dispatchers.IO) { Api.postForObject("/api/notification_settings", change) }
             if (updated != null) {
                 show(updated)
@@ -133,7 +134,7 @@ class NotificationSettingsFragment : Fragment() {
     // ---------- occupancy arrival alert and location auto-arm ----------
 
     private fun setOccupancyArmed(armed: Boolean) {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val ok = withContext(Dispatchers.IO) {
                 Api.post("/api/occupancy_arm", JSONObject().put("armed", armed).put("source", "manual")) in 200..299
             }
@@ -150,7 +151,7 @@ class NotificationSettingsFragment : Fragment() {
     }
 
     private fun loadOccupancyArmedState() {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val armed = withContext(Dispatchers.IO) {
                 Api.getObject("/api/occupancy_status")?.takeIf { it.has("armed") }?.optBoolean("armed")
             }

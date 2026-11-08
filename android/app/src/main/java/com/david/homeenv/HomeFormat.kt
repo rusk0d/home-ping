@@ -11,7 +11,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.david.homeenv.ui.Levels
 import java.text.SimpleDateFormat
-import java.util.Calendar
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.util.Date
 import java.util.Locale
 
@@ -73,15 +74,16 @@ object HomeFormat {
     }
 
     /** "today 03:30", "yesterday 03:30" or "Oct 18 03:30", local time. */
-    fun whenText(t: Date): String {
-        val then = Calendar.getInstance().apply { time = t }
-        val now = Calendar.getInstance()
-        val daysAgo = (now.get(Calendar.YEAR) - then.get(Calendar.YEAR)) * 365 +
-            now.get(Calendar.DAY_OF_YEAR) - then.get(Calendar.DAY_OF_YEAR)
+    fun whenText(t: Date, now: Date = Date()): String {
+        // Calendar days between the two local dates: right across a year end, also after a
+        // leap year (it counted every year as 365 days, #385)
+        val zone = ZoneId.systemDefault()
+        val daysAgo = ChronoUnit.DAYS.between(t.toInstant().atZone(zone).toLocalDate(),
+            now.toInstant().atZone(zone).toLocalDate())
         val hhmm = SimpleDateFormat("HH:mm", Locale.getDefault()).format(t)
         return when (daysAgo) {
-            0 -> "today $hhmm"
-            1 -> "yesterday $hhmm"
+            0L -> "today $hhmm"
+            1L -> "yesterday $hhmm"
             else -> SimpleDateFormat("MMM d", Locale.US).format(t) + " $hhmm"
         }
     }
