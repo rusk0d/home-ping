@@ -200,7 +200,10 @@ class HomeFragment : Fragment() {
         s.stats?.let { c.stats.render(it) }
         // Only when the dashboard loaded: an unreachable server is the offline banner, not a dot
         if (s.devices != null) {
-            (activity as? MainActivity)?.setDeviceIssues(DeviceIssues.list(s.devices, s.restarts, s.server).size)
+            // Without the ignored ones (#380)
+            val issues = DeviceIssues.list(s.devices, s.restarts, s.server)
+            val complete = s.restarts != null && s.server != null
+            (activity as? MainActivity)?.setDeviceIssues(DeviceIssues.visible(requireContext(), issues, complete).size)
         }
         updateAges()
     }
