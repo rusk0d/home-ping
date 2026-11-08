@@ -149,7 +149,7 @@ Known keys:
 | `sensor_silent:<device>:<sensor>` | `'sent'` / `'muted'` while that sensor (`env`, `co2`) is silent, `''` once it's back (#224, #305) | no | `nodes._sensor_state()` | `nodes._sensor_state()` |
 | `fridge_alert_state` | the fridge node's alert state last handled (`''` = normal) | no | `fridge.check_fridge_alerts()` (#294) | `fridge.check_fridge_alerts()` |
 | `fridge_alert_shown` | `'sent'` / `'muted'` for that state's push, `''` when none (#300) | no | `fridge.check_fridge_alerts()` | `fridge.check_fridge_alerts()` |
-| `fridge_door_rise` | `"<start ts UTC>\|<base °C>"` of the fast rise being watched, `''` when none (#336) | no | `fridge.check_door()` | `fridge.check_door()` |
+| `fridge_door_rise` | `"<start ts UTC>\|<base °C>\|<peak °C>"` of the fast rise being watched (the peak since #411; an older `start\|base` still reads, its peak from the base), `''` when none (#336) | no | `fridge.check_door()` | `fridge.check_door()` |
 | `fridge_door` | `'sent'` / `'muted'` for the door-open push of that rise, `''` when none (#336, Excursion format) | no | `fridge.check_door()` | `fridge.check_door()` |
 | `air:window_left` | the `air:window` start ts of the spell that got "Window still open?" (sent or muted; once per spell, #396) | no | `air.window_open_on_leave()` | `air.window_open_on_leave()` |
 | `air:window_nudged` | the `air:window` start ts of the spell that got "Close the window?" (once per spell) | no | `air.nudge_close()` (#245 step 2) | `air.nudge_close()` |
@@ -273,3 +273,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #336: `system_state` keys `fridge_door_rise`, `fridge_door`; event types `FRIDGE_DOOR_OPEN`, `FRIDGE_DOOR_CLOSED`.
 - #396: `system_state` key `air:window_left`.
 - #397: `watchdog:cert_<port>` becomes `watchdog:cert_<host>_<port>`; no migration (no cert alert was ever on, so the new key starts fresh).
+- #411: `fridge_door_rise` keeps the rise's peak: `start|base|peak`.
