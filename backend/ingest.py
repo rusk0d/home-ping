@@ -50,7 +50,7 @@ def read_int(data, key):
     of 0 would look like a reboot to note_uptime() and log a bogus RESTART."""
     try:
         return int(data[key])
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):   # OverflowError: inf
         return None
 
 
@@ -60,9 +60,11 @@ def handle_presence_data(data):
     presence = 1 if data.get("presence", False) else 0
     stationary = 1 if data.get("stationary", False) else 0
     moving = 1 if data.get("moving", False) else 0
-    distance = int(data.get("distance", 0) or 0)
-    signal = int(data.get("signal", 0) or 0)
-    rssi = int(data.get("rssi", 0) or 0)
+    # A bad value in one field (a firmware bug: "far", {}) is 0, not the whole message lost:
+    # that would look like the node going offline (#358)
+    distance = read_int(data, "distance") or 0
+    signal = read_int(data, "signal") or 0
+    rssi = read_int(data, "rssi") or 0
     uptime = read_int(data, "uptime")
     radar_connected = 1 if data.get("radar_connected", True) else 0
 
