@@ -237,13 +237,10 @@ void loop() {
 
   ArduinoOTA.handle();
 
-  // WiFi watchdog
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi dropped, reconnecting...");
-    hpConnectWiFi(WIFI_SSID, WIFI_PASS);
-  }
+  // WiFi watchdog: doesn't block; restarts only after 10 min without WiFi (#383)
+  bool wifi = hpWiFiWatchdog();
 
-  if (!mqttClient.connected()) hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);
+  if (wifi && !mqttClient.connected()) hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);
   mqttClient.loop();
 
   radar.read();

@@ -35,7 +35,7 @@ inline void hpPublishPresence(PubSubClient& mqtt, ld2410& radar,
   doc["rssi"]            = WiFi.RSSI();
   doc["uptime"]          = hpUptimeSeconds();
   // Why the node last booted (#228): the ESP-IDF esp_reset_reason_t code, e.g. 1 power-on,
-  // 3 software (ESP.restart(): WiFi timeout, OTA), 4 panic, 6 task watchdog, 9 brownout
+  // 3 software (ESP.restart(): no WiFi, #383; OTA), 4 panic, 6 task watchdog, 9 brownout
   doc["reset_reason"]    = (int)esp_reset_reason();
   // Memory health for the metrics: free heap now, the lowest it has been since boot, and
   // the largest block that can still be allocated (fragmentation; TLS needs ~40 KB in one)

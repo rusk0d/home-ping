@@ -61,6 +61,29 @@ int main() {
   hpConnectMQTT(mqtt, "node1", "u", "p");
   CHECK("across the millis() wrap: attempts after 5 s", mqtt.attempts == before + 1);
 
+  // WiFi lost after boot (#383): never blocks, nudges every 30 s, restarts only after 10 min
+  hpConnectWiFi("ssid", "pass");
+  CHECK("boot connect turns auto-reconnect on", WiFi.autoReconnect);
+  fakeDelayed = 0; ESP.restarts = 0; WiFi.reconnects = 0;
+  fakeMillis = 0xFFFFFFFFul - 60000;   // the outage spans the millis() wrap
+  CHECK("connected: up", hpWiFiWatchdog());
+  WiFi.st = WL_DISCONNECTED;
+  bool up = false;
+  for (int i = 0; i < 9 * 60 * 20; ++i) { up = up || hpWiFiWatchdog(); fakeMillis += 50; }   // 9 min of 50 ms loops
+  CHECK("9 min down: never up, no restart", !up && ESP.restarts == 0);
+  CHECK("...and never waits", fakeDelayed == 0);
+  CHECK("...nudged about every 30 s", WiFi.reconnects >= 17 && WiFi.reconnects <= 18);
+  WiFi.st = WL_CONNECTED;
+  CHECK("back: up again", hpWiFiWatchdog());
+  WiFi.st = WL_DISCONNECTED;
+  fakeMillis += 1000; hpWiFiWatchdog();   // a new outage starts its own clock
+  uint32_t lost = fakeMillis;
+  while ((uint32_t)(fakeMillis - lost) < HP_WIFI_RESTART_MS - 50) { hpWiFiWatchdog(); fakeMillis += 50; }
+  CHECK("just under 10 min: no restart", ESP.restarts == 0);
+  fakeMillis = lost + HP_WIFI_RESTART_MS; hpWiFiWatchdog();
+  CHECK("10 min without WiFi: restarts", ESP.restarts == 1);
+  WiFi.st = WL_CONNECTED; hpWiFiWatchdog();
+
   // Uptime from the 64-bit timer (#8)
   fakeTimerUs = 60LL * 86400 * 1000000;   // 60 days
   CHECK("uptime past the old 49.7-day wrap", hpUptimeSeconds() == 60u * 86400);

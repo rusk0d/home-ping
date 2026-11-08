@@ -32,7 +32,11 @@ enum { WIFI_ALL_CHANNEL_SCAN = 1 };       // wifi_scan_method_t
 enum { WIFI_CONNECT_AP_BY_SIGNAL = 0 };   // wifi_sort_method_t
 struct FakeWiFi {
   int st = WL_CONNECTED;
+  int reconnects = 0;
+  bool autoReconnect = false;
   void mode(int) {}
+  void setAutoReconnect(bool on) { autoReconnect = on; }
+  bool reconnect() { ++reconnects; return true; }
   void setScanMethod(int) {}
   void setSortMethod(int) {}
   void begin(const char*, const char*) {}

@@ -13,9 +13,11 @@ inline uint32_t hpUptimeSeconds() {
   return (uint32_t)(esp_timer_get_time() / 1000000ULL);
 }
 
-// Connects to WiFi; never hangs: reboots after ~30 s without a connection.
+// Connects to WiFi at boot; never hangs: reboots after ~30 s without a connection. Only for
+// setup(): in loop() use hpWiFiWatchdog(), which doesn't block (#383).
 inline void hpConnectWiFi(const char* ssid, const char* pass) {
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);   // the default; hpWiFiWatchdog() relies on it
   // With several access points on the same SSID, take the strongest, not the first one found
   // (the main node sat on the far router). Only at connect time: there's no roaming later.
   WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
@@ -33,6 +35,39 @@ inline void hpConnectWiFi(const char* ssid, const char* pass) {
   }
   Serial.println("\nWiFi connected");
   Serial.println(WiFi.localIP());
+}
+
+// WiFi lost after boot (#383): the ESP32 reconnects by itself, so loop() only checks and keeps
+// running (radar, the fridge's condition timers). A nudge (WiFi.reconnect()) every
+// HP_WIFI_KICK_MS in case the auto-reconnect gave up; a restart only after HP_WIFI_RESTART_MS.
+// It used to block and restart after 30 s, so a router reboot (1-3 min) rebooted every node
+// several times. Call it from every loop(); returns whether WiFi is up.
+const uint32_t HP_WIFI_KICK_MS = 30000;
+const uint32_t HP_WIFI_RESTART_MS = 10UL * 60 * 1000;
+
+inline bool hpWiFiWatchdog() {
+  static bool down = false;
+  static uint32_t downSince = 0, lastKick = 0;   // uint32_t like millis(): the wrap works
+  if (WiFi.status() == WL_CONNECTED) {
+    if (down) {
+      Serial.printf("WiFi back after %lus\n", (unsigned long)((uint32_t)(millis() - downSince) / 1000));
+      down = false;
+    }
+    return true;
+  }
+  uint32_t now = millis();
+  if (!down) {
+    down = true;
+    downSince = lastKick = now;
+    Serial.println("WiFi dropped, waiting for it to reconnect");
+  } else if ((uint32_t)(now - downSince) >= HP_WIFI_RESTART_MS) {
+    Serial.println("No WiFi for 10 min, restarting...");
+    ESP.restart();
+  } else if ((uint32_t)(now - lastKick) >= HP_WIFI_KICK_MS) {
+    lastKick = now;
+    WiFi.reconnect();
+  }
+  return false;
 }
 
 // Connects to the broker without blocking the loop (#120): at most one attempt every
