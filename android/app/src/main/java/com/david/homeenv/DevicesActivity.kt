@@ -1,11 +1,14 @@
 package com.david.homeenv
 
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.david.homeenv.databinding.ActivityDevicesBinding
 import com.david.homeenv.ui.AccentCard
@@ -65,7 +68,15 @@ class DevicesActivity : AppCompatActivity() {
         }
     }
 
+    /** The last loaded data, to redraw after an issue is ignored or shown again (#380). */
+    private var last: Triple<JSONArray?, JSONObject?, JSONObject?>? = null
+
+    private fun rerender() {
+        last?.let { (devices, restarts, server) -> render(devices, restarts, server) }
+    }
+
     private fun render(devices: JSONArray?, restarts: JSONObject?, server: JSONObject?) {
+        last = Triple(devices, restarts, server)
         b.cards.removeAllViews()
         if (devices == null) {
             b.status.text = "Can't reach the server"
@@ -74,7 +85,10 @@ class DevicesActivity : AppCompatActivity() {
         b.status.text = if (devices.length() == 0) "No nodes have reported yet"
             else "Values the nodes sent in the last few minutes; pull down to refresh"
         val issues = DeviceIssues.list(devices, restarts, server)
-        if (issues.isNotEmpty()) b.cards.addView(issuesCard(issues))
+        val shown = DeviceIssues.visible(this, issues, complete = restarts != null && server != null)
+        val ignored = issues.size - shown.size
+        if (shown.isNotEmpty()) b.cards.addView(issuesCard(shown, ignored))
+        else if (ignored > 0) b.cards.addView(newCard().apply { addView(ignoredLine(ignored)) })
         for (i in 0 until devices.length()) {
             val d = devices.optJSONObject(i) ?: continue
             b.cards.addView(card(d, restarts?.optJSONObject(d.optString("device"))))
@@ -85,8 +99,11 @@ class DevicesActivity : AppCompatActivity() {
         }
     }
 
-    /** What needs a look, in red: the same list as the dot on Home's devices button. */
-    private fun issuesCard(issues: List<String>): AccentCard = newCard().apply {
+    /**
+     * What needs a look, in red: the same list as the dot on Home's devices button. A tap on one
+     * ignores it until it changes (#380); [ignored] of them are hidden already.
+     */
+    private fun issuesCard(issues: List<DeviceIssues.Issue>, ignored: Int): AccentCard = newCard().apply {
         accentColor = Levels.color(context, R.color.bad)
         addView(TextView(context).apply {
             text = if (issues.size == 1) "1 thing needs a look" else "${issues.size} things need a look"
@@ -94,7 +111,47 @@ class DevicesActivity : AppCompatActivity() {
             textSize = 15f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
-        issues.forEach { addView(row("", it, R.color.bad)) }
+        val ripple = TypedValue().also { theme.resolveAttribute(android.R.attr.selectableItemBackground, it, true) }.resourceId
+        issues.forEach { issue ->
+            addView(row("", issue.text, R.color.bad).apply {
+                foreground = ContextCompat.getDrawable(context, ripple)
+                setOnClickListener { confirmIgnore(issue) }
+            })
+        }
+        addView(foot("Tap one to ignore it until it changes, e.g. restarts after flashing"))
+        if (ignored > 0) addView(ignoredLine(ignored))
+    }
+
+    private fun confirmIgnore(issue: DeviceIssues.Issue) {
+        AlertDialog.Builder(this)
+            .setTitle("Ignore this?")
+            .setMessage("${issue.text}\n\nIt's hidden here and from the red dot until it changes " +
+                "(e.g. another restart). Once it's been gone for a day, it counts again next time.")
+            .setPositiveButton("Ignore") { _, _ ->
+                DeviceIssues.ignore(this, issue)
+                rerender()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** "2 ignored · show": brings the ignored issues back. */
+    private fun ignoredLine(count: Int): TextView = foot("$count ignored · show").apply {
+        setTextColor(Levels.color(context, R.color.text))
+        setOnClickListener {
+            DeviceIssues.unignoreAll(this@DevicesActivity)
+            rerender()
+        }
+    }
+
+    private fun foot(text: String): TextView {
+        val dens = resources.displayMetrics.density
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(Levels.color(context, R.color.muted))
+            textSize = 12f
+            setPadding(0, (10 * dens).toInt(), 0, 0)
+        }
     }
 
     private fun heading(text: String): TextView {
