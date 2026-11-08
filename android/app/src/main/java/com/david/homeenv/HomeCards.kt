@@ -189,9 +189,9 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
     private fun status(alert: String) = when (alert) {
         "" -> "normal"
         "cold" -> "below 0 °C for 30+ min"
-        "warm_low" -> "above 5 °C for 30+ min"
+        "warm_low" -> "above 7 °C for 30+ min"
         "warm_critical" -> "above 8 °C for 30+ min"
-        "warm_critical_duration" -> "above 5 °C for 2+ h"
+        "warm_critical_duration" -> "above 7 °C for 2+ h"
         else -> alert
     }
 
