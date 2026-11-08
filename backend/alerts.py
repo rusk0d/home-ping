@@ -38,7 +38,7 @@ def send_push(title, body, data=None):
         return False
 
 
-def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind=None):
+def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind=None, ignore_quiet=False):
     """Send a push and record it in events as "sent, ...", "failed, ..." or "muted (...), ...".
 
     The cooldown only starts after a successful send; a failed one is retried
@@ -46,9 +46,10 @@ def alert(device, event_type, detail, title, body, data, cooldown_key=None, kind
     silenced for the whole cooldown.
     [kind] (one of NOTIFY_KINDS) can be switched off or muted by quiet hours (#82);
     a muted alert is handled like a sent one (cooldown, once per outage) without a push.
+    [ignore_quiet]: only the switch can mute it, not quiet hours (a fridge too warm, #351).
     Returns "sent", "muted", or False when the send failed.
     """
-    muted = alert_muted(kind)
+    muted = alert_muted(kind, ignore_quiet)
     if muted:
         log.info("%s %s muted (%s): %s", device, event_type, muted, detail)
         log_event(device, event_type, f"muted ({muted}), {detail}")
@@ -169,13 +170,14 @@ def in_quiet_hours(now=None):
     return t >= start or t < end
 
 
-def alert_muted(kind):
-    """Why an alert of [kind] gets no push ("off", "quiet hours"), or None."""
+def alert_muted(kind, ignore_quiet=False):
+    """Why an alert of [kind] gets no push ("off", "quiet hours"), or None. [ignore_quiet]:
+    the switch only."""
     if kind is None:
         return None
     if get_state(f"notify:{kind}", "1") != "1":
         return "off"
-    if in_quiet_hours():
+    if not ignore_quiet and in_quiet_hours():
         return "quiet hours"
     return None
 

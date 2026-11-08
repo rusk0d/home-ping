@@ -7,6 +7,11 @@ when it changes. system_state:
   one (quiet hours, switch off) is pushed once that's over if the state still holds, and a
   "back to normal" only follows a sent one.
 Both are saved only after the push went out, so a failed one is retried (#251 backoff).
+- fridge_alert_urgent: "1" while the notification on the phone is a "too warm" one (URGENT).
+
+Too warm (URGENT, #351) comes through quiet hours, and so does the "back to normal" that
+replaces it; only the "fridge" switch mutes them. Too cold and warming up wait for the end of
+quiet hours as above.
 
 The node keeps its condition timers in RAM: after a reboot it reports "" (or a milder state)
 until they've run again, up to 2 h. A step down while the node is younger than that and the
@@ -38,6 +43,7 @@ MESSAGES = {
     "warm_critical": ("Fridge too warm", "Above 8 °C for 30+ minutes"),
     "warm_critical_duration": ("Fridge too warm (sustained)", "Above 5 °C for 2+ hours"),
 }
+URGENT = ("warm_critical", "warm_critical_duration")
 SEVERITY = {"": 0, "cold": 1, "warm_low": 1, "warm_critical": 2, "warm_critical_duration": 2}
 
 # Mirrors the firmware (fridge_node.ino): its longest timer, and the range where no condition
@@ -46,8 +52,9 @@ NODE_TIMERS_S = 2 * 60 * 60
 NORMAL_RANGE = (0.5, 4.5)
 
 
-def _push(current, last):
-    """Push the alert for [current] ("" = back to normal, after [last])."""
+def _push(current, last, urgent):
+    """Push the alert for [current] ("" = back to normal, after [last]); [urgent]: through
+    quiet hours."""
     if current:
         title, body = MESSAGES.get(current, ("Fridge alert", f"Alert: {current}"))
         detail = f"alert={current} (was: {last or 'normal'})"
@@ -57,12 +64,16 @@ def _push(current, last):
     return alerts.alert(DEVICE, "FRIDGE_ALERT" if current else "FRIDGE_ALERT_RECOVERY", detail,
                         title=title, body=body,
                         data={"event": EVENT, "device": DEVICE, "alert": current},
-                        cooldown_key=f"fridge:{current or 'normal'}", kind="fridge")
+                        cooldown_key=f"fridge:{current or 'normal'}", kind="fridge",
+                        ignore_quiet=urgent)
 
 
-def _save(current, shown):
+def _save(current, shown, urgent=None):
+    """[urgent]: whether a "too warm" notification is on the phone now; None leaves it."""
     set_state("fridge_alert_state", current)
     set_state("fridge_alert_shown", shown)
+    if urgent is not None:
+        set_state("fridge_alert_urgent", "1" if urgent else "")
 
 
 def check_fridge_alerts(now=None):
@@ -80,9 +91,10 @@ def check_fridge_alerts(now=None):
 
     if current == last:
         # A muted alert that still holds: push it once it isn't muted any more
-        if current and shown == "muted" and alerts.alert_muted("fridge") is None:
-            if _push(current, last) == "sent":
-                _save(current, "sent")
+        urgent = current in URGENT
+        if current and shown == "muted" and alerts.alert_muted("fridge", urgent) is None:
+            if _push(current, last, urgent) == "sent":
+                _save(current, "sent", urgent)
         return
 
     milder = SEVERITY.get(current, 1) < SEVERITY.get(last, 1)
@@ -94,15 +106,15 @@ def check_fridge_alerts(now=None):
         return   # not saved: checked again on the next run
 
     if not current:
-        if shown == "sent" and not _push("", last):
+        if shown == "sent" and not _push("", last, get_state("fridge_alert_urgent", "") == "1"):
             return
-        _save("", "")
+        _save("", "", False)
     elif milder and shown:
         _save(current, shown)   # cooling down between alerts: keep the more severe notification
     else:
-        result = _push(current, last)
+        result = _push(current, last, current in URGENT)
         if result:
-            _save(current, result)
+            _save(current, result, result == "sent" and current in URGENT)
 
 
 # ---------- door left open (#336) ----------
