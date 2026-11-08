@@ -8,7 +8,7 @@ import re
 from flask import Blueprint, jsonify
 
 from config import (
-    DEVICES, MOULD_HOURS, MOULD_HUMIDITY, ROOM_DEVICES_SQL, device_info,
+    DEVICES, FRIDGE_DEVICE, MOULD_HOURS, MOULD_HUMIDITY, ROOM_DEVICES_SQL, device_info,
 )
 from store import (
     calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
@@ -16,6 +16,7 @@ from store import (
 )
 from api_common import is_online, iso, require_auth
 from metrics import fresh_health
+import fridge
 
 log = logging.getLogger(__name__)
 bp = Blueprint("env", __name__)
@@ -145,6 +146,9 @@ def latest_all():
     # the others instead of hard-coding the fridge
     for device, entry in result.items():
         entry["room"] = device_info(device)["role"] == "room"
+    # The fridge's door (#361): open while the door push's excursion is on (#336)
+    if FRIDGE_DEVICE in result:
+        result[FRIDGE_DEVICE].update(fridge.door_state())
     result["combined"] = {
         "occupied": get_combined_occupancy(),
         "confidence": calculate_combined_confidence()
