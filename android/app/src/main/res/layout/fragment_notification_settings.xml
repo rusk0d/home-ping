@@ -444,7 +444,7 @@
                         <TextView
                             style="@style/HomeFoot"
                             android:layout_marginTop="2dp"
-                            android:text="Occupancy alerts still come through" />
+                            android:text="Occupancy alerts and &quot;Fridge too warm&quot; still come through" />
                     </LinearLayout>
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
