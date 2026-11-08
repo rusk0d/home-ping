@@ -59,8 +59,8 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
   `start` inclusive, `end` exclusive).
 - **Occupancy alerts (`OCCUPIED`) are never muted**: they keep their own Armed switch
   and come through during quiet hours.
-- **A fridge too warm** (`warm_critical*`, #351) comes through quiet hours too; only the `fridge`
-  switch mutes it (section 11).
+- **A fridge too warm** (`warm_critical*`, #351) and **the fridge door left open** (`FRIDGE_DOOR`,
+  #393) come through quiet hours too; only the `fridge` switch mutes them (sections 11, 11b).
 - A muted alert counts as handled: its cooldown starts (so it's logged at most once per
   15 min, like a sent one) and once-per-outage alerts (radar, node offline) are not
   repeated after quiet hours end or the switch is turned back on. Some alerts are
@@ -351,8 +351,9 @@ The backend's own rule, from the readings (the node's `alert` doesn't know about
   cools back before 10 min: nothing is pushed.
 - data `{"event": "FRIDGE_DOOR", "device": "fridge_temp_esp32"}`: its own notification slot (not
   the temperature alert's). Logs `FRIDGE_DOOR_OPEN` / `FRIDGE_DOOR_CLOSED`.
-- Switch `fridge`, quiet hours mute it (Excursion default): a muted open is saved as `muted` and
-  its close only logged.
+- Switch `fridge` only: **comes through quiet hours** (since #393; muted before, so a door left
+  open in the evening was never pushed), open and closed alike. Switched off, an open is saved
+  as `muted` and its close only logged.
 - `system_state`: `fridge_door_rise` (the watched rise) and `fridge_door` (the push's state).
 - Tuning: `tools/fridge_door_replay.py` replays the stored raw readings (2 days) through
   `door_step()` and prints the rises and the pushes it would have sent; options override the limits.
@@ -448,3 +449,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #305: one excursion helper and state format (`sent`/`muted`[`:<band>`]); a muted watchdog's end is logged too.
 - #336: fridge door left open push (`FRIDGE_DOOR`), switch `fridge`.
 - #339: watchdog `drill`: the monthly restore drill from S3 failed or is overdue.
+- #393: the fridge door push (`FRIDGE_DOOR`) comes through quiet hours, like a fridge too warm (#351).
