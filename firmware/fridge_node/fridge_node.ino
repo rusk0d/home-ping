@@ -29,9 +29,10 @@ const unsigned long TEMP_INTERVAL = 60000;  // publish every 60 s
 #define ONE_WIRE_PIN 4
 
 // Alert thresholds (#290, #294): a condition starts when its threshold is crossed and ends
-// HYSTERESIS past it, so a fridge hovering at 5.0 °C doesn't restart the timer on every dip
+// HYSTERESIS past it, so a fridge hovering at 7.0 °C doesn't restart the timer on every dip
 const float COLD_BELOW = 0.0;   // cold: below 0 °C for 30 min
-const float WARM_ABOVE = 5.0;   // warm_low: above 5 °C for 30 min, warm_critical_duration: for 2 h
+// WARM_ABOVE was 5 °C: this old fridge reaches about 7 °C after food goes in, which is normal (#406)
+const float WARM_ABOVE = 7.0;   // warm_low: above 7 °C for 30 min, warm_critical_duration: for 2 h
 const float HOT_ABOVE  = 8.0;   // warm_critical: above 8 °C for 30 min
 const float HYSTERESIS = 0.5;
 const unsigned long COLD_FOR      = 30UL * 60 * 1000;

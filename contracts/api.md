@@ -313,7 +313,7 @@ every copy: `backend/api_env.py` (`/api/air` `band`, CO₂ only), `web/app.js`
 | CO₂ (ppm) | Fresh `good` < 800 ≤ OK `fair` < 1200 ≤ Stuffy `stuffy` < 2000 ≤ Poor `bad` |
 | Humidity (%) | Very dry < 30 ≤ Dry < 40 ≤ Comfortable ≤ 60 < Humid ≤ 70 < Very humid |
 | Temperature (°C) | Cold < 18 ≤ Cool < 20 ≤ Comfortable ≤ 24 < Warm ≤ 27 < Hot |
-| Fridge (°C, gauge colours only, #326) | too cold < 0 ≤ fine < 5 ≤ warming < 8 ≤ too warm: the fridge node's `alert` limits (mqtt.md); the chip shows the alert itself |
+| Fridge (°C, gauge colours only, #326) | too cold < 0 ≤ fine < 7 ≤ warming < 8 ≤ too warm (5 before #406): the fridge node's `alert` limits (mqtt.md); the chip shows the alert itself |
 
 Gauge ranges (drawing only): CO₂ 400–3000 ppm (web and Android), humidity 0–100 %,
 temperature 14–30 °C (Android only) and fridge −2–10 °C (web and Android, #360).
@@ -605,3 +605,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #359: `/api/devices` has `known` (in the device registry).
 - #361: `/api/latest_all`'s fridge entry has `door_open` and `door_open_since`.
 - #402: app only: the fridge card's age comes from `env_ts`; no endpoint changed.
+- #406: Level bands: the fridge's "warming" starts at 7 °C (was 5 °C).

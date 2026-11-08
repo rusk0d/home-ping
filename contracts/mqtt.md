@@ -260,10 +260,10 @@ skipped because `temp_c` and `humidity` are absent.
 - Publisher: `firmware/fridge_node` (`DEVICE_NAME = "fridge_temp_esp32"`), DS18B20 on GPIO 4 (OneWire).
 - Interval: every 60 s (`TEMP_INTERVAL`).
 - Retained: yes. QoS 0.
-- Alert state, decided on the node (#294): each condition (<0 °C, >5 °C, >8 °C) starts when the
+- Alert state, decided on the node (#294): each condition (<0 °C, >7 °C, >8 °C; >5 °C before #406) starts when the
   reading first crosses its threshold and ends only 0.5 °C back past it (hysteresis). `alert` is
   the most severe condition that has lasted long enough: `warm_critical` (>8 °C for 30 min),
-  `warm_critical_duration` (>5 °C for 2 h), `warm_low` (>5 °C for 30 min), `cold` (<0 °C for
+  `warm_critical_duration` (>7 °C for 2 h), `warm_low` (>7 °C for 30 min), `cold` (<0 °C for
   30 min); `""` otherwise. The timers are in RAM, so a reboot starts them over.
 - The backend stores the `alert` field (see "Common fields") and sends notifications via
   the "fridge" notification kind (#290) when the alert state changes.
@@ -465,3 +465,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #228: `reset_reason` (ESP-IDF reset reason code) on presence, bme280 and co2; the backend adds it to `RESTART` events.
 - Metrics: `heap_free`, `heap_min`, `heap_block` on presence (both nodes, shared library); MQTT packet buffer 512 bytes.
 - Payload validation: CO₂ outside 0…5000 ppm stored as null; device IDs over 255 characters dropped; non-JSON and non-object payloads logged by name.
+- #406: the fridge node's warm limit is 7 °C (was 5 °C): `warm_low` and `warm_critical_duration`.
