@@ -124,7 +124,7 @@ pip=no
 for f in "${changed[@]}"; do
   case "$f" in
     requirements.txt) pip=yes; restart=yes ;;
-    backup_db.py|test_push.py|*/*) ;;
+    backup_db.py|backup_drill.py|test_push.py|*/*) ;;   # scripts the backend never imports
     *.py) restart=yes ;;
   esac
 done
