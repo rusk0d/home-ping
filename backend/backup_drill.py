@@ -10,6 +10,8 @@ put-only), restores it into a temp folder and checks it:
   older backup still needs) and rollup_hourly() as of its newest reading. Not prune(): that
   works on the real time and would delete raw rows the copy's hourly rows are checked against.
 - tools/validate_db.py against the started copy, at the copy's own time (--now: its newest reading)
+- the backup is recent (#356): uploaded within MAX_BACKUP_AGE_HOURS. An older one is still
+  restored and checked, but the drill fails: it proved an old backup, and uploads have stopped
 The live data.db is never touched. The result goes to backups/.drill.json, which the backend's
 watchdog reads (push when it failed or is overdue, the app's Server card); exit 1 on a failure.
 
@@ -26,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -33,6 +36,7 @@ from dotenv import load_dotenv
 RESULT = ".drill.json"   # same name as config.DRILL_RESULT (the watchdog reads it)
 TABLES = ("readings", "presence_readings", "hourly", "events", "devices", "system_state")
 NOT_EMPTY = ("readings", "hourly")
+MAX_BACKUP_AGE_HOURS = 48   # nightly uploads (#122): two missed nights is more than a late run
 BACKEND = Path(__file__).resolve().parent
 VALIDATE = BACKEND / "tools" / "validate_db.py"
 # Run in the copy's folder (store opens config.DB, "data.db", there): what server.prepare() does
@@ -107,8 +111,9 @@ def drill(s3, bucket, prefix, workdir):
     if obj is None:
         result["error"] = f"no backup found under s3://{bucket}/{prefix}"
         return result
+    age_h = (datetime.now(timezone.utc) - obj["LastModified"]).total_seconds() / 3600
     result.update(object=obj["Key"], uploaded=obj["LastModified"].strftime("%Y-%m-%dT%H:%M:%SZ"),
-                  size_bytes=obj["Size"])
+                  size_bytes=obj["Size"], backup_age_hours=round(age_h, 1))
     gz = workdir / "backup.db.gz"
     db = workdir / "data.db"   # the name store / config.DB expect (start_copy runs in workdir)
     s3.download_file(bucket, obj["Key"], str(gz))
@@ -137,6 +142,10 @@ def drill(s3, bucket, prefix, workdir):
     if not passed:
         result["error"] = "validate_db.py failed: " + next(
             (line.strip() for line in lines if "FAILURES" in line), "see validate")
+        return result
+    if age_h > MAX_BACKUP_AGE_HOURS:   # restorable, but old (#356)
+        result["error"] = (f"newest backup is {age_h / 24:.1f} days old ({obj['Key']}): "
+                           "are the uploads still running?")
         return result
     result["ok"] = True
     return result
