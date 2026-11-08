@@ -124,7 +124,10 @@ def check_fridge_alerts(now=None):
 # system_state: fridge_door_rise = "<start ts>|<base °C>" while a fast rise is being watched;
 # fridge_door = the Excursion state of its push ("sent" / "muted", "" when none).
 
-DOOR = alerts.Excursion("fridge_door", "fridge", DEVICE, {"event": "FRIDGE_DOOR", "device": DEVICE})
+# Through quiet hours (#393): a door left open at night is worth waking up for, like a fridge
+# too warm (#351), and in the morning it's too late; only the "fridge" switch mutes it
+DOOR = alerts.Excursion("fridge_door", "fridge", DEVICE, {"event": "FRIDGE_DOOR", "device": DEVICE},
+                        ignore_quiet=True)
 
 
 def door_step(rise, recent):

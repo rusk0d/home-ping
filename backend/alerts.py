@@ -87,11 +87,14 @@ class Excursion:
     [cooldown_key]: also at most one start push per NOTIFICATION_COOLDOWN.
     [postpone_quiet]: quiet hours hold the start back until they're over instead of muting
     it (the server watchdogs: nothing urgent, but it mustn't get lost).
+    [ignore_quiet]: quiet hours don't apply at all, start or end; only the switch mutes it
+    (the fridge door left open, #393, like a fridge too warm, #351).
     """
 
-    def __init__(self, key, kind, device, data, cooldown_key=None, postpone_quiet=False):
+    def __init__(self, key, kind, device, data, cooldown_key=None, postpone_quiet=False, ignore_quiet=False):
         self.key, self.kind, self.device, self.data = key, kind, device, data
         self.cooldown_key, self.postpone_quiet = cooldown_key, postpone_quiet
+        self.ignore_quiet = ignore_quiet
 
     def current(self):
         """(status, band): ("sent" / "muted", band or None), or (None, None) when none is on."""
@@ -107,10 +110,10 @@ class Excursion:
         if self.cooldown_key and (time.time() - state.LAST_NOTIFICATION.get(self.cooldown_key, 0)
                                   <= NOTIFICATION_COOLDOWN):
             return None
-        if self.postpone_quiet and alert_muted(self.kind) == "quiet hours":
+        if self.postpone_quiet and alert_muted(self.kind, self.ignore_quiet) == "quiet hours":
             return None
         result = alert(self.device, event_type, detail, title, body, {**self.data, **(data or {})},
-                       cooldown_key=self.cooldown_key, kind=self.kind)
+                       cooldown_key=self.cooldown_key, kind=self.kind, ignore_quiet=self.ignore_quiet)
         if result:
             set_state(self.key, result + (f":{band}" if band else ""))
         return result or None
@@ -125,7 +128,8 @@ class Excursion:
         if event_type is None:
             return True
         if status == "sent":
-            alert(self.device, event_type, detail, title, body, {**self.data, **(data or {})}, kind=self.kind)
+            alert(self.device, event_type, detail, title, body, {**self.data, **(data or {})}, kind=self.kind,
+                  ignore_quiet=self.ignore_quiet)
         else:
             log_event(self.device, event_type, f"no push (alert was muted), {detail}")
         return True
