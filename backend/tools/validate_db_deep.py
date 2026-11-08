@@ -351,42 +351,25 @@ def run_deep_checks():
         conn = connect()
         c = conn.cursor()
 
-        # Check temp
-        c.execute("""
-            SELECT COUNT(*) as count FROM hourly
-            WHERE (temp_min IS NOT NULL AND temp_avg IS NOT NULL AND temp_max IS NOT NULL)
-            AND (temp_min > temp_avg OR temp_avg > temp_max)
-        """)
-        bad_temp = c.fetchone()['count']
+        # The room's columns and the fridge's (#331, #387); a column a database doesn't have
+        # yet (an old backup) is skipped
+        columns = {r['name'] for r in c.execute("PRAGMA table_info(hourly)")}
+        counts = {}
+        for name in ("temp", "humidity", "co2", "pressure", "fridge"):
+            lo, avg, hi = f"{name}_min", f"{name}_avg", f"{name}_max"
+            if not {lo, avg, hi} <= columns:
+                continue
+            c.execute(f"""
+                SELECT COUNT(*) as count FROM hourly
+                WHERE ({lo} IS NOT NULL AND {avg} IS NOT NULL AND {hi} IS NOT NULL)
+                AND ({lo} > {avg} OR {avg} > {hi})
+            """)
+            counts[name] = c.fetchone()['count']
 
-        # Check humidity
-        c.execute("""
-            SELECT COUNT(*) as count FROM hourly
-            WHERE (humidity_min IS NOT NULL AND humidity_avg IS NOT NULL AND humidity_max IS NOT NULL)
-            AND (humidity_min > humidity_avg OR humidity_avg > humidity_max)
-        """)
-        bad_humidity = c.fetchone()['count']
-
-        # Check CO2
-        c.execute("""
-            SELECT COUNT(*) as count FROM hourly
-            WHERE (co2_min IS NOT NULL AND co2_avg IS NOT NULL AND co2_max IS NOT NULL)
-            AND (co2_min > co2_avg OR co2_avg > co2_max)
-        """)
-        bad_co2 = c.fetchone()['count']
-
-        # Check pressure
-        c.execute("""
-            SELECT COUNT(*) as count FROM hourly
-            WHERE (pressure_min IS NOT NULL AND pressure_avg IS NOT NULL AND pressure_max IS NOT NULL)
-            AND (pressure_min > pressure_avg OR pressure_avg > pressure_max)
-        """)
-        bad_pressure = c.fetchone()['count']
-
-        bad_total = bad_temp + bad_humidity + bad_co2 + bad_pressure
+        bad_total = sum(counts.values())
         if bad_total > 0:
             issues.append(f"🔢 {bad_total} hourly rows violate min ≤ avg ≤ max")
-            print(f"   ❌ {bad_temp} temp, {bad_humidity} humidity, {bad_co2} CO2, {bad_pressure} pressure violations")
+            print("   ❌ " + ", ".join(f"{n} {name}" for name, n in counts.items() if n) + " violations")
         else:
             print("   ✅ All hourly aggregates satisfy min ≤ avg ≤ max")
 
@@ -403,10 +386,11 @@ def run_deep_checks():
         conn = connect()
         c = conn.cursor()
 
-        # Get all alert events
+        # Only the pushes that went out (#387): a failed one is retried after a minute (#251)
+        # and a muted one is logged too (#321), each its own row of the same type
         c.execute("""
             SELECT ts, device, type FROM events
-            WHERE type LIKE '%_ALERT'
+            WHERE type LIKE '%\\_ALERT' ESCAPE '\\' AND value LIKE 'sent%'
             ORDER BY ts
         """)
         alerts = c.fetchall()
