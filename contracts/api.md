@@ -303,7 +303,8 @@ Latest CO2 and pressure from whichever device last reported them.
 
 The one place the level thresholds are defined (#127). Change them here first, then in
 every copy: `backend/api_env.py` (`/api/air` `band`, CO₂ only), `web/app.js`
-(`co2Level`, `humLevel`, `tempLevel`) and `android/.../ui/Levels.kt` (chips and gauge stops).
+(`co2Level`, `humLevel`, `tempLevel`, `fridgeLevel`; the fridge gauge in `index.html`) and
+`android/.../ui/Levels.kt` (chips and gauge stops).
 
 | Value | Bands (label, from low to high) |
 |---|---|
@@ -313,7 +314,7 @@ every copy: `backend/api_env.py` (`/api/air` `band`, CO₂ only), `web/app.js`
 | Fridge (°C, gauge colours only, #326) | too cold < 0 ≤ fine < 5 ≤ warming < 8 ≤ too warm: the fridge node's `alert` limits (mqtt.md); the chip shows the alert itself |
 
 Gauge ranges (drawing only): CO₂ 400–3000 ppm (web and Android), humidity 0–100 %,
-temperature 14–30 °C and fridge −2–10 °C (Android only).
+temperature 14–30 °C (Android only) and fridge −2–10 °C (web and Android, #360).
 
 ### Dew point
 

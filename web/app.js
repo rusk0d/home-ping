@@ -6,6 +6,7 @@ const TOPIC_ENV = 'home/esp32/bme280';  // main_node, every 30 s, retained
 const TOPIC_CO2 = 'home/esp32/co2';     // main_node (since the node merge, #57), every 60 s, retained
 const TOPIC_OCC = 'home/backend/occupancy_hourly'; // backend, every 5 min, retained
 const TOPIC_HIST = 'home/backend/history_24h';     // backend, every 5 min, retained (#132)
+const TOPIC_FRIDGE = 'home/esp32/fridge_temp';   // fridge_node, every 60 s, retained (#360)
 const TOPIC_PRESENCE = 'home/esp32/presence';  // both radar nodes, every 5 s, retained
 const TOPIC_STATUS = 'home/esp32/+/status';    // "online" / last will "offline", retained (#81)
 const STATUS_RE = /^home\/esp32\/([^/]+)\/status$/;
@@ -14,8 +15,9 @@ const STATUS_RE = /^home\/esp32\/([^/]+)\/status$/;
 const NODES = {   // name: an i18n.js key
   home_ping_esp32:        { name: 'nodeMain',    staleAfter: 30 },   // radar every 5 s
   hallway_presence_esp32: { name: 'nodeHallway', staleAfter: 30 },   // radar every 5 s
+  fridge_temp_esp32:      { name: 'nodeFridge',  staleAfter: 180 },  // every 60 s (#360)
 };
-const STALE_AFTER = { env: 90, co2: 180, occ: 900 }; // seconds, ~3 missed publishes
+const STALE_AFTER = { env: 90, co2: 180, fridge: 180, occ: 900 }; // seconds, ~3 missed publishes
 const DAY_MS = 24 * 3600e3;
 const MAX_POINTS = 3000;  // live sparkline points kept per metric (~24 h of 30 s readings)
 const MAX_HISTORY = 20;   // rows in the recent readings table
@@ -23,9 +25,10 @@ const MAX_HISTORY = 20;   // rows in the recent readings table
 const $ = id => document.getElementById(id);
 // Sparklines: hourly averages from history_24h (plotted mid-hour) followed by the live
 // readings since; both as { t: ms, v }
-const series = { temp: [], hum: [], pres: [], co2: [] };       // live
-const hourly = { temp: [], hum: [], pres: [], co2: [] };       // from history_24h
-const lastSeen = { env: null, co2: null, occ: null };   // { at: ms, retained: bool }
+// (the fridge has live points only: history_24h is the room's)
+const series = { temp: [], hum: [], pres: [], co2: [], fridge: [] };       // live
+const hourly = { temp: [], hum: [], pres: [], co2: [], fridge: [] };       // from history_24h
+const lastSeen = { env: null, co2: null, fridge: null, occ: null };   // { at: ms, retained: bool }
 const history = [];
 
 // ---------- formatting ----------
@@ -77,6 +80,18 @@ function dewPoint(t, rh) {
   if (!(rh > 0)) return null;
   const g = Math.log(rh / 100) + 17.62 * t / (243.12 + t);
   return 243.12 * g / (17.62 - g);
+}
+// The fridge's chip from the node's own `alert` (#290), like android Levels.fridge; the gauge
+// shows the reading (contracts/api.md "Level bands": fridge). [chip, colour, why]
+function fridgeLevel(alert) {
+  switch (alert) {
+    case '': return [t('fridgeOk'), 'good', ''];
+    case 'cold': return [t('fridgeTooCold'), 'poor', t('fridgeWhyCold')];
+    case 'warm_low': return [t('fridgeWarming'), 'poor', t('fridgeWhyWarm')];
+    case 'warm_critical': return [t('fridgeTooWarm'), 'bad', t('fridgeWhyHot')];
+    case 'warm_critical_duration': return [t('fridgeTooWarm'), 'bad', t('fridgeWhyLong')];
+    default: return [t('fridgeAlert'), 'poor', alert];
+  }
 }
 function humLevel(h) {
   if (h < 30) return [t('humVeryDry'), 'poor'];
@@ -224,6 +239,30 @@ function onCo2(d, retained) {
 
   noteNode(d.device || 'home_ping_esp32', d, retained);
   addHistory('co2', d.device, { co2: valid ? d.co2 : (d.warming ? 'warming' : 'invalid') });
+}
+
+let lastFridgeMsg = null;
+function renderFridge(d) {
+  const temp = typeof d.temp_c === 'number' ? d.temp_c : null;
+  $('fridge').textContent = fmt(temp, 1);
+  const needle = $('fridge-needle');
+  needle.hidden = temp === null;
+  if (temp !== null) needle.style.left = Math.min(100, Math.max(0, (temp + 2) / 12 * 100)) + '%';
+  if (typeof d.alert === 'string') {
+    const [text, color, why] = fridgeLevel(d.alert);
+    setSub('fridge-sub', text, color);
+    if (why) $('fridge-sub').append(' ' + why);
+  } else setSub('fridge-sub', '');
+}
+
+function onFridge(d, retained) {
+  lastSeen.fridge = { at: Date.now(), retained };
+  lastFridgeMsg = d;
+  renderFridge(d);
+  push('fridge', d.temp_c);
+  drawSpark('fridge', 1);
+  noteNode(d.device || 'fridge_temp_esp32', d, retained);
+  addHistory('fridge', d.device || 'fridge_temp_esp32', { temp: d.temp_c });
 }
 
 // ---------- nodes ----------
@@ -383,7 +422,7 @@ function renderHistory() {
     const tr = document.createElement('tr');
     const src = document.createElement('td');
     const dot = document.createElement('span');
-    dot.className = 'src ' + (e.source === 'env' ? 'temp' : 'co2');
+    dot.className = 'src ' + ({ env: 'temp', co2: 'co2', fridge: 'fridge' })[e.source];
     src.append(dot, NODES[e.device] ? t(NODES[e.device].name) : e.device);
     const co2 = typeof e.co2 === 'string' ? t(e.co2) : withUnit(e.co2, 0, ' ppm');
     const cells = [e.at.toLocaleTimeString(LANG === 'hu' ? 'hu' : undefined), null, withUnit(e.temp, 1, ' °C'), withUnit(e.hum, 0, ' %'),
@@ -402,7 +441,7 @@ function renderHistory() {
 // ---------- ages / staleness (every second) ----------
 function tick() {
   const now = Date.now();
-  for (const [kind, cards] of [['env', ['temp', 'hum', 'pres']], ['co2', ['co2']]]) {
+  for (const [kind, cards] of [['env', ['temp', 'hum', 'pres']], ['co2', ['co2']], ['fridge', ['fridge']]]) {
     const info = lastSeen[kind];
     const stale = info && (now - info.at) / 1000 > STALE_AFTER[kind];
     cards.forEach(c => {
@@ -490,7 +529,7 @@ function connect(login) {
     }
     c.options.reconnectPeriod = RECONNECT_MIN;
     setStatus('live', 'live');
-    c.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_OCC, TOPIC_HIST, TOPIC_PRESENCE, TOPIC_STATUS], (err, granted) => {
+    c.subscribe([TOPIC_ENV, TOPIC_CO2, TOPIC_FRIDGE, TOPIC_OCC, TOPIC_HIST, TOPIC_PRESENCE, TOPIC_STATUS], (err, granted) => {
       if (err) console.error('MQTT subscribe failed', err);
       // QoS 128 = refused, e.g. the user's ACL doesn't cover the topic
       (granted || []).filter(g => g.qos === 128).forEach(g => console.warn('Subscription refused by the broker:', g.topic));
@@ -522,6 +561,7 @@ function connect(login) {
     catch (e) { console.error('Invalid JSON on', topic, e); return; }
     if (topic === TOPIC_ENV) onEnv(data, packet.retain);
     else if (topic === TOPIC_CO2) onCo2(data, packet.retain);
+    else if (topic === TOPIC_FRIDGE) onFridge(data, packet.retain);
     else if (topic === TOPIC_OCC) onOcc(data);
     else if (topic === TOPIC_HIST) onHistory(data);
     else if (topic === TOPIC_PRESENCE && data.device) noteNode(data.device, data, packet.retain);
@@ -544,8 +584,10 @@ $('lang').addEventListener('click', () => {
   if (loginError) $('loginError').textContent = t(loginError);
   if (lastEnvMsg) renderEnv(lastEnvMsg);
   if (lastCo2Msg) renderCo2(lastCo2Msg);
+  if (lastFridgeMsg) renderFridge(lastFridgeMsg);
   if (lastOccMsg) onOcc(lastOccMsg);
   for (const [key, [, digits]] of Object.entries(SPARKS)) drawSpark(key, digits);
+  drawSpark('fridge', 1);
   renderHistory();
   tick();   // ages and devices
 });
