@@ -143,6 +143,11 @@ BME280), so each group comes from its own newest row (#11):
 - `alert`, `alert_ts`: its newest row with `alert` not null (#290): the node's own alert state,
   `""` when normal (the fridge, `mqtt.md`). Null for nodes that don't send one.
 - A group the device never sent is all null.
+- The fridge (`FRIDGE_DEVICE`) also has `door_open` (bool) and `door_open_since` (ISO time or
+  null) since #361: open while the "Fridge door open?" push's excursion is on (sent, or muted by
+  quiet hours / the switch), from the push (`FRIDGE_DOOR_OPEN_MINUTES` after the rise started)
+  until the temperature is back near where it started; `door_open_since` is the start of the rise
+  (`notifications.md` 11b).
 
 For each device with `presence_readings` rows, the radar fields are merged in.
 If the device has no env rows, a stub with `temp`/`humidity`/`co2`/`pressure` = null is used.
@@ -595,3 +600,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #331: `/api/hourly` and `/api/daily` have `avg_fridge`, `min_fridge`, `max_fridge`.
 - #339: `/api/server_status` has `drill`.
 - #359: `/api/devices` has `known` (in the device registry).
+- #361: `/api/latest_all`'s fridge entry has `door_open` and `door_open_since`.
