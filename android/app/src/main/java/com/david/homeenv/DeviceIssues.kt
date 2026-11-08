@@ -16,8 +16,9 @@ object DeviceIssues {
 
     fun list(devices: JSONArray?, restarts: JSONObject?, server: JSONObject?): List<String> {
         val out = mutableListOf<String>()
+        // Only the nodes in the backend's registry: a retired one stays listed for 30 days (#359)
         for (d in Device.list(devices)) {
-            if (!d.online) out += "${d.name} is offline"
+            if (!d.online && d.known) out += "${d.name} is offline"
         }
         for (i in 0 until (devices?.length() ?: 0)) {
             val d = devices?.optJSONObject(i) ?: continue
