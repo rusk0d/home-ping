@@ -284,7 +284,7 @@ Android: its own silent channel (no sound or vibration), from the app change of 
 | reminder | `co2` | the same, `AIR_REMINDER_HOURS` (**3 h**) after the last push (sent or muted) | same, replaces the previous |
 | Air is fresh again | `co2` | the excursion ends (CO₂ < `AIR_CO2_OK`, **900** ppm), only if a push of it was sent | `Air is fresh again` / `CO₂ is down to 850 ppm.` (replaces it) |
 | Close the window? | `window` | once per window spell: open ≥ **20** min, CO₂ < **600** ppm, outside ≥ **5 °C** colder than inside | `Close the window?` / `Open for 25 min, CO₂ is down to 520 ppm and it's 6 °C outside: …` |
-| Window still open? | `window` | `POST /api/occupancy_arm` with `armed: true, source: "location"` (geofence: left home) while a spell runs | `Window still open?` / `You left home and a window has been open for 12 min.` |
+| Window still open? | `window` | `POST /api/occupancy_arm` with `armed: true, source: "location"` (geofence: left home) while a spell runs; once per spell (#396), a failed send is tried on the next leave | `Window still open?` / `You left home and a window has been open for 12 min.` |
 
 - `<advice>`: `open a window for 5-10 minutes`; `it's raining, tilt a window for a while`
   (precipitation > 0); `the outside air is humid, keep it short` (outside absolute humidity
@@ -418,7 +418,7 @@ own app/email, not by FCM.
 | `WATCHDOG` | Backup failed / Disk almost full / Off-site backup failed / Certificate expires soon, Certificate problem (+ "OK again", "Certificate renewed") | newest backup > 26 h old / < 1 GB free / no S3 upload for 26 h / certificate < 14 days or invalid | once per excursion | 5 min check (certificates hourly) |
 | `SENSOR_STATUS` | Sensor not reporting / Sensor reporting again | node online, no valid BME280 / CO₂ value for 15 min / valid again | once per excursion | 30 s check |
 | `PRESSURE` | Pressure falling fast | hourly pressure average −3.0 hPa or more below 3 h earlier | once per excursion (until > −2.0), 15 min | 5 min check after the hourly rollup |
-| `AIR` | Time to air out / Air is fresh again (`co2`); Close the window? / Window still open? (`window`) | CO₂ ≥ 1200 ppm for 10 min, someone home / < 900 again; spell ≥ 20 min with fresh air and cold outside; geofence left home during a spell | every 3 h while high; once per spell; once per leave | 60 s check; `POST /api/occupancy_arm` |
+| `AIR` | Time to air out / Air is fresh again (`co2`); Close the window? / Window still open? (`window`) | CO₂ ≥ 1200 ppm for 10 min, someone home / < 900 again; spell ≥ 20 min with fresh air and cold outside; geofence left home during a spell | every 3 h while high; once per spell; once per spell | 60 s check; `POST /api/occupancy_arm` |
 | `FRIDGE_ALERT` | Fridge too cold / warming up / too warm / too warm (sustained) / back to normal | the node's `alert` state changed (<0 °C, >5 °C, >8 °C for 30 min; >5 °C for 2 h); a muted one is pushed once unmuted if still on | once per state change, 15 min per state | 5 min check |
 | `FRIDGE_DOOR` | Fridge door open? / Fridge door closed | a rise of 2 °C within 5 min, not back within 1 °C of the start 10 min later / back within 1 °C | once per rise | each fridge reading |
 | `BASELINE` | Unusual reading / Back to normal | hourly average \|z\| > 3 vs. the same local hour over 28 days, 2 consecutive hours / \|z\| < 2 again | once per excursion | each new hour (5 min check) |
@@ -453,3 +453,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #339: watchdog `drill`: the monthly restore drill from S3 failed or is overdue.
 - #395: a dead fridge sensor is a silent sensor (`DS18B20`), not "Node offline": the node publishes without `temp_c`.
 - #393: the fridge door push (`FRIDGE_DOOR`) comes through quiet hours, like a fridge too warm (#351).
+- #396: "Window still open?" once per window spell, not on every location arm.
