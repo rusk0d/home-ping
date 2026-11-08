@@ -169,7 +169,9 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
             else -> status(alert)
         }
         b.fridgeStatus.setTextColor(Levels.color(ctx, if (door != null) R.color.bad else R.color.muted))
-        fridgeTs = fridge?.optTs("ts")
+        // The temperature's own time (#402): `ts` is the newest message, which during a sensor
+        // error (#395) has no temperature, so the last one would look fresh
+        fridgeTs = fridge?.optTs("env_ts") ?: fridge?.optTs("ts")
     }
 
     /**
