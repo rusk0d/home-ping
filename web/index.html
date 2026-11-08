@@ -161,9 +161,9 @@
     /* 400–3000 ppm scale: 800 = 15.4%, 1200 = 30.8%, 2000 = 61.5% (matches co2Level) */
     background: linear-gradient(90deg, var(--good) 0 15.4%, var(--ok) 15.4% 30.8%, var(--poor) 30.8% 61.5%, var(--bad) 61.5% 100%);
     opacity: 0.9; }
-  /* The fridge (#360), −2–10 °C like the app: 0 = 16.7%, 5 = 58.3%, 8 = 83.3% (the node's alert limits) */
+  /* The fridge (#360), −2–10 °C like the app: 0 = 16.7%, 7 = 75%, 8 = 83.3% (the node's alert limits; 5 before #406) */
   .gauge.fridge-gauge {
-    background: linear-gradient(90deg, var(--hum) 0 16.7%, var(--good) 16.7% 58.3%, var(--poor) 58.3% 83.3%, var(--bad) 83.3% 100%); }
+    background: linear-gradient(90deg, var(--hum) 0 16.7%, var(--good) 16.7% 75%, var(--poor) 75% 83.3%, var(--bad) 83.3% 100%); }
   .gauge .needle { position: absolute; top: -4px; width: 4px; height: 16px; border-radius: 2px;
     background: var(--text); box-shadow: 0 0 0 2px var(--card); transform: translateX(-50%); transition: left .6s ease; }
   .gauge-scale { position: relative; height: 1.1em; font-size: 0.7rem; color: var(--muted); }
@@ -297,7 +297,7 @@
       <div class="value"><span id="fridge">--</span><span class="unit">°C</span></div>
       <div class="sub" id="fridge-sub"></div>
       <div class="gauge fridge-gauge"><div class="needle" id="fridge-needle" style="left:0" hidden></div></div>
-      <div class="gauge-scale"><span style="left:0">−2</span><span style="left:16.7%">0</span><span style="left:58.3%">5</span><span style="left:83.3%">8</span><span style="left:100%">10</span></div>
+      <div class="gauge-scale"><span style="left:0">−2</span><span style="left:16.7%">0</span><span style="left:75%">7</span><span style="left:83.3%">8</span><span style="left:100%">10</span></div>
       <svg class="spark" id="fridge-spark" viewBox="0 0 100 30" preserveAspectRatio="none"></svg>
       <div class="foot"><span id="fridge-range"></span><span id="fridge-age">waiting…</span></div>
     </article>
