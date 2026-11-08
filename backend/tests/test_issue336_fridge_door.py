@@ -46,11 +46,11 @@ def test_issue336_fridge_door(env):
     T = lambda mins: t0 + timedelta(minutes=mins)
     check("slow warming: no rise", fridge.door_step(None, [(T(0), 3.0), (T(5), 4.5)]) == (None, None))
     rise, ev = fridge.door_step(None, [(T(0), 3.0), (T(2), 5.5)])
-    check("fast rise watched", rise == (T(0), 3.0) and ev is None)
-    check("still up after 10 min: open", fridge.door_step(rise, [(T(10), 6.0)]) == (rise, "open"))
+    check("fast rise watched", rise == (T(0), 3.0, 5.5) and ev is None)
+    check("still up after 10 min: open", fridge.door_step(rise, [(T(10), 6.0)]) == ((T(0), 3.0, 6.0), "open"))
     check("cooled back: closed", fridge.door_step(rise, [(T(6), 3.9)]) == (None, "closed"))
     rise, _ = fridge.door_step(None, [(T(0), 3.0), (T(1), 3.0), (T(2), 3.0), (T(3), 5.5)])
-    check(f"counted from the last low reading ({rise})", rise == (T(2), 3.0))
+    check(f"counted from the last low reading ({rise})", rise == (T(2), 3.0, 5.5))
 
     # --- through ingest: steady, then a door shut after 3 min
     for _ in range(6):

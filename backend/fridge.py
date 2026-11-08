@@ -27,7 +27,7 @@ from datetime import timedelta
 import alerts
 import state
 from config import (
-    FRIDGE_DEVICE, FRIDGE_DOOR_CLOSED_C, FRIDGE_DOOR_OPEN_MINUTES, FRIDGE_DOOR_RISE_C,
+    FRIDGE_DEVICE, FRIDGE_DOOR_CLOSED_C, FRIDGE_DOOR_FALL_C, FRIDGE_DOOR_OPEN_MINUTES, FRIDGE_DOOR_RISE_C,
     FRIDGE_DOOR_RISE_MINUTES, NOTIFICATION_COOLDOWN,
 )
 from store import db, get_state, parse_ts, set_state, utcnow
@@ -133,10 +133,11 @@ DOOR = alerts.Excursion("fridge_door", "fridge", DEVICE, {"event": "FRIDGE_DOOR"
 def door_step(rise, recent):
     """One reading through the door rule; also used by tools/fridge_door_replay.py.
 
-    [rise]: (start datetime, base °C) of the fast rise being watched, or None. [recent]: the
-    fridge's (datetime, °C) readings of the last FRIDGE_DOOR_RISE_MINUTES or more, oldest
-    first, the newest last. Returns (rise, event): event "open" while the door looks left
-    open (every reading: the push itself is once), "closed" when a watched rise is over.
+    [rise]: (start datetime, base °C, peak °C) of the fast rise being watched, or None.
+    [recent]: the fridge's (datetime, °C) readings of the last FRIDGE_DOOR_RISE_MINUTES or more,
+    oldest first, the newest last. Returns (rise, event): event "open" while the door looks
+    left open (every reading: the push itself is once), "closed" when a watched rise is over:
+    back near the base, or cooling down from its peak (#411).
     """
     ts, temp = recent[-1]
     if rise is None:
@@ -146,10 +147,11 @@ def door_step(rise, recent):
         start, base = min(window, key=lambda r: (r[1], -r[0].timestamp()))
         if temp - base < FRIDGE_DOOR_RISE_C:
             return None, None
-        rise = (start, base)
-    start, base = rise
-    if temp <= base + FRIDGE_DOOR_CLOSED_C:
+        rise = (start, base, temp)
+    start, base, peak = rise
+    if temp <= base + FRIDGE_DOOR_CLOSED_C or temp <= peak - FRIDGE_DOOR_FALL_C:
         return None, "closed"
+    rise = (start, base, max(peak, temp))
     return rise, "open" if ts - start >= timedelta(minutes=FRIDGE_DOOR_OPEN_MINUTES) else None
 
 
@@ -174,11 +176,12 @@ def check_door(now=None):
         return None
     recent = [(parse_ts(ts), temp) for ts, temp in rows]
     saved = get_state("fridge_door_rise", "") or ""
-    start, _, base = saved.partition("|")
-    rise = (parse_ts(start), float(base)) if saved else None
+    # "start|base|peak"; before #411 "start|base", whose peak starts from the base
+    start, base, *peak = saved.split("|") if saved else ("", "")
+    rise = (parse_ts(start), float(base), float(peak[0]) if peak else float(base)) if saved else None
 
     rise, event = door_step(rise, recent)
-    new = f"{rise[0].strftime('%Y-%m-%d %H:%M:%S')}|{rise[1]}" if rise else ""
+    new = f"{rise[0].strftime('%Y-%m-%d %H:%M:%S')}|{rise[1]}|{rise[2]}" if rise else ""
     if new != saved:
         set_state("fridge_door_rise", new)
     ts, temp = recent[-1]
