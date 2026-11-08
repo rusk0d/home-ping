@@ -150,6 +150,15 @@ def door_step(rise, recent):
     return rise, "open" if ts - start >= timedelta(minutes=FRIDGE_DOOR_OPEN_MINUTES) else None
 
 
+def door_state():
+    """{"door_open", "door_open_since"} for /api/latest_all (#361): open from the push (sent or
+    muted, so also in quiet hours) until the rise is over; since = the start of the rise."""
+    if DOOR.current()[0] is None:
+        return {"door_open": False, "door_open_since": None}
+    start = (get_state("fridge_door_rise", "") or "").partition("|")[0]
+    return {"door_open": True, "door_open_since": start.replace(" ", "T") + "Z" if start else None}
+
+
 def check_door(now=None):
     """The door rule on the newest fridge reading; pushes "Fridge door open?" once per rise and
     "Fridge door closed" after a sent one."""
