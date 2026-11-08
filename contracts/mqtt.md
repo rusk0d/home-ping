@@ -271,7 +271,8 @@ skipped because `temp_c` and `humidity` are absent.
 | Field | Type | Unit | Notes |
 |---|---|---|---|
 | `device` | string | n/a | `"fridge_temp_esp32"` |
-| `temp_c` | float | °C | DS18B20 reading, rounded to 1 decimal on the node (since #300; before: the raw 0.0625 °C steps) |
+| `temp_c` | float | °C | DS18B20 reading, rounded to 1 decimal on the node (since #300; before: the raw 0.0625 °C steps). **Missing** when the sensor couldn't be read (since #395) |
+| `sensor_error` | boolean | n/a | `true` when the DS18B20 couldn't be read (disconnected: -127, or its 85.0 °C power-on value); only present then (#395) |
 | `alert` | string | n/a | `""` (normal), `"cold"`, `"warm_low"`, `"warm_critical"`, or `"warm_critical_duration"` |
 | `rssi` | integer | dBm | |
 | `uptime` | integer | s | `hpUptimeSeconds()` (64-bit, doesn't wrap; `millis() / 1000` before #294) |
@@ -289,6 +290,11 @@ Backend handling: env handler (no `presence`). Stores a `readings` row with `tem
 A `temp_c` outside `FRIDGE_VALID` (−30…50 °C) is a sensor glitch (the DS18B20 reads exactly
 85.0 °C after a brownout) and is stored as null, with a warning; the rest of the reading is
 kept (#352). The node skips 85.0 itself since #352.
+A read error (#395) is still published, without `temp_c` and with `sensor_error: true`, so the
+node stays online and its dead sensor is the silent-sensor push (`notifications.md` §8, "no
+DS18B20 readings") rather than "Node offline"; before, the node published nothing. The node's
+`alert` holds its last value while it has no reading (its condition timers only follow real
+readings). Stored as a row with `temp` null.
 Serves the alert state via `/api/latest_all` (fields `alert` and `alert_ts`). The backend's
 fridge alert handler in `fridge.py` sends notifications when `alert` state changes, and on
 every reading checks for a door left open (fast rise of `temp_c`, #336; `notifications.md`).

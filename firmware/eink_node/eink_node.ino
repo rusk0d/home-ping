@@ -361,7 +361,7 @@ void setup() {
     Serial.println("Time not synced yet, continuing");
   }
 
-  espClient.setCACert(HP_MQTT_ROOT_CA);
+  hpSetupTls(espClient);   // roots and timeouts (#394)
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
 

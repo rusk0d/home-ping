@@ -62,39 +62,42 @@ void publishTemp() {
   sensors.requestTemperatures();
   float tempC = sensors.getTempCByIndex(0);
 
-  if (tempC == DEVICE_DISCONNECTED_C) {
-    Serial.println("DS18B20 read error");
-    return;
-  }
-  // 85.0 °C is the DS18B20's power-on value: after a brownout or a glitch on the data line it
-  // reports that instead of a conversion (#352). No fridge gets there; skip it like a read error
-  // (the backend drops it too, outside FRIDGE_VALID).
-  if (tempC == 85.0f) {
-    Serial.println("DS18B20 power-on value (85 C), skipped");
-    return;
+  // A read error still publishes, without temp_c and with sensor_error (#395): the node is up,
+  // only the sensor isn't. Publishing nothing made a dead sensor look like the node offline.
+  // -127 is DEVICE_DISCONNECTED_C; 85.0 °C is the DS18B20's power-on value, which it reports
+  // after a brownout or a glitch on the data line instead of a conversion (#352). No fridge
+  // gets there; the backend drops it too, outside FRIDGE_VALID.
+  bool ok = tempC != DEVICE_DISCONNECTED_C && tempC != 85.0f;
+  if (!ok) {
+    Serial.printf("DS18B20 read error (%.1f C), published without a temperature\n", tempC);
   }
 
-  unsigned long now = millis();
-  cold.track(tempC < COLD_BELOW, tempC >= COLD_BELOW + HYSTERESIS, now);
-  warm.track(tempC > WARM_ABOVE, tempC <= WARM_ABOVE - HYSTERESIS, now);
-  hot.track(tempC > HOT_ABOVE,  tempC <= HOT_ABOVE - HYSTERESIS,  now);
+  // The conditions and the alert only follow real readings: without one the alert holds, so a
+  // sensor that dies while the fridge is warm doesn't escalate to "for 2 h" on no data
+  if (ok) {
+    unsigned long now = millis();
+    cold.track(tempC < COLD_BELOW, tempC >= COLD_BELOW + HYSTERESIS, now);
+    warm.track(tempC > WARM_ABOVE, tempC <= WARM_ABOVE - HYSTERESIS, now);
+    hot.track(tempC > HOT_ABOVE,  tempC <= HOT_ABOVE - HYSTERESIS,  now);
 
-  // The most severe condition that has lasted long enough
-  String alertType = "";
-  if (hot.lasted(HOT_FOR, now))             alertType = "warm_critical";
-  else if (warm.lasted(WARM_LONG_FOR, now)) alertType = "warm_critical_duration";
-  else if (warm.lasted(WARM_FOR, now))      alertType = "warm_low";
-  else if (cold.lasted(COLD_FOR, now))      alertType = "cold";
+    // The most severe condition that has lasted long enough
+    String alertType = "";
+    if (hot.lasted(HOT_FOR, now))             alertType = "warm_critical";
+    else if (warm.lasted(WARM_LONG_FOR, now)) alertType = "warm_critical_duration";
+    else if (warm.lasted(WARM_FOR, now))      alertType = "warm_low";
+    else if (cold.lasted(COLD_FOR, now))      alertType = "cold";
 
-  if (alertType != currentAlertType) {
-    Serial.printf("Alert: %s -> %s\n", currentAlertType.c_str(), alertType.c_str());
-    currentAlertType = alertType;
+    if (alertType != currentAlertType) {
+      Serial.printf("Alert: %s -> %s\n", currentAlertType.c_str(), alertType.c_str());
+      currentAlertType = alertType;
+    }
   }
 
   // Publish
   doc.clear();
   doc["device"]       = DEVICE_NAME;
-  doc["temp_c"]       = roundf(tempC * 10) / 10;   // 1 decimal (contract); DS18B20 steps are 0.0625 °C
+  if (ok) doc["temp_c"] = roundf(tempC * 10) / 10;   // 1 decimal (contract); DS18B20 steps are 0.0625 °C
+  else    doc["sensor_error"] = true;
   doc["alert"]        = currentAlertType;
   doc["rssi"]         = WiFi.RSSI();
   doc["uptime"]       = hpUptimeSeconds();   // 64-bit timer: doesn't wrap like millis() (#8)
@@ -107,7 +110,7 @@ void publishTemp() {
   serializeJson(doc, payload);
 
   mqttClient.publish(MQTT_TOPIC_FRIDGE, payload.c_str(), true);  // retained
-  Serial.printf("Fridge: %.1f°C, alert=%s, rssi=%d, heap_free=%u\n", tempC, currentAlertType.c_str(), WiFi.RSSI(), ESP.getFreeHeap());
+  Serial.printf("Fridge: %s, alert=%s, rssi=%d, heap_free=%u\n", payload.c_str(), currentAlertType.c_str(), WiFi.RSSI(), ESP.getFreeHeap());
 }
 
 /* =======================
@@ -132,7 +135,7 @@ void setup() {
   hpStartOTA(DEVICE_NAME, OTA_PASS);
 
   // MQTT
-  espClient.setCACert(HP_MQTT_ROOT_CA);
+  hpSetupTls(espClient);   // roots and timeouts (#394)
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setKeepAlive(60);
   hpConnectMQTT(mqttClient, DEVICE_NAME, MQTT_USER, MQTT_PASS);
