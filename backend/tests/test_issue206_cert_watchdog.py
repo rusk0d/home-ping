@@ -45,29 +45,29 @@ def test_issue206_cert_watchdog(env):
     check("hourly: no second check within the hour", len(calls) == 1)
 
     run(10)
-    check("10 days left: 'Certificate expires soon'", pushes() == [("cert_443", "Certificate expires soon")])
+    check("10 days left: 'Certificate expires soon'", pushes() == [("cert_web.test_443", "Certificate expires soon")])
     run(9)
     check("once per excursion", pushes() == [])
     run(89)
-    check("renewed: 'Certificate renewed'", pushes() == [("cert_443", "Certificate renewed")])
-    check("flag cleared", store.get_state("watchdog:cert_443") in ("", "0"))
+    check("renewed: 'Certificate renewed'", pushes() == [("cert_web.test_443", "Certificate renewed")])
+    check("flag cleared", store.get_state("watchdog:cert_web.test_443") in ("", "0"))
 
     expiry["value"] = "certificate has expired"
     run()
-    check("fails verification: 'Certificate problem'", pushes() == [("cert_443", "Certificate problem")])
+    check("fails verification: 'Certificate problem'", pushes() == [("cert_web.test_443", "Certificate problem")])
     expiry["value"] = ConnectionRefusedError("down")
     run()
-    check("unreachable: no push, state kept", pushes() == [] and store.get_state("watchdog:cert_443") == "sent")
+    check("unreachable: no push, state kept", pushes() == [] and store.get_state("watchdog:cert_web.test_443") == "sent")
     run(89)
-    check("...and 'renewed' once it's fine", pushes() == [("cert_443", "Certificate renewed")])
+    check("...and 'renewed' once it's fine", pushes() == [("cert_web.test_443", "Certificate renewed")])
 
     # Quiet hours postpone it, like the other watchdogs
     store.set_state("quiet_hours", "1"); store.set_state("quiet_start", "00:00"); store.set_state("quiet_end", "23:59")
     run(5)
-    check("quiet hours: postponed", pushes() == [] and store.get_state("watchdog:cert_443") in ("", "0"))
+    check("quiet hours: postponed", pushes() == [] and store.get_state("watchdog:cert_web.test_443") in ("", "0"))
     store.set_state("quiet_hours", "0")
     run(5)
-    check("after quiet hours: pushed", pushes() == [("cert_443", "Certificate expires soon")])
+    check("after quiet hours: pushed", pushes() == [("cert_web.test_443", "Certificate expires soon")])
 
     # The real check against a local TLS server with a self-signed certificate: untrusted,
     # so it returns the reason instead of a date; a closed port raises OSError
