@@ -5,6 +5,9 @@ occupancy (LD2410C radar) and publish over MQTT. A Flask backend stores the data
 SQLite and sends push notifications; a web page and an Android app (with a
 home-screen widget) show it.
 
+<img width="1080" height="1920" alt="screenshot-rocks (3)" src="https://github.com/user-attachments/assets/8d55d3cd-d359-415c-ba77-586f29e71e53" />
+
+
 ## How the pieces connect
 
 ```
