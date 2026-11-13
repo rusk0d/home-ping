@@ -1,4 +1,4 @@
 # Only for running the tests (#76): pytest runs backend/tests. The backend itself needs requirements.txt.
 pytest==9.2.0
 # Lint (#175): `ruff check backend` (rules in backend/ruff.toml); CI runs it too.
-ruff==0.17.3
+ruff==0.17.4
