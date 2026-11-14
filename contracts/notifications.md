@@ -351,7 +351,8 @@ The backend's own rule, from the readings (the node's `alert` doesn't know about
   last `FRIDGE_DOOR_RISE_MINUTES` (5). The newest of those lowest readings is the base and the
   start. A compressor cycle warms far slower than that.
 - **Open**: still above base + `FRIDGE_DOOR_CLOSED_C` (1.0 °C) `FRIDGE_DOOR_OPEN_MINUTES` (10)
-  after the start → `Fridge door open?` / `Up from 3.0 to 7.5 °C in 10 min and not cooling down`.
+  after the start, and within `FRIDGE_DOOR_PEAK_C` (0.2 °C) of the rise's peak (since #420: one
+  already cooling is a shut door; the next readings close the rise or push after all) → `Fridge door open?` / `Up from 3.0 to 7.5 °C in 10 min and not cooling down`.
   Once per rise (`alerts.Excursion`).
 - **Closed**: back within `FRIDGE_DOOR_CLOSED_C` of the base, or `FRIDGE_DOOR_FALL_C` (0.5 °C)
   below the rise's peak (since #411: warm food keeps a shut fridge warm for hours, a door left
@@ -465,3 +466,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #406: the fridge's warm pushes say "Above 7 °C" (the node's limit, was 5 °C); the reboot hold's normal range is 0.5–6.5 °C.
 - #411: the fridge door counts as closed once it cools `FRIDGE_DOOR_FALL_C` (0.5 °C) below its peak, too.
 - #417: the fridge push texts and the reboot hold's range and timer come from the node's published `limits`.
+- #420: "Fridge door open?" only while the reading is within 0.2 °C of the rise's peak.

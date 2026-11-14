@@ -122,6 +122,9 @@ FRIDGE_DOOR_CLOSED_C = 1.0
 # ...or once it has fallen this far below its peak since the rise (#411): a door left open
 # doesn't cool down, a shut one with warm food in it does, but stays warm for hours
 FRIDGE_DOOR_FALL_C = 0.5
+# "Fridge door open?" only while the reading is within this of the peak (#420): one already
+# cooling is a shut door, and the next reading closes the rise or pushes after all
+FRIDGE_DOOR_PEAK_C = 0.2
 # A fridge temperature outside this is a sensor glitch, not the fridge (#352): the DS18B20
 # reads exactly 85.0 °C after a brownout or a data-line glitch, inside ENV_VALID. Stored as null.
 FRIDGE_VALID = (-30, 50)
