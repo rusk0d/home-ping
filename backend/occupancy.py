@@ -1,10 +1,13 @@
 """Occupancy queries over the radars' raw presence_readings (#425, from store.py): the 24 h
-stats, per-radar and combined confidence, the combined "someone home now" and a radar's previous
-state. contracts/db-schema.md ("Occupancy logic") and api.md.
+stats, per-radar and combined confidence and the combined "someone home now"; and the flat's
+occupied / vacant changes logged from it (#422). contracts/db-schema.md ("Occupancy logic") and api.md.
 """
 
-from config import CONFIDENCE_MINUTES
-from store import db, parse_ts
+import time
+
+import state
+from config import CONFIDENCE_MINUTES, FLAT_VACANT_MINUTES
+from store import db, get_state, log_event, parse_ts, set_state
 
 
 def occupancy_stats(hours=24):
@@ -109,14 +112,30 @@ def calculate_combined_confidence(minutes=CONFIDENCE_MINUTES):
     return int(max(r[1] for r in rows) * 100)
 
 
-def get_last_occupancy(device):
-    """Previous (second most recent) radar occupancy state."""
-    with db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT occupied FROM presence_readings
-            WHERE device = ?
-            ORDER BY id DESC LIMIT 1 OFFSET 1
-        """, (device,))
-        row = c.fetchone()
-    return row[0] if row else None
+def note_flat_occupancy(now=None):
+    """Log FLAT_OCCUPANCY when the flat becomes occupied or vacant (#422), on each presence
+    message. Occupied as soon as get_combined_occupancy() is 1; vacant once it has been 0 for
+    FLAT_VACANT_MINUTES. The radars' raw flag flips every 10-20 s and was logged on every flip
+    (OCCUPANCY_CHANGE, ~2,000 rows a day); this is a few a day. system_state flat_occupied
+    ('1' / '0', missing until the first change) survives a restart; after one, the vacant hold
+    starts over. No radar in the last 2 min (None): nothing changes."""
+    now = time.time() if now is None else now
+    occupied = get_combined_occupancy()
+    if occupied is None:
+        return None
+    shown = get_state("flat_occupied", "")
+    if occupied:
+        state.FLAT["last_occupied"] = now
+        if shown != "1":
+            set_state("flat_occupied", "1")
+            log_event("system", "FLAT_OCCUPANCY", "occupied")
+            return "occupied"
+        return None
+    if shown == "0":
+        return None
+    last = state.FLAT.setdefault("last_occupied", now)
+    if now - last >= FLAT_VACANT_MINUTES * 60:
+        set_state("flat_occupied", "0")
+        log_event("system", "FLAT_OCCUPANCY", f"vacant (no one for {FLAT_VACANT_MINUTES} min)")
+        return "vacant"
+    return None

@@ -15,10 +15,10 @@ from config import (
     PRESSURE_WINDOW_HOURS, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD, TOPIC,
 )
 from store import (
-    db, get_state, log_event, log_presence, log_to_db, note_uptime,
+    db, get_state, log_presence, log_to_db, note_uptime,
     parse_ts, prune, rollup_hourly, set_state, utcnow,
 )
-from occupancy import get_last_occupancy
+from occupancy import note_flat_occupancy
 from alerts import Excursion, alert, set_radar_alerted
 from metrics import note_node
 from nodes import handle_status, touch_device
@@ -84,9 +84,8 @@ def handle_presence_data(data):
               heap_free=read_int(data, "heap_free"), heap_min=read_int(data, "heap_min"),
               heap_block=read_int(data, "heap_block"), radar_connected=radar_connected, occupied=occupied)
 
-    prev_occ = get_last_occupancy(device)
-    if prev_occ is not None and prev_occ != occupied:
-        log_event(device, "OCCUPANCY_CHANGE", "occupied" if occupied else "vacant")
+    # The flat's occupied / vacant changes, smoothed (#422; was every raw flip, OCCUPANCY_CHANGE)
+    note_flat_occupancy()
 
     now = time.time()
 
