@@ -27,6 +27,9 @@ sudo -u iot venv/bin/python tools/api_regressions.py
 sudo -u iot venv/bin/python tools/fridge_door_replay.py [--open-minutes 15 ...]
 ```
 
+- `validate_db_deep.py --days N`: its event checks (OCCUPANCY_CHANGE, window events, cooldowns)
+  look at the last N days, default 7; `--days 0` checks every stored event (kept 30 days). So a
+  bug fixed last week stops showing after a week instead of a month (#423).
 - `validate_db.py --db <file> --now "YYYY-MM-DD HH:MM:SS"` checks another database (a restored
   backup) as of that UTC time; the monthly restore drill (`backup_drill.py`, #339) runs it so.
 - They open `data.db` **read-only** and take the API login and settings from `config.py`
