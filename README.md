@@ -60,7 +60,7 @@ in its working directory.
   or on Linux: `ln -s <repo>/firmware/libraries/HomePing ~/Arduino/libraries/HomePing`
   (the folder is `arduino-cli config get directories.user` + `/libraries`).
   The link follows the repo, so a `git pull` updates it too.
-- **Backend:** `pip install -r backend/requirements.txt`, then `python server.py` in
+- **Backend:** `pip install --require-hashes -r backend/requirements.lock`, then `python server.py` in
   `backend/` with a `.env` next to it (serves the API on 127.0.0.1:5000 with waitress).
   In production it runs as the systemd unit `iot-backend` as user `iot` from `/opt/iot`
   (see "Production setup"; `sudo systemctl restart iot-backend`, logs:
@@ -125,7 +125,7 @@ overwritten one. The watchdog pushes `Off-site backup failed` when no upload suc
    Security credentials → Create access key ("Application running outside AWS").
 4. On the server, add to `/opt/iot/.env` (template in `.env.example`): `BACKUP_S3_BUCKET`,
    `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION=eu-central-1`. Install
-   boto3 (`sudo -u iot venv/bin/pip install -r requirements.txt`), restart the backend, and
+   boto3 (`sudo -u iot venv/bin/pip install --require-hashes -r requirements.lock`), restart the backend, and
    run a backup once: `systemctl start iot-backup.service && journalctl -u iot-backup -n 5`
    should say `uploaded to s3://…`.
 
@@ -192,9 +192,9 @@ Installing the backend on a server (as root, one time):
 apt install -y python3-venv                       # if "python3 -m venv" is missing
 useradd --system --home-dir /opt/iot --shell /usr/sbin/nologin iot
 mkdir -p /opt/iot
-# copy backend/*.py, requirements.txt and systemd/ from the repo into /opt/iot, plus .env
+# copy backend/*.py, requirements.lock and systemd/ from the repo into /opt/iot, plus .env
 # (from .env.example) and the Firebase service-account JSON
-python3 -m venv /opt/iot/venv && /opt/iot/venv/bin/pip install -r /opt/iot/requirements.txt
+python3 -m venv /opt/iot/venv && /opt/iot/venv/bin/pip install --require-hashes -r /opt/iot/requirements.lock
 chown -R iot:iot /opt/iot && chmod 750 /opt/iot && chmod 600 /opt/iot/.env /opt/iot/firebase_service_account.json
 grep -rn proxy_pass /etc/nginx/sites-enabled/   # must point to 127.0.0.1:5000 (or localhost:5000)
 cp /opt/iot/systemd/iot-backend.service /opt/iot/systemd/iot-backup.service /opt/iot/systemd/iot-backup.timer /etc/systemd/system/
@@ -217,11 +217,31 @@ backend/deploy.sh           # list the differences, ask, deploy
 
 It only deploys a clean `main` that matches `origin/main`, and copies what git has (LF line
 endings), not the working copy. It copies the backend files that differ, then `chown iot:iot`.
-It runs `pip install -r requirements.txt` when that file changed, and restarts `iot-backend`
+It runs `pip install --require-hashes -r requirements.lock` when that file changed, and restarts `iot-backend`
 when a module it loads changed, then waits for `/api/health`. `.env`, the Firebase JSON,
 `data.db` and the backups are never touched. The systemd units and fail2ban files are only
 compared with the installed ones, and installing them stays manual. `.py` files that exist
 only on the server are listed, not deleted.
+
+### Python packages
+
+`backend/requirements.txt` lists the six packages the backend imports, each pinned.
+`backend/requirements.lock` is compiled from it: every package those pull in (about 50), each
+with its version and file hashes. CI and the server both install the lock file with
+`--require-hashes`, so a deploy installs exactly what the tests ran on, and pip refuses a file
+that doesn't match.
+
+After changing `requirements.txt` (also on a Dependabot PR that bumps it), compile the lock
+file again in `backend/` with [uv](https://docs.astral.sh/uv/) (`pip install uv`; used only
+for this, the server doesn't need it) and commit both files:
+
+```
+uv pip compile requirements.txt --generate-hashes --python-version 3.12 -o requirements.lock
+```
+
+That keeps the versions already in the lock file and changes only what the edit needs; add
+`--upgrade` to move the indirect packages to their newest versions too. 3.12 is the server's
+Python. A test (`tests/test_requirements_lock.py`) fails when the two files disagree.
 
 ### Ports
 

@@ -1,3 +1,5 @@
+# The packages the backend imports. requirements.lock is compiled from this file and is what
+# CI and the server install (README, "Python packages"): change both together.
 Flask==3.1.3
 python-dotenv==1.2.4
 firebase-admin==7.7.0

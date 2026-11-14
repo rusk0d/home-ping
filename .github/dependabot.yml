@@ -3,6 +3,9 @@
 # left out of the groups and come as one PR each, since they can need code changes
 # (e.g. Android Gradle Plugin 9, see #141/#125). CI runs on each PR. The Arduino core
 # and libraries aren't covered by Dependabot; they are pinned in .github/workflows/firmware.yml.
+# pip: Dependabot bumps backend/requirements.txt but doesn't know backend/requirements.lock, so
+# its PR fails the lock test until the lock file is compiled again on that branch (README,
+# "Python packages").
 version: 2
 updates:
   - package-ecosystem: pip
