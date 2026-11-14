@@ -24,6 +24,7 @@ from nodes import handle_status, touch_device
 from baseline import check_baseline
 from fridge import check_door, check_fridge_alerts, note_limits
 from server_checks import check_watchdogs
+from weekly import check_weekly
 
 log = logging.getLogger(__name__)
 
@@ -405,6 +406,7 @@ SUMMARY_STEPS = (
     ("baseline check", check_baseline),            # after the rollup too (#229)
     ("summaries publish", publish_summaries),
     ("watchdog check", check_watchdogs),           # backup, disk (#176), certificates (#206)
+    ("weekly summary", check_weekly),              # Sunday evening (#427)
 )
 
 

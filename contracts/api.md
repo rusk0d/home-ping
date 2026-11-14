@@ -447,11 +447,11 @@ so the settings apply to every phone. Behaviour: `notifications.md` → "Setting
 
 ```json
 {"humidity":true,"temperature":true,"radar":true,"nodes":true,"pressure":true,"air":true,
- "baseline":true,"fridge":true,"quiet_hours":{"enabled":false,"start":"22:00","end":"07:00"}}
+ "baseline":true,"fridge":true,"weekly":true,"quiet_hours":{"enabled":false,"start":"22:00","end":"07:00"}}
 ```
 
 - `humidity`, `temperature`, `radar`, `nodes`, `pressure` (#237), `air` (#245), `baseline` (#229),
-  `fridge` (#290): bool, default `true`. `false` mutes that alert type (`NOTIFY_KINDS` in `config.py`).
+  `fridge` (#290), `weekly` (#427): bool, default `true`. `false` mutes that alert type (`NOTIFY_KINDS` in `config.py`).
 - `quiet_hours.enabled`: bool, default `false`. `start`/`end`: `"HH:MM"` (24 h, server
   local time = Budapest), defaults `22:00`/`07:00`. The window may cross midnight.
 - Occupancy alerts are not in here: they keep their own switch (`/api/occupancy_arm`)
@@ -633,3 +633,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #417: `/api/latest_all`'s fridge entry has `limits`; the fridge's Level bands come from it.
 - #419: `POST /api/fridge/loading`; `/api/latest_all`'s fridge entry has `loading_until`.
 - #426: `/api/air` has `aired_today`.
+- #427: `/api/notification_settings` has a `weekly` switch.

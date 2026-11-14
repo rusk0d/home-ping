@@ -192,6 +192,12 @@ CERT_CHECK = [t.strip() for t in os.environ.get("CERT_CHECK", "").split(",") if 
 CERT_MIN_DAYS = 14               # push when a certificate expires sooner (renewal runs at 30)
 CERT_CHECK_INTERVAL = 3600       # seconds between certificate checks
 # Notification settings (#82)
-NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes", "pressure", "air", "baseline", "fridge")
+NOTIFY_KINDS = ("humidity", "temperature", "radar", "nodes", "pressure", "air", "baseline", "fridge",
+                "weekly")
 QUIET_DEFAULTS = {"start": "22:00", "end": "07:00"}
 HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+# Weekly summary push (#427): Sunday evening, local time; once per ISO week
+WEEKLY_DAY = 6                   # datetime.weekday(): Monday 0 .. Sunday 6
+WEEKLY_HOUR = 19                 # from this local hour on (until midnight: a missed Sunday is skipped)
+WEEKLY_NIGHT_HOURS = (22, 7)     # night CO₂: local hours from 22:00 to 07:00

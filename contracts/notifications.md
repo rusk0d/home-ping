@@ -52,7 +52,7 @@ Set in the app (`GET`/`POST /api/notification_settings`, see `api.md`), stored i
 - One switch per alert type (`alert(kind=...)`): `humidity` (HUMIDITY_HIGH/LOW),
   `temperature` (TEMP), `radar` (RADAR_DISCONNECTED), `nodes` (NODE_STATUS, offline
   and back online; also the server watchdog, WATCHDOG, #176, and silent sensors, SENSOR_STATUS,
-  #224), `pressure` (PRESSURE, #237), `air` (AIR, #245), `baseline` (BASELINE, #229), `fridge` (FRIDGE_ALERT, #290; FRIDGE_DOOR, #336).
+  #224), `pressure` (PRESSURE, #237), `air` (AIR, #245), `baseline` (BASELINE, #229), `fridge` (FRIDGE_ALERT, #290; FRIDGE_DOOR, #336), `weekly` (WEEKLY, #427).
   All on by default.
 - **Quiet hours**: off by default. When on, the alert types above are muted between
   `start` and `end` (server local time, Budapest; the window may cross midnight,
@@ -398,6 +398,26 @@ checked once (`baseline_last_hour`; an hour more than 3 h old isn't, after downt
 - Before #297 it never fired: SQLite has no `strftime('%A')`, and 28 days give only 4-5 values
   per weekday-hour.
 
+### 13. Weekly summary: `WEEKLY` (since #427)
+
+`weekly.py`, in the summaries loop every 5 min (its own step, last): on **Sunday from 19:00 local**
+(`WEEKLY_DAY`, `WEEKLY_HOUR`), once per ISO week (`system_state` `weekly_sent` = `2026-W46`).
+
+- Title `Your week at home`, body from the last 7 days, e.g. `Night CO₂ 1059 ppm (+72 on last
+  week) · aired 41× · fridge door 5× · 20 restarts (Fridge 10, Main node 7, Hallway radar 3) ·
+  server warning: drill`:
+  - **Night CO₂**: the mean `hourly.co2_avg` of the local hours 22:00-07:00 (`WEEKLY_NIGHT_HOURS`),
+    against the 7 days before (`same as last week` when equal; no comparison without them; left
+    out without any night hours).
+  - **Aired**: `WINDOW_OPEN` events (`not aired` when none).
+  - **Fridge door**: `FRIDGE_DOOR_OPEN` events, sent or muted (`fridge door fine` when none).
+  - **Restarts**: `RESTART` events per node, by name (`config.DEVICES`); OTA flashes count too.
+  - **Server**: the watchdogs that fired (`WATCHDOG_<NAME>`, not `_OK`), or `server all fine`.
+- data `{"event": "WEEKLY", "device": "system"}`. Logs `WEEKLY_SUMMARY` (device `system`) with the body.
+- Switch `weekly`. Quiet hours **postpone** it (pushed at the first check after them, still that
+  Sunday); switched off, it's logged as muted and counts as done. A failed send is tried again at
+  the next check. A Sunday the server was down for (from 19:00 on) is skipped, not sent Monday.
+
 (`SOIL_DRY`, "Plant Needs Water", was removed with the soil feature in #9.)
 
 ## Outside the backend: uptime monitor (since #250)
@@ -437,6 +457,7 @@ own app/email, not by FCM.
 | `AIR` | Time to air out / Air is fresh again (`co2`); Close the window? / Window still open? (`window`) | CO₂ ≥ 1200 ppm for 10 min, someone home / < 900 again; spell ≥ 20 min with fresh air and cold outside; geofence left home during a spell | every 3 h while high; once per spell; once per spell | 60 s check; `POST /api/occupancy_arm` |
 | `FRIDGE_ALERT` | Fridge too cold / warming up / too warm / too warm (sustained) / back to normal | the node's `alert` state changed (<0 °C, >5 °C, >8 °C for 30 min; >5 °C for 2 h); a muted one is pushed once unmuted if still on | once per state change, 15 min per state | 5 min check |
 | `FRIDGE_DOOR` | Fridge door open? / Fridge door closed | a rise of 2 °C within 5 min, not back within 1 °C of the start 10 min later / back within 1 °C | once per rise | each fridge reading |
+| `WEEKLY` | Your week at home | Sunday from 19:00 local: night CO₂, aired, fridge door, restarts, server warnings of the last 7 days | once per ISO week | 5 min check |
 | `BASELINE` | Unusual reading / Back to normal | hourly average \|z\| > 3 vs. the same local hour over 28 days, 2 consecutive hours / \|z\| < 2 again | once per excursion | each new hour (5 min check) |
 
 ## Mismatches and issues
@@ -477,3 +498,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #420: "Fridge door open?" only while the reading is within 0.2 °C of the rise's peak.
 - #421: "Fridge door closed" says "Cooling down again, <t> °C now" when it ended by cooling from the peak while still warm.
 - #419: "Loading the fridge" holds the fridge's warm and door pushes for up to 3 h; still on afterwards → pushed then.
+- #427: weekly summary push (`WEEKLY`, switch `weekly`).
