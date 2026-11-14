@@ -360,6 +360,7 @@ void setup() {
 
   hpConnectWiFi(ssid, password);   // reboots after ~30 s without WiFi
   hpStartOTA(DEVICE_NAME, OTA_PASS);
+  hpStartLoopWatchdog();   // #470
 
   configTzTime(TIME_ZONE, NTP_SERVER);
   // Wait for the first sync so the first screen already has the time (and the BKK
