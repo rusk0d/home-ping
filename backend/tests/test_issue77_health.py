@@ -8,9 +8,9 @@ def test_issue77_health(env):
     import os, json, types, time
     from unittest import mock
     import server
-    import config, state, store, ingest, api
+    import config, state, ingest, api, schema
     server.prepare()   # importing does no work (#73)
-    store.init_db()
+    schema.init_db()
     c = api.app.test_client()
     def get():
         r = c.get("/api/health"); return r.status_code, r.get_json()

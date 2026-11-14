@@ -6,7 +6,7 @@ put-only), restores it into a temp folder and checks it:
 - gunzip, PRAGMA integrity_check
 - the main tables are there and readings / hourly have rows (schema_version is only reported:
   a backup from before #306 has none, and init_db() migrates it like any older database)
-- started like the backend would start it (#347): store.init_db() (schema, the migrations an
+- started like the backend would start it (#347): schema.init_db() (schema, the migrations an
   older backup still needs) and rollup_hourly() as of its newest reading. Not prune(): that
   works on the real time and would delete raw rows the copy's hourly rows are checked against.
 - tools/validate_db.py against the started copy, at the copy's own time (--now: its newest reading)
@@ -44,8 +44,8 @@ VALIDATE = BACKEND / "tools" / "validate_db.py"
 START = (
     "import sys\n"
     "from datetime import timedelta\n"
-    "import store\n"
-    "store.init_db()\n"
+    "import schema, store\n"
+    "schema.init_db()\n"
     "store.rollup_hourly(now=store.parse_ts(sys.argv[1]) + timedelta(seconds=1))\n"
     "print(store.get_state('schema_version', ''))\n"
 )

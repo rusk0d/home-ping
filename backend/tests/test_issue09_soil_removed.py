@@ -7,7 +7,7 @@ from support import check
 def test_issue09_soil_removed(env):
     import json, base64, sqlite3, types
     import server
-    import config, store, alerts, ingest, api
+    import config, alerts, ingest, api, schema
     server.prepare()   # importing does no work (#73)
     def tables():
         con = sqlite3.connect(config.DB); t = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}; con.close(); return t
@@ -16,7 +16,7 @@ def test_issue09_soil_removed(env):
     con.execute("CREATE TABLE IF NOT EXISTS soil_readings (id INTEGER PRIMARY KEY, device TEXT, ts TIMESTAMP, moisture INTEGER, raw_value INTEGER)")
     con.execute("INSERT INTO soil_readings (device, moisture, raw_value) VALUES ('soil_sensor_01', 40, 2000)")
     con.commit(); con.close()
-    store.init_db()
+    schema.init_db()
     check("soil_readings dropped on start", "soil_readings" not in tables())
     check("other tables still there", {"readings", "presence_readings", "devices", "events", "system_state"} <= tables())
     c = api.app.test_client()
