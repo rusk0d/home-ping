@@ -5,6 +5,7 @@ import android.view.View
 import android.widget.TextView
 import com.david.homeenv.HomeFormat.valueWithUnit
 import com.david.homeenv.databinding.FragmentHomeBinding
+import com.david.homeenv.ui.FridgeLimits
 import com.david.homeenv.ui.Level
 import com.david.homeenv.ui.Levels
 import com.david.homeenv.ui.SparklineView
@@ -147,12 +148,21 @@ class OccupancyNowCard(b: FragmentHomeBinding) : HomeCard(b) {
 class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
     private var fridgeTs: Date? = null
 
+    private var limits = FridgeLimits.current
+
     init {
-        b.fridgeGauge.scale = Levels.FRIDGE
+        b.fridgeGauge.scale = limits.scale
     }
 
     fun render(latest: JSONObject, devices: List<Device>) {
         val fridge = devices.firstOrNull { it.role == "fridge" }?.let { latest.optJSONObject(it.id) }
+        // The node's own alert limits (#417): the gauge and the status text follow them
+        val newLimits = FridgeLimits.from(fridge?.optJSONObject("limits")) ?: FridgeLimits.DEFAULT
+        if (newLimits != limits) {
+            limits = newLimits
+            b.fridgeGauge.scale = newLimits.scale
+        }
+        FridgeLimits.current = newLimits
         val temp = fridge?.optNum("temp")
         // optString() turns a JSON null into "null"
         val alert = fridge?.takeUnless { it.isNull("alert") }?.optString("alert").orEmpty()
@@ -165,8 +175,8 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
             ?.let { " since " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(it) } ?: "")
         b.fridgeStatus.text = when {
             fridge == null || temp == null -> "no data"
-            door != null -> listOf(door, status(alert)).filter { it != "normal" }.joinToString(" · ")
-            else -> status(alert)
+            door != null -> listOf(door, limits.status(alert)).filter { it != "normal" }.joinToString(" · ")
+            else -> limits.status(alert)
         }
         b.fridgeStatus.setTextColor(Levels.color(ctx, if (door != null) R.color.bad else R.color.muted))
         // The temperature's own time (#402): `ts` is the newest message, which during a sensor
@@ -184,15 +194,6 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
         val hi = items.mapNotNull { it.optNum("max_fridge") }.maxOrNull()
         b.fridgeRange.visibility = if (lo != null && hi != null) View.VISIBLE else View.GONE
         if (lo != null && hi != null) b.fridgeRange.text = "today %.1f–%.1f°".format(Locale.US, lo, hi)
-    }
-
-    private fun status(alert: String) = when (alert) {
-        "" -> "normal"
-        "cold" -> "below 0 °C for 30+ min"
-        "warm_low" -> "above 7 °C for 30+ min"
-        "warm_critical" -> "above 8 °C for 30+ min"
-        "warm_critical_duration" -> "above 7 °C for 2+ h"
-        else -> alert
     }
 
     override fun updateAge(now: Long) {

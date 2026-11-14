@@ -10,8 +10,8 @@ import com.david.homeenv.R
 
 /**
  * A gauge from the web dashboard: a [Scale] drawn by [GaugeBar], with the scale labels
- * underneath. The CO₂ card ([Levels.CO2], the default) and the fridge card ([Levels.FRIDGE],
- * #326). Labels that would overlap a neighbour on a narrow card are left out; the first and
+ * underneath. The CO₂ card ([Levels.CO2], the default) and the fridge card ([FridgeLimits.scale],
+ * #326, #417). Labels that would overlap a neighbour on a narrow card are left out; the first and
  * the last one always stay.
  */
 class GaugeView @JvmOverloads constructor(
@@ -46,7 +46,7 @@ class GaugeView @JvmOverloads constructor(
     private fun labels(): List<Pair<Float, String>> {
         val values = listOf(scale.min) + scale.stops + scale.max
         return values.mapIndexed { i, v ->
-            scale.fraction(v).toFloat() to (if (i == values.lastIndex) "${v.toInt()}+" else "${v.toInt()}")
+            scale.fraction(v).toFloat() to (if (i == values.lastIndex) "${FridgeLimits.num(v)}+" else FridgeLimits.num(v))
         }
     }
 
