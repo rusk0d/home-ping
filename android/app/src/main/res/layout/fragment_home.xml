@@ -287,6 +287,13 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp" />
 
+                    <!-- Aired today (#426), from /api/air; hidden without it -->
+                    <TextView
+                        android:id="@+id/co2_aired"
+                        style="@style/HomeFoot"
+                        android:layout_marginTop="6dp"
+                        android:visibility="gone" />
+
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
