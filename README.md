@@ -24,6 +24,7 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 | `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `server_checks`, `ingest` (MQTT), `metrics` (Prometheus) and `api` modules; `test_push.py`, nightly `backup_db.py`, monthly `backup_drill.py` |
 | `web/` | Dashboard (`index.html` + `app.js`, English/Hungarian texts in `i18n.js`), connects to MQTT directly from the browser; `nginx/` has its security headers |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
+| `deploy/` | The server's configuration as files: Mosquitto, the nginx site, the certbot hook, and the order to rebuild it in (`deploy/README.md`) |
 | `contracts/` | MQTT topics/payloads, REST API, push notifications, DB schema: the source of truth |
 | `audit/` | Audit and code-review reports: local only, not in the repo (#452) |
 
@@ -182,7 +183,10 @@ served by waitress on `127.0.0.1:5000`. nginx is the only public entry point and
 `/api/` to it. The unit (`backend/systemd/iot-backend.service`) also limits what the
 process can write to `/opt/iot`.
 
-Installing on a server (as root, one time):
+The rest of the server (Mosquitto, the nginx site, the firewall, the certificate hook) is in
+`deploy/`, with the order to set it up in.
+
+Installing the backend on a server (as root, one time):
 
 ```
 apt install -y python3-venv                       # if "python3 -m venv" is missing
@@ -224,8 +228,8 @@ only on the server are listed, not deleted.
 Public (ufw): 22 (SSH), 80/443 (nginx: the web page, `/api/` and `/mqtt`), 8883 (MQTT
 over TLS for the nodes, #31). Everything else listens on `127.0.0.1` only: the backend on
 5000 and Mosquitto's plain listener on 1883 (the backend). Mosquitto's WebSockets listener
-on 9001 (nginx `/mqtt` is its only client) shows as `*:9001`, because this Mosquitto can't
-bind websockets to localhost (#208); ufw is what keeps it closed. Check with `ss -ltnp` and
+on 9001 (nginx `/mqtt` is its only client) is on `127.0.0.1` too since Mosquitto 2.0.18
+(2.0.11 bound it to all interfaces, #208), and ufw keeps it closed either way. Check with `ss -ltnp` and
 `ufw status`.
 
 ## Uptime monitoring

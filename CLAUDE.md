@@ -17,6 +17,8 @@ notifications via Firebase. A small web page and an Android app display the data
 - /web       HTML page (index.html + app.js + i18n.js for EN/HU, no inline scripts: CSP), connects to MQTT
              directly from the browser; nginx/ has the site's security headers
 - /android   Kotlin app, talks only to the backend's REST API
+- /deploy    the server's configuration as files (Mosquitto, nginx site, certbot hook) and the
+             rebuild order; reference copies, change them with the server
 - /contracts MQTT topics/payloads, REST API, DB schema (source of truth)
 - /audit     audit and review reports: local only, gitignored (#452); they quote live data
              and the server's state, which don't belong in a public repo
