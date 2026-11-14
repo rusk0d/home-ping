@@ -39,6 +39,10 @@ const unsigned long COLD_FOR      = 30UL * 60 * 1000;
 const unsigned long WARM_FOR      = 30UL * 60 * 1000;
 const unsigned long WARM_LONG_FOR = 2UL * 60 * 60 * 1000;
 const unsigned long HOT_FOR       = 30UL * 60 * 1000;
+// Published as `limits` with every reading (#417): the backend, the app and the web page take
+// their texts and gauge bands from there, so changing a limit above is a flash only. The
+// contract has one duration for cold / warm / hot, so they must stay equal.
+static_assert(COLD_FOR == WARM_FOR && WARM_FOR == HOT_FOR, "limits.minutes is one value for all three");
 
 /* =======================
    GLOBALS
@@ -100,6 +104,13 @@ void publishTemp() {
   if (ok) doc["temp_c"] = roundf(tempC * 10) / 10;   // 1 decimal (contract); DS18B20 steps are 0.0625 °C
   else    doc["sensor_error"] = true;
   doc["alert"]        = currentAlertType;
+  JsonObject limits = doc["limits"].to<JsonObject>();
+  limits["cold"]         = COLD_BELOW;
+  limits["warm"]         = WARM_ABOVE;
+  limits["hot"]          = HOT_ABOVE;
+  limits["hysteresis"]   = HYSTERESIS;
+  limits["minutes"]      = WARM_FOR / 60000;
+  limits["long_minutes"] = WARM_LONG_FOR / 60000;
   doc["rssi"]         = WiFi.RSSI();
   doc["uptime"]       = hpUptimeSeconds();   // 64-bit timer: doesn't wrap like millis() (#8)
   doc["reset_reason"] = (int)esp_reset_reason();
