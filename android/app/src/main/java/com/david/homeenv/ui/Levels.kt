@@ -7,6 +7,8 @@ import android.widget.TextView
 import androidx.annotation.ColorRes
 import androidx.core.content.ContextCompat
 import com.david.homeenv.R
+import org.json.JSONObject
+import java.util.Locale
 import kotlin.math.ln
 
 /** A level label and its colour, e.g. "Comfortable" / good. */
@@ -28,6 +30,55 @@ class Scale(val min: Double, val max: Double, val stops: List<Double>, val color
 }
 
 /**
+ * The fridge node's alert limits (#417): `limits` on /api/latest_all's fridge entry, which the
+ * node publishes itself (contracts/mqtt.md), so the gauge, the history bands and the card's
+ * texts follow a flash without an app update. [DEFAULT] until the backend serves them.
+ */
+data class FridgeLimits(val cold: Double, val warm: Double, val hot: Double, val minutes: Int, val longMinutes: Int) {
+    /**
+     * The fridge gauge and history bands (#326): too cold below [cold], fine up to [warm],
+     * warming up to [hot], then too warm. −2…10 °C, wider if a limit is near an end. The chip
+     * comes from the node's `alert` ([Levels.fridge]), which also needs [minutes] past a limit.
+     */
+    val scale: Scale
+        get() = Scale(minOf(-2.0, cold - 1), maxOf(10.0, hot + 2), listOf(cold, warm, hot),
+            listOf(R.color.accent_hum, R.color.good, R.color.poor, R.color.bad))
+
+    /** The card's status line for the node's [alert], e.g. "above 7 °C for 30+ min". */
+    fun status(alert: String): String = when (alert) {
+        "" -> "normal"
+        "cold" -> "below ${num(cold)} °C for $minutes+ min"
+        "warm_low" -> "above ${num(warm)} °C for $minutes+ min"
+        "warm_critical" -> "above ${num(hot)} °C for $minutes+ min"
+        "warm_critical_duration" -> "above ${num(warm)} °C for ${num(longMinutes / 60.0)}+ h"
+        else -> alert
+    }
+
+    companion object {
+        val DEFAULT = FridgeLimits(0.0, 7.0, 8.0, 30, 120)
+
+        /** The newest limits Home has seen, for the history screen's bands. */
+        @Volatile var current: FridgeLimits = DEFAULT
+
+        /** From the API's `limits`; null when missing or not a sane set (cold < warm ≤ hot). */
+        fun from(o: JSONObject?): FridgeLimits? {
+            if (o == null) return null
+            fun d(key: String) = if (o.isNull(key)) null else o.optDouble(key).takeIf { it.isFinite() }
+            val cold = d("cold") ?: return null
+            val warm = d("warm") ?: return null
+            val hot = d("hot") ?: return null
+            val minutes = d("minutes")?.toInt() ?: return null
+            val long = d("long_minutes")?.toInt() ?: return null
+            if (!(cold < warm && warm <= hot && minutes > 0 && long >= minutes)) return null
+            return FridgeLimits(cold, warm, hot, minutes, long)
+        }
+
+        /** 7.0 -> "7", -0.5 -> "-0.5". */
+        fun num(v: Double): String = if (v % 1.0 == 0.0) v.toLong().toString() else "%.1f".format(Locale.US, v)
+    }
+}
+
+/**
  * Level thresholds. The bands are defined in contracts/api.md ("Level bands"); change them
  * there first, then here, in web/index.html (co2Level, humLevel, tempLevel) and, for CO₂,
  * in the backend's /api/air `band`.
@@ -40,13 +91,7 @@ object Levels {
         listOf(R.color.poor, R.color.ok, R.color.good, R.color.ok, R.color.poor))
     val CO2 = Scale(400.0, 3000.0, listOf(800.0, 1200.0, 2000.0),
         listOf(R.color.good, R.color.ok, R.color.poor, R.color.bad))
-    /**
-     * The fridge card's gauge (#326), °C: below 0 too cold, 0–7 fine, 7–8 warming, from 8 too
-     * warm: the limits of the fridge node's `alert` (contracts/mqtt.md). The chip comes from
-     * that alert ([fridge]), which also needs 30 min past a limit; the gauge shows the reading.
-     */
-    val FRIDGE = Scale(-2.0, 10.0, listOf(0.0, 7.0, 8.0),   // 5 before #406
-        listOf(R.color.accent_hum, R.color.good, R.color.poor, R.color.bad))
+    // The fridge's gauge comes from the node's own limits: [FridgeLimits.scale] (#417)
     /** Occupancy confidence / hourly occupancy, % (see [occupancy]). */
     val OCCUPANCY = Scale(0.0, 100.0, listOf(20.0, 60.0),
         listOf(R.color.muted, R.color.ok, R.color.good))
