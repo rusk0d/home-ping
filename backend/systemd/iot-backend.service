@@ -12,6 +12,9 @@ WorkingDirectory=/opt/iot
 ExecStart=/opt/iot/venv/bin/python server.py
 Restart=on-failure
 RestartSec=5
+# Quiet hours, "today", the weekly push and the baseline's hour of day are local time: say
+# which, so a rebuilt host left on UTC doesn't shift them
+Environment=TZ=Europe/Budapest
 
 # Hardening: the process can only write to its own directory
 NoNewPrivileges=true
@@ -27,6 +30,28 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
+# What a network service that only reads and writes its own files never needs: no
+# capabilities, only IP and Unix sockets, the usual system calls of a service without the
+# privileged ones, no writable-and-executable memory, no view of other processes or users.
+# Check after a change: systemd-analyze security iot-backend
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+MemoryDenyWriteExecute=true
+ProtectProc=invisible
+ProcSubset=pid
+ProtectClock=true
+ProtectKernelLogs=true
+ProtectHostname=true
+PrivateUsers=true
+RemoveIPC=true
+# It runs at about 40-50 MB; a leak gets the service restarted, not the server out of memory
+MemoryMax=300M
 
 [Install]
 WantedBy=multi-user.target
