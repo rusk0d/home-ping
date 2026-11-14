@@ -10,6 +10,7 @@ window). Quiet hours postpone the pushes instead of dropping them, like the watc
 import json
 import logging
 import math
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -169,6 +170,26 @@ def nudge_close(since, minutes, temps, co2s):
           f"inside {temps[-1]:.1f} °C, {outside_text(w)}", "Close the window?",
           f"Open for {minutes:.0f} min, CO₂ is down to {co2s[-1]:.0f} ppm and it's {w['temp']:.0f} °C "
           "outside: the air is fresh, more only cools the flat.", WINDOW_DATA, kind="air")
+
+
+def aired_today():
+    """How often and how long the windows were open today (#426), for the app's air card:
+    {"count", "minutes"}. The spells that ended since local midnight, with the duration their
+    WINDOW_CLOSED logged ("after 18 min ..."), plus one still open, counted up to now."""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT value FROM events WHERE type = 'WINDOW_CLOSED' "
+            "AND ts >= datetime('now', 'localtime', 'start of day', 'utc')").fetchall()
+    count, minutes = 0, 0
+    for (value,) in rows:
+        m = re.match(r"after (\d+) min", value or "")
+        count += 1
+        minutes += int(m.group(1)) if m else 0
+    spell = get_state("air:window", "")
+    if spell:
+        count += 1
+        minutes += max(0, round((utcnow() - parse_ts(spell.split("|")[0])).total_seconds() / 60))
+    return {"count": count, "minutes": minutes}
 
 
 def window_open_on_leave():
