@@ -8,7 +8,7 @@ from support import check
 
 def test_issue331_fridge_hourly(env):
     import server
-    import api, config, store
+    import api, config, store, schema
     from store import db, utcnow
     server.prepare()
     fridge, room = config.FRIDGE_DEVICE, "home_ping_esp32"
@@ -44,7 +44,7 @@ def test_issue331_fridge_hourly(env):
         conn.execute("UPDATE hourly SET temp_avg = 99 WHERE hour = ?", (h3.strftime("%Y-%m-%d %H:00:00"),))
         conn.execute("DELETE FROM hourly WHERE hour = ?", (h2.strftime("%Y-%m-%d %H:00:00"),))
     store.set_state("schema_version", "4")
-    store.init_db()
+    schema.init_db()
     check(f"backfilled, room kept ({hourly_row(h3)})", hourly_row(h3) == (99.0, 4.0, 3.0, 5.0))
     check(f"missing hour added ({hourly_row(h2)})", hourly_row(h2) == (None, 4.0, 4.0, 4.0))
     check("schema_version 5", store.get_state("schema_version") == "5")
@@ -52,7 +52,7 @@ def test_issue331_fridge_hourly(env):
     with db() as conn:
         conn.execute("DELETE FROM system_state WHERE key = 'hourly_until'")
     store.set_state("schema_version", "4")
-    store.init_db()
+    schema.init_db()
     check("no hourly_until: migration is a no-op", store.get_state("schema_version") == "5")
 
     # --- the endpoints

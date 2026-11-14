@@ -12,9 +12,9 @@ def test_issue260_server_status(env):
     os.environ["BACKUP_S3_BUCKET"] = "bucket"
     os.environ["CERT_CHECK"] = "www.example.com:443,example.com:8883"
     import server
-    import config, state, store, api, server_checks
+    import config, state, api, server_checks, schema
     server.prepare()
-    store.init_db()
+    schema.init_db()
     c = api.app.test_client()
     auth = {"Authorization": "Basic dTpw"}   # u:p from the env fixture
 

@@ -1,4 +1,6 @@
-"""SQLite: the db() helper, schema/migrations and the read/write helpers.
+"""SQLite: the db() helper, the writes (readings, events, the hourly roll-up, retention) and
+system_state. The schema and its migrations are in schema.py, the occupancy queries in
+occupancy.py (#425).
 """
 
 import logging
@@ -9,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import config
 import state
 from config import (
-    CONFIDENCE_MINUTES, DEVICES_RETENTION_DAYS, EVENTS_RETENTION_DAYS, FRIDGE_DEVICE, PRESENCE_DEVICE, NON_ROOM_DEVICES, RAW_RETENTION_DAYS, ROOM_DEVICES_SQL,
+    DEVICES_RETENTION_DAYS, EVENTS_RETENTION_DAYS, FRIDGE_DEVICE, PRESENCE_DEVICE, RAW_RETENTION_DAYS, ROOM_DEVICES_SQL,
     UPTIME_DROP_TOLERANCE,
 )
 
@@ -33,7 +35,7 @@ def parse_ts(ts):
 def db():
     """A connection that is committed on success and always closed (#73).
 
-    The database is in WAL mode (#174, set in init_db): readers (API) and the writer
+    The database is in WAL mode (#174, set in schema.init_db): readers (API) and the writer
     (MQTT) don't block each other. synchronous=NORMAL is per connection; with WAL it is
     still safe against corruption, a power cut can only lose the last commits.
     """
@@ -44,265 +46,6 @@ def db():
         conn.commit()
     finally:
         conn.close()
-
-
-# -------------------------
-# DATABASE INIT
-# -------------------------
-READINGS_COLUMNS = """
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device TEXT,
-    ts TIMESTAMP,
-    temp REAL,
-    humidity REAL,
-    uptime INTEGER,
-    co2 INTEGER,
-    pressure REAL,
-    co2_ok INTEGER,
-    alert TEXT
-"""
-
-
-def init_db():
-    """The schema on every start (idempotent: tables, columns, indexes), then the numbered
-    MIGRATIONS that haven't run on this database yet (#306)."""
-    with db() as conn:
-        # Persistent in the file: once set, every connection uses WAL (#174). Next to
-        # data.db, SQLite keeps data.db-wal and data.db-shm while connections are open.
-        # Switching needs a moment without other connections (e.g. a backup running):
-        # if that fails, the backend runs on in the old mode and tries again next start.
-        try:
-            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
-            if mode != "wal":
-                log.warning("journal_mode is %s, not wal", mode)
-        except sqlite3.OperationalError as e:
-            log.warning("couldn't switch to WAL: %s", e)
-        _schema(conn)
-        conn.commit()
-        _migrate(conn)
-        _indexes(conn)   # after the migrations: a table rebuild (#14) drops its indexes
-        conn.commit()
-        # Without statistics SQLite picks the wrong index for several queries
-        conn.execute("ANALYZE")
-
-
-def _schema(conn):
-    """What the tables look like now. Safe to run on every start."""
-    c = conn.cursor()
-    c.execute(f"CREATE TABLE IF NOT EXISTS readings ({READINGS_COLUMNS})")
-
-    # Add columns missing from older databases (including ones created by the
-    # removed init_db.py, which had only id/ts/temp/humidity)
-    for col, coltype in (("device", "TEXT"), ("uptime", "INTEGER"),
-                         ("co2", "INTEGER"), ("pressure", "REAL"), ("co2_ok", "INTEGER"),
-                         ("alert", "TEXT")):
-        try:
-            c.execute(f"ALTER TABLE readings ADD COLUMN {col} {coltype}")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS devices (
-            device TEXT PRIMARY KEY,
-            last_seen TIMESTAMP
-        )
-    """)
-    # register_token used to add phones as "unknown"; devices is for sensor nodes only
-    c.execute("DELETE FROM devices WHERE device = 'unknown'")
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS system_state (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            device TEXT,
-            ts TIMESTAMP,
-            type TEXT,
-            value TEXT
-        )
-    """)
-
-    c.execute("""
-        INSERT OR IGNORE INTO system_state (key, value)
-        VALUES ('occupancy_armed', '0')
-    """)
-    # Soil moisture feature removed (#9): no sensor exists, drop its unused table
-    c.execute("DROP TABLE IF EXISTS soil_readings")
-
-    # Presence readings from the LD2410C radar node
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS presence_readings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            device TEXT,
-            ts TIMESTAMP,
-            occupied INTEGER,
-            presence INTEGER,
-            stationary INTEGER,
-            moving INTEGER,
-            distance INTEGER,
-            signal INTEGER,
-            rssi INTEGER,
-            uptime INTEGER,
-            radar_connected INTEGER
-        )
-    """)
-
-    # Long-term history (#129): one row per complete hour, the room devices combined (like
-    # the app's charts) and the fridge on its own (#331), filled by rollup_hourly() from the
-    # raw tables, which are only kept RAW_RETENTION_DAYS (2, #173). Kept for good: ~3 KB a day.
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS hourly (
-            hour TEXT PRIMARY KEY,   -- start of the hour, UTC, "YYYY-MM-DD HH:00:00"
-            temp_avg REAL, temp_min REAL, temp_max REAL,
-            humidity_avg REAL, humidity_min REAL, humidity_max REAL,
-            co2_avg REAL, co2_min INTEGER, co2_max INTEGER,
-            pressure_avg REAL, pressure_min REAL, pressure_max REAL,
-            occupancy REAL,          -- % of PRESENCE_DEVICE's radar rows occupied
-            fridge_avg REAL, fridge_min REAL, fridge_max REAL   -- FRIDGE_DEVICE's temp, °C (#331)
-        )
-    """)
-    for col in ("fridge_avg", "fridge_min", "fridge_max"):   # tables from before #331
-        try:
-            c.execute(f"ALTER TABLE hourly ADD COLUMN {col} REAL")
-        except sqlite3.OperationalError:
-            pass   # already there
-
-
-def _indexes(conn):
-    # Indexes for the per-device lookups (#18). (device, id) serves "latest row of a
-    # device"; (device, ts) serves time windows. No plain ts index: it made SQLite pick
-    # worse plans for several endpoints (measured on an 8-day, 276k-row database).
-    for sql in (
-        "CREATE INDEX IF NOT EXISTS ix_presence_device_id ON presence_readings(device, id)",
-        "CREATE INDEX IF NOT EXISTS ix_presence_device_ts ON presence_readings(device, ts)",
-        "CREATE INDEX IF NOT EXISTS ix_readings_device_id ON readings(device, id)",
-        "CREATE INDEX IF NOT EXISTS ix_readings_device_ts ON readings(device, ts)",
-        "CREATE INDEX IF NOT EXISTS ix_events_type_ts ON events(type, ts)",
-        # The newest occupied radar row (any_radar_quiet_minutes, every presence message): an
-        # index seek instead of scanning back through hours of vacant rows (#304)
-        "CREATE INDEX IF NOT EXISTS ix_presence_occupied_id ON presence_readings(id) WHERE occupied = 1",
-    ):
-        conn.execute(sql)
-
-
-# A raw ts's hour as `hourly` stores it
-_HOUR_SQL = "strftime('%Y-%m-%d %H:00:00', ts)"
-
-
-def _migrate_drop_zero_columns(c):
-    """#14: drop the readings columns that were always 0. Rebuilds the table instead of
-    ALTER TABLE ... DROP COLUMN, which needs SQLite 3.35+."""
-    cols = {r[1] for r in c.execute("PRAGMA table_info(readings)")}
-    if cols & {"occupied", "occupancy_confidence", "dark"}:
-        keep = "id, device, ts, temp, humidity, uptime, co2, pressure, co2_ok"
-        c.connection.commit()
-        c.executescript(f"""
-            BEGIN;
-            CREATE TABLE readings_new ({READINGS_COLUMNS});
-            INSERT INTO readings_new ({keep}) SELECT {keep} FROM readings;
-            DROP TABLE readings;
-            ALTER TABLE readings_new RENAME TO readings;
-            COMMIT;
-        """)
-        log.info("readings: dropped occupied, occupancy_confidence, dark")
-
-
-def _migrate_utc(c):
-    """#65: timestamps were stored in server local time; convert them to UTC. SQLite's 'utc'
-    modifier applies the DST offset of each row's own date. Must never run twice."""
-    for table, col in (("readings", "ts"), ("presence_readings", "ts"),
-                       ("events", "ts"), ("devices", "last_seen")):
-        c.execute(f"UPDATE {table} SET {col} = datetime({col}, 'utc') WHERE {col} IS NOT NULL")
-    log.info("timestamps converted to UTC")
-
-
-def _migrate_hourly_without_fridge(c):
-    """#290: the hourly roll-up averaged the fridge in with the room. Rewind it to the
-    fridge's first reading so the next rollup_hourly() rebuilds those hours without it,
-    and clear the room temperature alert it latched as "low"."""
-    first = c.execute(f"SELECT MIN(ts) FROM readings WHERE NOT {ROOM_DEVICES_SQL}").fetchone()[0]
-    until = c.execute("SELECT value FROM system_state WHERE key = 'hourly_until'").fetchone()
-    if first and until and first[:13] + ":00:00" < until[0]:
-        c.execute("UPDATE system_state SET value = ? WHERE key = 'hourly_until'", (first[:13] + ":00:00",))
-    c.execute(f"DELETE FROM system_state WHERE key IN ({', '.join('?' * len(NON_ROOM_DEVICES))})",
-              [f"env_alerted:TEMP_{d}" for d in NON_ROOM_DEVICES])
-
-
-def _migrate_excursion_format(c):
-    """#305: the excursion states in the alerts.Excursion format: '1' / 'm' / '0' became
-    'sent' / 'muted' / '', a bare humidity/temperature/pressure band 'sent:<band>' (they had
-    no recovery push, so muted or sent didn't matter)."""
-    c.execute("""
-        UPDATE system_state SET value = CASE value WHEN '1' THEN 'sent' WHEN 'm' THEN 'muted' ELSE '' END
-        WHERE (key LIKE 'watchdog:%' OR key LIKE 'sensor_silent:%' OR key LIKE 'node_offline:%')
-          AND value IN ('1', 'm', '0')""")
-    c.execute("""
-        UPDATE system_state SET value = 'sent:' || value
-        WHERE key LIKE 'env_alerted:%' AND value IN ('high', 'low', 'falling')""")
-
-
-def _migrate_fridge_hourly(c):
-    """#331: the fridge columns of `hourly` for the hours already rolled up, from the raw
-    readings still kept (RAW_RETENTION_DAYS); older fridge history doesn't exist. Only the
-    fridge columns: the room ones of those hours stay as they are."""
-    until = c.execute("SELECT value FROM system_state WHERE key = 'hourly_until'").fetchone()
-    if until is None:
-        return   # never rolled up: the first rollup_hourly() does every hour
-    c.execute(f"""
-        INSERT INTO hourly (hour, fridge_avg, fridge_min, fridge_max)
-        SELECT {_HOUR_SQL}, AVG(temp), MIN(temp), MAX(temp) FROM readings
-        WHERE device = ? AND temp IS NOT NULL AND ts < ? GROUP BY 1
-        ON CONFLICT(hour) DO UPDATE SET fridge_avg = excluded.fridge_avg,
-            fridge_min = excluded.fridge_min, fridge_max = excluded.fridge_max
-    """, (FRIDGE_DEVICE, until[0]))
-
-
-# One-off data changes, in order; each runs once per database and is recorded as
-# system_state schema_version = its number. Append only: never renumber or remove one.
-MIGRATIONS = (
-    (1, _migrate_drop_zero_columns),       # #14
-    (2, _migrate_utc),                     # #65
-    (3, _migrate_hourly_without_fridge),   # #290
-    (4, _migrate_excursion_format),        # #305
-    (5, _migrate_fridge_hourly),           # #331
-)
-SCHEMA_VERSION = MIGRATIONS[-1][0]
-
-
-def _legacy_version(c):
-    """A database from before schema_version (#306): how far its old one-off flags show it
-    got. A new database has none of them and runs every migration (no rows to change)."""
-    flags = {k for (k,) in c.execute(
-        "SELECT key FROM system_state WHERE key IN ('ts_utc', 'hourly_room_rebuilt')")}
-    if "hourly_room_rebuilt" in flags:
-        return 3
-    if "ts_utc" in flags:
-        return 2   # #14 ran on every start before #65 existed
-    return 0
-
-
-def _migrate(conn):
-    c = conn.cursor()
-    row = c.execute("SELECT value FROM system_state WHERE key = 'schema_version'").fetchone()
-    if row is None:
-        version = _legacy_version(c)
-        c.execute("INSERT INTO system_state (key, value) VALUES ('schema_version', ?)", (str(version),))
-        c.execute("DELETE FROM system_state WHERE key IN ('ts_utc', 'hourly_room_rebuilt')")
-        conn.commit()
-    else:
-        version = int(row[0])
-    for number, migration in MIGRATIONS:
-        if number <= version:
-            continue
-        migration(c)
-        c.execute("UPDATE system_state SET value = ? WHERE key = 'schema_version'", (str(number),))
-        conn.commit()   # with its version: a crash re-runs only the unfinished one
-        log.info("migration %d (%s) done", number, migration.__name__)
 
 
 def log_to_db(device, temp, hum, uptime, co2=None, pressure=None, co2_ok=None, alert=None):
@@ -341,6 +84,9 @@ def prune():
                                  ("devices", "last_seen", DEVICES_RETENTION_DAYS)):
             conn.execute(f"DELETE FROM {table} WHERE {col} < datetime('now', ?)", (f"-{days} days",))
 
+
+# A raw ts's hour as `hourly` stores it
+_HOUR_SQL = "strftime('%Y-%m-%d %H:00:00', ts)"
 
 HOURLY_COLUMNS = ("hour", "temp_avg", "temp_min", "temp_max", "humidity_avg", "humidity_min",
                   "humidity_max", "co2_avg", "co2_min", "co2_max", "pressure_avg", "pressure_min",
@@ -392,121 +138,6 @@ def rollup_hourly(now=None):
             hours.values())
     set_state("hourly_until", end_s)
     return len(hours)
-
-
-def occupancy_stats(hours=24):
-    """Occupancy over a window, using each radar's real sample spacing."""
-    with db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT device,
-                   COUNT(*),
-                   SUM(occupied),
-                   MIN(ts),
-                   MAX(ts)
-            FROM presence_readings
-            WHERE ts >= datetime('now', ?)
-            GROUP BY device
-        """, (f"-{hours} hours",))
-        rows = c.fetchall()
-
-    if not rows:
-        return {"avg_occupancy": None, "occupied_hours": None, "coverage_hours": None}
-
-    # The radar with the highest occupancy % answers, all three values from it (#227):
-    # taking the coverage from another radar mixed sensors once their spans differed.
-    # Ties (e.g. nobody home: 0 % on both) go to the longer span.
-    best = None   # (pct, span_h, occupied fraction)
-    for device, total, occupied, first_ts, last_ts in rows:
-        if not total:
-            continue
-        frac = occupied / total
-
-        # Real span this device actually covered
-        t0 = parse_ts(first_ts)
-        t1 = parse_ts(last_ts)
-        span_h = max((t1 - t0).total_seconds() / 3600, 0)
-
-        if best is None or (frac * 100, span_h) > best[:2]:
-            best = (frac * 100, span_h, frac)
-
-    if best is None:
-        return {"avg_occupancy": None, "occupied_hours": None, "coverage_hours": None}
-    pct, span_h, frac = best
-    return {
-        "avg_occupancy": round(pct, 0),
-        "occupied_hours": round(span_h * frac, 2),
-        "coverage_hours": round(span_h, 1),
-    }
-
-
-def calculate_confidence(device, minutes=CONFIDENCE_MINUTES):
-    """Occupancy confidence for one radar over a time window (0-100), None without data."""
-    with db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT occupied FROM presence_readings
-            WHERE device = ? AND ts >= datetime('now', ?)
-        """, (device, f"-{minutes} minutes"))
-        rows = c.fetchall()
-
-    if not rows:
-        return None
-
-    return int((sum(r[0] for r in rows) / len(rows)) * 100)
-
-
-def get_combined_occupancy():
-    """1 if any radar has 2+ occupied rows in its last 3 reports (last 2 min), 0 if not,
-    None if no radar reported in the last 2 minutes."""
-    with db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT DISTINCT device FROM presence_readings")
-        devices = [r[0] for r in c.fetchall()]
-
-        result = None
-        for d in devices:
-            c.execute("""
-                SELECT occupied FROM presence_readings
-                WHERE device = ? AND ts >= datetime('now','-2 minutes')
-                ORDER BY id DESC LIMIT 3
-            """, (d,))
-            rows = [r[0] for r in c.fetchall()]
-            if rows and result is None:
-                result = 0
-            if sum(rows) >= 2:
-                result = 1
-    return result
-
-
-def calculate_combined_confidence(minutes=CONFIDENCE_MINUTES):
-    """Per-radar confidence over the window, then the highest of them; None without data."""
-    with db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT device, AVG(occupied)
-            FROM presence_readings
-            WHERE ts >= datetime('now', ?)
-            GROUP BY device
-        """, (f"-{minutes} minutes",))
-        rows = c.fetchall()
-
-    if not rows:
-        return None
-    return int(max(r[1] for r in rows) * 100)
-
-
-def get_last_occupancy(device):
-    """Previous (second most recent) radar occupancy state."""
-    with db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT occupied FROM presence_readings
-            WHERE device = ?
-            ORDER BY id DESC LIMIT 1 OFFSET 1
-        """, (device,))
-        row = c.fetchone()
-    return row[0] if row else None
 
 
 def log_event(device, event_type, value):

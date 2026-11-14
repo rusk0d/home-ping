@@ -19,17 +19,17 @@ def test_issue65_utc_timestamps(env):
     con.commit(); con.close()
 
     import server
-    import config, state, store, nodes, ingest, api
-    store.init_db()   # the migration on its own: server.prepare() also prunes rows this old (#304)
+    import config, state, store, nodes, ingest, api, schema
+    schema.init_db()   # the migration on its own: server.prepare() also prunes rows this old (#304)
     db = lambda: sqlite3.connect(config.DB)
     q = lambda sql: db().execute(sql).fetchall()
 
     check("migration: summer row -2 h (CEST)", q("SELECT ts FROM readings WHERE device='a'")[0][0] == "2026-10-15 18:00:00")
     check("migration: winter row -1 h (CET)", q("SELECT ts FROM readings WHERE device='b'")[0][0] == "2026-10-30 19:00:00")
     check("migration: devices + events converted", q("SELECT last_seen FROM devices")[0][0] == "2026-10-15 18:00:00" and q("SELECT ts FROM events")[0][0] == "2026-10-15 18:00:00")
-    store.init_db()
+    schema.init_db()
     check("second start doesn't convert again", q("SELECT ts FROM readings WHERE device='a'")[0][0] == "2026-10-15 18:00:00")
-    check("schema_version set (#306)", store.get_state("schema_version", None) == str(store.SCHEMA_VERSION))
+    check("schema_version set (#306)", store.get_state("schema_version", None) == str(schema.SCHEMA_VERSION))
     server.prepare()   # importing does no work (#73)
 
     # New rows are UTC

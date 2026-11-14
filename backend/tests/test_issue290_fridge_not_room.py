@@ -10,7 +10,8 @@ from support import check
 
 def test_issue290_fridge_not_room(env):
     import server, api, ingest, alerts
-    from store import db, init_db, rollup_hourly, utcnow
+    from store import db, rollup_hourly, utcnow
+    from schema import init_db
     server.prepare()
 
     def q(sql, *args):

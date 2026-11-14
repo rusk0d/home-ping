@@ -1,6 +1,6 @@
 # Database schema contract
 
-The backend's SQLite database (`data.db`); schema and migrations in `backend/store.py`.
+The backend's SQLite database (`data.db`); schema and migrations in `backend/schema.py` (in `store.py` before #425).
 It is the source of truth: update it in the same change as the code (see CLAUDE.md).
 First written on 2026-10-13 by reading the code; anything still marked **UNCERTAIN** was
 inferred then and hasn't been confirmed since.
@@ -8,7 +8,7 @@ inferred then and hasn't been confirmed since.
 ## General
 
 - Engine: SQLite, file `data.db` in the backend's working directory (`DB = "data.db"`, relative path).
-- Schema owner: **`store.py` `init_db()`** (backend), which runs on every start: the schema itself (tables, columns, indexes; idempotent), then the numbered one-off **migrations** not yet run on this database, recorded as `system_state` `schema_version` (#306; `store.MIGRATIONS`: 1 = #14 drop always-0 columns, 2 = #65 UTC, 3 = #290 hourly without the fridge, 4 = #305 excursion format, 5 = #331 fridge columns of `hourly` backfilled). A database from before #306 starts from its old flags (`ts_utc` → 2, `hourly_room_rebuilt` → 3), which are then removed. It runs from `server.prepare()` (called by `start()`; since #73 importing the modules does nothing). "`server.py`" below means the backend as a whole.
+- Schema owner: **`schema.py` `init_db()`** (backend), which runs on every start: the schema itself (tables, columns, indexes; idempotent), then the numbered one-off **migrations** not yet run on this database, recorded as `system_state` `schema_version` (#306; `schema.MIGRATIONS`: 1 = #14 drop always-0 columns, 2 = #65 UTC, 3 = #290 hourly without the fridge, 4 = #305 excursion format, 5 = #331 fridge columns of `hourly` backfilled). A database from before #306 starts from its old flags (`ts_utc` → 2, `hourly_room_rebuilt` → 3), which are then removed. It runs from `server.prepare()` (called by `start()`; since #73 importing the modules does nothing). "`server.py`" below means the backend as a whole.
   It uses `CREATE TABLE IF NOT EXISTS`, plus `ALTER TABLE readings ADD COLUMN`
   for every `readings` column except `id`/`ts`/`temp`/`humidity` (errors ignored
   if they already exist), so older databases are upgraded on start.
@@ -19,7 +19,7 @@ inferred then and hasn't been confirmed since.
   `readings(device, ts)`, `events(type, ts)`, and the partial `presence_readings(id) WHERE
   occupied = 1` (#304: the newest occupied row, on every presence message). Deliberately **no** plain `ts` index: it made
   SQLite choose worse plans. Without `ANALYZE` statistics it also picks the wrong index.
-- No foreign keys. Migrations are numbered in `store.MIGRATIONS`, the last one run recorded as `system_state` `schema_version` (#306).
+- No foreign keys. Migrations are numbered in `schema.MIGRATIONS`, the last one run recorded as `system_state` `schema_version` (#306).
 - Every query opens and closes its own `sqlite3.connect(DB)`. Connections are short-lived.
   Kept on purpose (#18): with the indexes, a whole MQTT message takes ~10 ms; a connection
   costs ~0.2 ms. One transaction per message (#304, P4) was left out: it would hold the write
@@ -129,7 +129,7 @@ Known keys:
 | `arrival_quiet` | quiet minutes before that arrival, as an int | no | presence handler | arrival alert body |
 | `env_alerted:HUMIDITY_<device>` / `env_alerted:TEMP_<device>` | `'sent:<band>'` / `'muted:<band>'` (band `high`/`low`, temperature only `low`) while that excursion is on, `''` after it ended (#117, #305) | no | env handler (`ingest.set_env_alerted`) | env handler |
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
-| `schema_version` | the number of the last migration run on this database (`store.MIGRATIONS`, #306) | no | `init_db()` | `init_db()` |
+| `schema_version` | the number of the last migration run on this database (`schema.MIGRATIONS`, #306) | no | `init_db()` | `init_db()` |
 | `node_offline:<device>` | `'sent'` while that node's current outage has been pushed, `'muted'` while it is offline but the push was muted (#82), else `''` (#305) | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
 | `notify:<kind>` | `'1'` / `'0'` per alert type (`NOTIFY_KINDS`: `humidity`, `temperature`, `radar`, `nodes`, `pressure`, `air`, `baseline`, `fridge`, `weekly`); missing = `'1'` | no | `POST /api/notification_settings` (#82) | `alert()` via `alert_muted()`, `GET /api/notification_settings` |
 | `quiet_hours` | `'1'` / `'0'`; missing = `'0'` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
@@ -283,3 +283,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #417: `system_state` key `fridge_limits`.
 - #419: `system_state` keys `fridge_loading_until`, `fridge_loading_held`; event type `FRIDGE_LOADING`.
 - #427: `system_state` keys `weekly_sent`, `notify:weekly`; event type `WEEKLY_SUMMARY`.
+- #425: the schema and migrations moved from `store.py` to `schema.py`, the occupancy queries to `occupancy.py`; no schema change.

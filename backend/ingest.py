@@ -15,9 +15,10 @@ from config import (
     PRESSURE_WINDOW_HOURS, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD, TOPIC,
 )
 from store import (
-    db, get_last_occupancy, get_state, log_event, log_presence, log_to_db, note_uptime,
+    db, get_state, log_event, log_presence, log_to_db, note_uptime,
     parse_ts, prune, rollup_hourly, set_state, utcnow,
 )
+from occupancy import get_last_occupancy
 from alerts import Excursion, alert, set_radar_alerted
 from metrics import note_node
 from nodes import handle_status, touch_device

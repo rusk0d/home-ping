@@ -10,9 +10,9 @@ from flask import Blueprint, jsonify
 from config import (
     DEVICES, FRIDGE_DEVICE, MOULD_HOURS, MOULD_HUMIDITY, ROOM_DEVICES_SQL, device_info,
 )
-from store import (
-    calculate_combined_confidence, calculate_confidence, db, get_combined_occupancy,
-    occupancy_stats, reset_reason_text, utcnow,
+from store import db, reset_reason_text, utcnow
+from occupancy import (
+    calculate_combined_confidence, calculate_confidence, get_combined_occupancy, occupancy_stats,
 )
 from api_common import is_online, iso, require_auth
 from metrics import fresh_health
