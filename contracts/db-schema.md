@@ -125,6 +125,7 @@ Known keys:
 |---|---|---|---|---|
 | `occupancy_armed` | `'0'` / `'1'` | `'0'` via `INSERT OR IGNORE` at startup | `POST /api/occupancy_arm` | presence handler (arrival alert), `/api/occupancy_status` |
 | `cooldown:<key>` | unix time (float, as text) when the cooldown for alert `<key>` started (e.g. `cooldown:HUMIDITY_home_ping_esp32`) | no | `alert()` via `set_cooldown()` | loaded into `LAST_NOTIFICATION` at startup (#5) |
+| `flat_occupied` | `'1'` / `'0'`: the flat's state last logged as `FLAT_OCCUPANCY`; missing until the first change (#422). The vacant hold's start (the last combined-occupied time) is kept in memory, so after a restart it starts over | no | presence handler (`occupancy.note_flat_occupancy()`) | the same |
 | `arrival_started` | unix time an arrival started (first occupied reading after the quiet spell), `'0'` once confirmed | no | presence handler | presence handler (arrival alert) |
 | `arrival_quiet` | quiet minutes before that arrival, as an int | no | presence handler | arrival alert body |
 | `env_alerted:HUMIDITY_<device>` / `env_alerted:TEMP_<device>` | `'sent:<band>'` / `'muted:<band>'` (band `high`/`low`, temperature only `low`) while that excursion is on, `''` after it ended (#117, #305) | no | env handler (`ingest.set_env_alerted`) | env handler |
@@ -201,7 +202,7 @@ Event types written by `server.py`:
 | `type` | `device` | `value` example | Written when |
 |---|---|---|---|
 | `RESTART` | sensor ID | `uptime 86400s -> 12s, reason brownout (9)` | `uptime` dropped by > 120 s vs. last message (in-memory baseline). `, reason …` since #228, from the message's `reset_reason`; absent when the node didn't send one |
-| `OCCUPANCY_CHANGE` | radar ID | `occupied` / `vacant` | derived `occupied` differs from the previous row of that radar |
+| `FLAT_OCCUPANCY` | `system` | `occupied` / `vacant (no one for 15 min)` | the flat became occupied (`get_combined_occupancy()` 1) or vacant (0 for `FLAT_VACANT_MINUTES`, 15) (#422; `occupancy.note_flat_occupancy()`, on each presence message). About 5 a day. Until #422 `OCCUPANCY_CHANGE` (radar ID, `occupied` / `vacant`) was logged on every flip of a radar's raw flag, ~2,000 rows a day; the old rows age out in 30 days |
 | `RADAR_DISCONNECTED` | radar ID | `sent, no frames from LD2410C` | radar-offline push attempted |
 | `OCCUPANCY_ALERT` | radar ID | `sent, after 75 min quiet` | arrival push attempted |
 | `HUMIDITY_HIGH_ALERT` | env ID | `sent, humidity=67.2` | humidity push attempted |
@@ -235,7 +236,7 @@ Read by: `/api/restarts` (`RESTART` only).
 | Table | Inserts / updates | Reads |
 |---|---|---|
 | `readings` | `log_to_db` (+ 2-day prune) | `/api/latest`, `/api/latest_all`, `/api/stats24h_combined`, `/api/hourly`, `/api/air` |
-| `presence_readings` | `log_presence` (+ 2-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `get_last_occupancy`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/hourly` |
+| `presence_readings` | `log_presence` (+ 2-day prune) | `occupancy_stats`, `calculate_confidence`, `get_combined_occupancy`, `calculate_combined_confidence`, `note_flat_occupancy`, `any_radar_quiet_minutes`; endpoints `/api/latest_all`, `/api/hourly` |
 | `devices` | `touch_device` | `/api/latest`, `/api/latest_all`, `/api/devices` |
 | `system_state` | `init_db` seed, `set_state` | `get_state` |
 | `events` | `log_event` | `/api/restarts` |
@@ -244,6 +245,7 @@ Read by: `/api/restarts` (`RESTART` only).
 Notable derived values:
 
 - `get_combined_occupancy()`: for each radar, its last 3 rows within 2 min. Occupied if any radar has ≥2 rows with `occupied=1`.
+- `note_flat_occupancy()` (#422): `FLAT_OCCUPANCY` occupied as soon as `get_combined_occupancy()` is 1; vacant once it has been 0 for `FLAT_VACANT_MINUTES` (15). Measured on 2026-11-13/14, the combined value itself flips ~630 times a day (median 45 s), the hold brings it to ~5.
 - `calculate_combined_confidence(m)`: `MAX` over radars of `AVG(occupied)` in the last `m` minutes, ×100, truncated to an int.
 - `any_radar_quiet_minutes()`: minutes since the newest `occupied=1` row of any radar, else 9999.
   It runs before the current message's row is inserted.
@@ -284,3 +286,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #419: `system_state` keys `fridge_loading_until`, `fridge_loading_held`; event type `FRIDGE_LOADING`.
 - #427: `system_state` keys `weekly_sent`, `notify:weekly`; event type `WEEKLY_SUMMARY`.
 - #425: the schema and migrations moved from `store.py` to `schema.py`, the occupancy queries to `occupancy.py`; no schema change.
+- #422: event type `FLAT_OCCUPANCY` (the flat occupied / vacant, smoothed) replaces `OCCUPANCY_CHANGE` (every raw radar flip); `system_state` key `flat_occupied`.

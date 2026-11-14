@@ -169,6 +169,10 @@ NOTIFICATION_COOLDOWN = 15 * 60  # 15 minutes per alert key
 # then every NOTIFICATION_COOLDOWN: an outage without network used to retry every minute
 # and log ~130 failed NODE_OFFLINE events an hour (#251). A success starts over.
 PUSH_RETRY_SECONDS = (60, 120, 300, 600)
+# The flat counts as vacant after this long without combined occupancy (#422): FLAT_OCCUPANCY
+# events. The radars' raw flag flips every 10-20 s and the combined one every ~45 s; with this
+# hold it's about 5 changes a day (measured on 2026-11-13/14)
+FLAT_VACANT_MINUTES = 15
 QUIET_MINUTES_BEFORE_ALERT = 30   # flat must be quiet this long before an arrival alerts (60 until 2026-10-17)
 ARRIVAL_CONFIRM_SECONDS = 120     # movement this soon after the quiet spell ends confirms the arrival
 # Server watchdog pushes (#176), checked every OCCUPANCY_HOURLY_INTERVAL
