@@ -12,6 +12,9 @@ inferred then and hasn't been confirmed since.
   `firebase_service_account.json` (relative to the backend's working directory). The send runs
   in the thread that raised the alert (the MQTT thread for most), with a 10 s HTTP timeout
   (`config.FIREBASE_TIMEOUT`, #449); a timed-out send counts as failed and is retried (#251).
+  The backend sends on one worker thread and waits at most 3 s for the result
+  (`config.PUSH_WAIT`, #464); an unconfirmed push also counts as failed, so in rare cases a
+  slow send and its retry can deliver the same push twice.
 - Target: **FCM topic `env`** for every push. No per-device tokens are targeted.
 - **Data-only messages** (since #12): no `notification` block. `title` and `body` travel
   in the `data` map next to `event`, `device`, etc., so the Android app always builds the
@@ -503,3 +506,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #419: "Loading the fridge" holds the fridge's warm and door pushes for up to 3 h; still on afterwards → pushed then.
 - #427: weekly summary push (`WEEKLY`, switch `weekly`).
 - #449: a push times out after 10 s (was firebase-admin's 120 s, which held up MQTT ingestion).
+- #464: pushes are sent on a worker thread; a caller waits at most 3 s, then treats the push as failed and retries it.

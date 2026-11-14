@@ -28,6 +28,10 @@ FIREBASE_CRED = "firebase_service_account.json"
 # default is 120 s, and alerts send from the MQTT thread: one hanging request stopped all
 # ingestion that long and the broker dropped the backend. Well under the 60 s MQTT keep-alive.
 FIREBASE_TIMEOUT = 10
+# How long a caller waits for its push (#464). Pushes are sent by one worker thread; a send that
+# takes longer is reported as failed to the caller (and retried like any failed push), so a
+# slow FCM holds up MQTT ingestion for at most this long per push, not FIREBASE_TIMEOUT.
+PUSH_WAIT = 3
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
 MQTT_USER = os.environ["MQTT_USER"]

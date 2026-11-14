@@ -2,12 +2,14 @@
 """
 
 import logging
+import queue
+import threading
 import time
 from datetime import datetime
 from firebase_admin import messaging
 
 import state
-from config import NOTIFICATION_COOLDOWN, NOTIFY_KINDS, PUSH_RETRY_SECONDS, QUIET_DEFAULTS
+from config import NOTIFICATION_COOLDOWN, NOTIFY_KINDS, PUSH_RETRY_SECONDS, PUSH_WAIT, QUIET_DEFAULTS
 from store import get_state, log_event, set_state
 
 log = logging.getLogger(__name__)
@@ -16,8 +18,48 @@ log = logging.getLogger(__name__)
 # -------------------------
 # PUSH NOTIFICATIONS (FCM)
 # -------------------------
+_push_queue = queue.Queue()
+_push_worker_lock = threading.Lock()
+_push_worker_started = False
+
+
 def send_push(title, body, data=None):
-    """Send a data-only push to topic "env". Returns True if FCM accepted it.
+    """Send a data-only push to topic "env". Returns True if FCM accepted it within PUSH_WAIT.
+
+    The send itself runs on one worker thread (#464): the callers are the MQTT thread and the
+    check loops, and a slow FCM must not hold them for the whole HTTP timeout. A push that
+    isn't confirmed in time counts as failed, so the caller retries it like any failed send.
+    If it was still waiting behind another push it is dropped; if it was already on its way
+    it may still arrive, and the retry can then deliver it a second time.
+    """
+    global _push_worker_started
+    with _push_worker_lock:
+        if not _push_worker_started:
+            threading.Thread(target=_push_worker, name="push", daemon=True).start()
+            _push_worker_started = True
+    job = {"args": (title, body, data), "done": threading.Event(), "ok": False, "abandoned": False}
+    _push_queue.put(job)
+    if job["done"].wait(PUSH_WAIT):
+        return job["ok"]
+    job["abandoned"] = True
+    log.error("Push not confirmed within %d s, treated as failed: %s", PUSH_WAIT, title)
+    return False
+
+
+def _push_worker():
+    while True:
+        job = _push_queue.get()
+        if job["abandoned"]:   # its caller gave up while it waited here, and will retry
+            continue
+        job["ok"] = _send_now(*job["args"])
+        job["done"].set()
+        if job["ok"] and job["abandoned"]:
+            log.warning("Push went out after its caller gave up; the retry may repeat it: %s",
+                        job["args"][0])
+
+
+def _send_now(title, body, data=None):
+    """The FCM call itself.
 
     Data-only so the Android app always builds the notification itself (its own
     channels and IDs), also in the background; title/body travel in the data map.
