@@ -12,6 +12,7 @@ import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -72,7 +73,18 @@ class HomeFragment : Fragment() {
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _b = FragmentHomeBinding.inflate(inflater, container, false)
-        cards = Cards(b)
+        cards = Cards(b).also { c ->
+            // "Loading the fridge" (#419): the backend holds the fridge pushes, then Home reloads
+            c.fridge.onLoading = { minutes ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val done = withContext(Dispatchers.IO) {
+                        Api.postForObject("/api/fridge/loading", JSONObject().put("minutes", minutes))
+                    }
+                    if (done == null) Toast.makeText(requireContext(), "Couldn't reach the server", Toast.LENGTH_SHORT).show()
+                    loadDashboardData()
+                }
+            }
+        }
         return b.root
     }
 

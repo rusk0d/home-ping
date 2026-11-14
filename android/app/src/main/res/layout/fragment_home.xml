@@ -345,6 +345,17 @@
                         android:layout_marginTop="6dp"
                         android:visibility="gone" />
 
+                    <!-- "Loading the fridge" (#419): pauses the warm and door pushes; a tap asks -->
+                    <TextView
+                        android:id="@+id/fridge_loading"
+                        style="@style/HomeFoot"
+                        android:layout_marginTop="6dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:textColor="@color/accent_temp"
+                        android:text="Loading it? Pause alerts" />
+
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
