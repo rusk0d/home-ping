@@ -88,6 +88,25 @@ int main() {
   fakeTimerUs = 60LL * 86400 * 1000000;   // 60 days
   CHECK("uptime past the old 49.7-day wrap", hpUptimeSeconds() == 60u * 86400);
 
+  // Broker unreachable with WiFi up (#468): restart after 15 min of attempts in a row
+  {
+    PubSubClient m; m.up = false; ESP.restarts = 0;
+    fakeMillis += 60000;   // a pause first, so earlier failures in this file don't count
+    for (int i = 0; i < 179; ++i) { fakeMillis += 5000; hpConnectMQTT(m, "node1", "u", "p"); }
+    CHECK("just under 15 min of failed MQTT: no restart", ESP.restarts == 0);
+    fakeMillis += 5000; hpConnectMQTT(m, "node1", "u", "p");
+    fakeMillis += 5000; hpConnectMQTT(m, "node1", "u", "p");
+    CHECK("15 min of failed MQTT: restarts", ESP.restarts >= 1);
+    ESP.restarts = 0; m.up = true;
+    fakeMillis += 5000; hpConnectMQTT(m, "node1", "u", "p");
+    m.up = false; m.isConnected = false;
+    for (int i = 0; i < 100; ++i) { fakeMillis += 5000; hpConnectMQTT(m, "node1", "u", "p"); }
+    CHECK("a successful connect starts the 15 min again", ESP.restarts == 0);
+    fakeMillis += 20 * 60000;   // WiFi was down: nobody called it
+    for (int i = 0; i < 100; ++i) { fakeMillis += 5000; hpConnectMQTT(m, "node1", "u", "p"); }
+    CHECK("a pause between attempts starts it again too", ESP.restarts == 0);
+  }
+
   std::printf("%s\n", failures ? "FAILED" : "ALL PASSED");
   return failures ? 1 : 0;
 }

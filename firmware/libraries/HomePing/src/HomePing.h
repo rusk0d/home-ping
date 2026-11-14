@@ -77,6 +77,10 @@ inline bool hpWiFiWatchdog() {
 // "offline" (retained) on home/esp32/<device>/status about 1.5 x keepalive later; on
 // connect the node publishes "online" there (#13).
 const unsigned long HP_MQTT_RETRY_MS = 5000;
+// WiFi up but the broker unreachable for this long: restart (#468). A fragmented heap that
+// can't fit a TLS handshake any more never recovers by retrying; a restart does. With the
+// broker really down the node restarts every 15 min, which costs nothing.
+const unsigned long HP_MQTT_RESTART_MS = 15UL * 60 * 1000;
 // PubSubClient's default 256-byte buffer holds the whole packet (header, topic, payload);
 // a bigger packet isn't sent, and publish() just returns false. The presence message
 // with the heap fields is ~250 bytes on its own.
@@ -90,6 +94,11 @@ inline bool hpConnectMQTT(PubSubClient& mqtt, const char* device,
   static bool attempted = false;
   uint32_t now = millis();
   if (attempted && (uint32_t)(now - lastAttempt) < HP_MQTT_RETRY_MS) return false;
+  // Failing "in a row" means the attempts follow each other: after a pause (WiFi was down,
+  // so the sketch didn't call this) the count starts again
+  static uint32_t failingSince = 0;
+  static bool failing = false;
+  if (attempted && (uint32_t)(now - lastAttempt) > 3 * HP_MQTT_RETRY_MS) failing = false;
   attempted = true;
   lastAttempt = now;
 
@@ -101,7 +110,15 @@ inline bool hpConnectMQTT(PubSubClient& mqtt, const char* device,
   if (mqtt.connect(clientId, user, pass, statusTopic, 1, true, "offline")) {
     mqtt.publish(statusTopic, "online", true);
     Serial.println("MQTT connected");
+    failing = false;
     return true;
+  }
+  if (!failing) {
+    failing = true;
+    failingSince = now;
+  } else if ((uint32_t)(now - failingSince) >= HP_MQTT_RESTART_MS) {
+    Serial.println("No MQTT for 15 min with WiFi up, restarting...");
+    ESP.restart();
   }
   Serial.printf("MQTT failed, rc=%d, retrying in %lus\n", mqtt.state(), HP_MQTT_RETRY_MS / 1000);
   return false;
