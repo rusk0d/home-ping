@@ -5,4 +5,4 @@ python-dotenv==1.2.4
 firebase-admin==7.7.0
 paho-mqtt==2.2.0
 waitress==3.0.2
-boto3==1.43.127
+boto3==1.44.1
