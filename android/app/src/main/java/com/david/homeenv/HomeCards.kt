@@ -115,6 +115,17 @@ class Co2Card(b: FragmentHomeBinding) : HomeCard(b) {
             null -> "sensor --"
         }
         co2Ts = node?.optTs("co2_ts")
+        // How often and how long the windows were open today (#426): the backend's window spells
+        val aired = air?.optJSONObject("aired_today")
+        b.co2Aired.visibility = if (aired != null) View.VISIBLE else View.GONE
+        if (aired != null) b.co2Aired.text = airedText(aired.optInt("count"), aired.optInt("minutes"))
+    }
+
+    /** "aired 3× today · 41 min", "aired once today · 18 min", "not aired yet today". */
+    private fun airedText(count: Int, minutes: Int): String = when (count) {
+        0 -> "not aired yet today"
+        1 -> "aired once today · ${HomeFormat.minutesText(minutes)}"
+        else -> "aired $count× today · ${HomeFormat.minutesText(minutes)}"
     }
 
     override fun updateAge(now: Long) {
