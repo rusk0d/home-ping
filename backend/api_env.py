@@ -17,6 +17,7 @@ from store import (
 from api_common import is_online, iso, require_auth
 from metrics import fresh_health
 import fridge
+from air import aired_today
 
 log = logging.getLogger(__name__)
 bp = Blueprint("env", __name__)
@@ -249,6 +250,7 @@ def air():
         "temp": env_row[2] if env_row else None,
         "humidity": env_row[3] if env_row else None,
         "mould_risk": len(humid_hours) == MOULD_HOURS and all(h > MOULD_HUMIDITY for h in humid_hours),
+        "aired_today": aired_today(),   # #426
     })
 
 
