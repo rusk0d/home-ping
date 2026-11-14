@@ -1,7 +1,7 @@
 """#237: push when the pressure falls fast (3 h change of the hourly averages).
 """
 
-from support import check
+from support import check, quiet_now
 
 
 def test_issue237_pressure_alert(env):
@@ -63,7 +63,7 @@ def test_issue237_pressure_alert(env):
     store.set_state("notify:pressure", "1")
     check("...and none once it's back on, same excursion", run(1015, 1015, 1014, 1013, 1011) == [])
     store.set_state("env_alerted:PRESSURE", "")
-    store.set_state("quiet_hours", "1"); store.set_state("quiet_start", "00:00"); store.set_state("quiet_end", "23:59")
+    quiet_now()
     check("quiet hours: muted", run(1015, 1015, 1014, 1013, 1011) == [])
     store.set_state("quiet_hours", "0")
 
