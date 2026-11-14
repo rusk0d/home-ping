@@ -70,7 +70,8 @@ in its working directory.
   broker, Firebase or real config needed) and `ruff check backend` (lint, #175). CI runs them, compiles the firmware and builds
   the Android preview APK on PRs and on the merge to main, each only when its folder changed; the
   backend tests also run nightly (#451)
-  (`.github/workflows/backend.yml`, `firmware.yml`, `android.yml`).
+  (`.github/workflows/backend.yml`, `firmware.yml`, `android.yml`). `gate.yml` runs on every PR and
+  passes only when the others did; it is the check that `main` requires before a merge (#466).
 - **Web:** serve `web/` (with `config.js`, which holds only the broker URL) from any static
   web server. Each person signs in with their own read-only MQTT account; see
   `contracts/mqtt.md` → "Web users" for adding one. Deploy `index.html`, `app.js` and `i18n.js`

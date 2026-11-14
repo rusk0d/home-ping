@@ -1,0 +1,33 @@
+# The one check that branch protection requires on main (#466). The other workflows only run
+# when their paths change, so none of them can be required: a PR that touches none of them
+# would wait for ever. This one runs on every PR, waits for the other checks on the same
+# commit and fails if any of them failed. A PR with no other checks passes after the wait.
+name: Gate
+
+on:
+  pull_request:
+
+permissions:
+  checks: read
+
+jobs:
+  ci-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Wait for the other checks on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          sleep 45   # time for the other workflows to register their jobs
+          while true; do
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs?per_page=100" \
+              -q '.check_runs[] | select(.name != "ci-gate") | "\(.name)\t\(.status)\t\(.conclusion)"')
+            pending=$(printf '%s\n' "$runs" | awk -F'\t' '$2 != "" && $2 != "completed"' | wc -l)
+            if [ "$pending" -eq 0 ]; then break; fi
+            echo "waiting for $pending check(s)"; sleep 30
+          done
+          printf '%s\n' "${runs:-no other checks on this commit}"
+          bad=$(printf '%s\n' "$runs" | awk -F'\t' '$3 == "failure" || $3 == "cancelled" || $3 == "timed_out" || $3 == "action_required"' | wc -l)
+          [ "$bad" -eq 0 ] || { echo "::error::$bad check(s) did not pass"; exit 1; }
