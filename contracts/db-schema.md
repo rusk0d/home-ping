@@ -132,6 +132,7 @@ Known keys:
 | `radar_alerted:<device>` | `'1'` while that radar's current outage has been pushed, else `'0'` | no | presence handler via `set_radar_alerted()` | loaded into `RADAR_ALERTED` at startup (#5) |
 | `schema_version` | the number of the last migration run on this database (`schema.MIGRATIONS`, #306) | no | `init_db()` | `init_db()` |
 | `node_offline:<device>` | `'sent'` while that node's current outage has been pushed, `'muted'` while it is offline but the push was muted (#82), else `''` (#305) | no | `check_nodes()` / `node_back_online()` | loaded into `NODE_OFFLINE` at startup (#13) |
+| `home_offline` | `'sent'` while the current outage of every node at once has been pushed, `'muted'` while it is on but the push was muted, else `''` (#476) | no | `home_offline()` / `home_back_online()` | loaded into `HOME_OFFLINE` at startup |
 | `notify:<kind>` | `'1'` / `'0'` per alert type (`NOTIFY_KINDS`: `humidity`, `temperature`, `radar`, `nodes`, `pressure`, `air`, `baseline`, `fridge`, `weekly`); missing = `'1'` | no | `POST /api/notification_settings` (#82) | `alert()` via `alert_muted()`, `GET /api/notification_settings` |
 | `quiet_hours` | `'1'` / `'0'`; missing = `'0'` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
 | `quiet_start` / `quiet_end` | `"HH:MM"`, server local time; missing = `22:00` / `07:00` | no | `POST /api/notification_settings` (#82) | `in_quiet_hours()`, `GET /api/notification_settings` |
@@ -211,6 +212,8 @@ Event types written by `server.py`:
 | `STATUS` | node ID | `online` / `offline` | live message on `home/esp32/<device>/status` (#13) |
 | `NODE_OFFLINE` | node ID | `sent, last seen 2026-10-16 06:12:40` (UTC) | node-offline push attempted (#13) |
 | `NODE_ONLINE` | node ID | `sent, data again` | back-online push attempted (#13); `no push (alert was muted), data again` when the offline alert was muted (#82, #305) |
+| `HOME_OFFLINE` | `home` | `sent, no node for 5 min` | "Home offline" push attempted: every node silent (#476) |
+| `HOME_ONLINE` | `home` | `sent, home_ping_esp32 is sending data` | "Home back online" push attempted; `no push (alert was muted), ...` when the offline one was muted (#476) |
 | `OCCUPANCY_ARMED` | `system` | `1 (manual)` / `0 (location)` etc.: the new state and the source (#238; before that a bare `1` / `0`) | `POST /api/occupancy_arm` |
 | `NOTIFICATION_SETTINGS` | `system` | `notify:humidity=0, quiet_start=23:00` | `POST /api/notification_settings` changed something (#82) |
 | `WINDOW_OPEN` | CO₂ node ID | `CO₂ -690 ppm, -1.3 °C in 10 min; outside 9.8 °C 80 %` | CO₂ fell ≥ 200 ppm or the temperature ≥ 0.8 °C within 10 min (#245, `air.py`, no push) |
@@ -287,3 +290,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #427: `system_state` keys `weekly_sent`, `notify:weekly`; event type `WEEKLY_SUMMARY`.
 - #425: the schema and migrations moved from `store.py` to `schema.py`, the occupancy queries to `occupancy.py`; no schema change.
 - #422: event type `FLAT_OCCUPANCY` (the flat occupied / vacant, smoothed) replaces `OCCUPANCY_CHANGE` (every raw radar flip); `system_state` key `flat_occupied`.
+- #476: `system_state` key `home_offline`; event types `HOME_OFFLINE`, `HOME_ONLINE` (device `home`).

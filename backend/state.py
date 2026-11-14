@@ -14,6 +14,9 @@ LAST_NOTIFICATION = {}  # cooldown key -> unix time its cooldown started
 PUSH_FAILURES = {}      # cooldown key -> failed sends in a row (retry back-off, #251)
 RADAR_ALERTED = set()   # radars whose current outage has been handled
 NODE_OFFLINE = {}       # device -> whether its offline push was sent (False: muted)
+HOME_OFFLINE = False    # no node at all is sending (#476); its push state is system_state home_offline
+BROKER_UP = True        # the backend's own MQTT connection (on_connect / on_disconnect)
+NODES_RESUMED_AT = 0.0  # unix time the broker connection or the home came back: the offline check waits from it
 NODE_LOCK = threading.Lock()  # offline checks (own thread) vs. messages (MQTT thread)
 STARTED_AT = time.time()      # reset by start(); the offline check and health count from it
 LAST_MESSAGE_AT = None  # last live (non-retained) MQTT message, for /api/health (#77)
@@ -24,9 +27,10 @@ mqttc = None            # MQTT client, created by start()
 
 def reset():
     """Back to a fresh process (prepare() calls it before loading the saved alert state)."""
-    global STARTED_AT, LAST_MESSAGE_AT
+    global STARTED_AT, LAST_MESSAGE_AT, HOME_OFFLINE, BROKER_UP, NODES_RESUMED_AT
     for d in (LAST_UPTIME, RADAR_FAIL_COUNT, LAST_NOTIFICATION, PUSH_FAILURES, RADAR_ALERTED, NODE_OFFLINE,
               NODE_HEALTH, FLAT):
         d.clear()
     STARTED_AT = time.time()
     LAST_MESSAGE_AT = None
+    HOME_OFFLINE, BROKER_UP, NODES_RESUMED_AT = False, True, 0.0

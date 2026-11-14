@@ -187,7 +187,20 @@ All pushes go to topic `env`. For `data` keys, see each entry.
   that died at night was never reported): no push and not in `NODE_OFFLINE` while they last, pushed
   at the first 30 s check after them if the node is still offline. A node back before then gets no push.
   Cooldown key `NODE_<device>` (15 min, also limits flapping; failed sends retry with the back-off above).
-- No checks during the first 300 s after a backend start (every `last_seen` is old then).
+- No checks during the first 300 s after a backend start (every `last_seen` is old then), while
+  the backend's own MQTT connection is down, and for 300 s after it is back (#476): then it is the
+  backend that hears nothing, not the nodes that are gone.
+- **Every node silent is one push, "Home offline"** (#476), not one per node. With two or more
+  devices in `devices`, when the most recent `last_seen` of all is older than 300 s: title
+  `Home offline`, body `No node has sent data for {N} min: internet or power at home?`, data
+  `{"event": "NODE_STATUS", "status": "offline", "device": "home"}`. Logs `HOME_OFFLINE` (device
+  `home`). Persisted as `system_state` `home_offline`; cooldown key `NODE_home`; switch and quiet
+  hours as for a node. No per-node push while it lasts, and a node over the limit waits while
+  every other node has been silent for 150 s or more (they are about to follow it).
+  The first message from any node ends it: title `Home back online`, body
+  `The nodes are sending data again`, `"status": "online"`, logs `HOME_ONLINE`; pushed only when
+  the offline push was sent. The per-node check then waits 300 s, so a node that is still silent
+  after that gets its own "Node offline".
 - Offline: title `Node offline`, body `{device}: no data for {N} min`,
   data `{"event": "NODE_STATUS", "status": "offline", "device": "<device>"}`. Logs `NODE_OFFLINE`.
 - Back online (the next message from that device): title `Node back online`,
@@ -457,6 +470,7 @@ own app/email, not by FCM.
 | `RADAR_DISCONNECTED` | Radar Disconnected | ≥12 consecutive `radar_connected=false` | once per outage | presence msg |
 | `OCCUPIED` | Occupancy Alert | armed; first occupied reading after ≥30 min quiet, confirmed by movement within 120 s (#101) | once per arrival | presence msg |
 | `NODE_STATUS` | Node offline / Node back online | no data for 5 min / data again | once per outage | 30 s check |
+| `NODE_STATUS` (device `home`) | Home offline / Home back online | no data from any node for 5 min / the first message | once per outage | 30 s check |
 | `WATCHDOG` | Backup failed / Disk almost full / Off-site backup failed / Certificate expires soon, Certificate problem (+ "OK again", "Certificate renewed") | newest backup > 26 h old / < 1 GB free / no S3 upload for 26 h / certificate < 14 days or invalid | once per excursion | 5 min check (certificates hourly) |
 | `SENSOR_STATUS` | Sensor not reporting / Sensor reporting again | node online, no valid BME280 / CO₂ value for 15 min / valid again | once per excursion | 30 s check |
 | `PRESSURE` | Pressure falling fast | hourly pressure average −3.0 hPa or more below 3 h earlier | once per excursion (until > −2.0), 15 min | 5 min check after the hourly rollup |
@@ -507,3 +521,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #427: weekly summary push (`WEEKLY`, switch `weekly`).
 - #449: a push times out after 10 s (was firebase-admin's 120 s, which held up MQTT ingestion).
 - #464: pushes are sent on a worker thread; a caller waits at most 3 s, then treats the push as failed and retries it.
+- #476: every node silent is one "Home offline" / "Home back online" push instead of one pair per node; no node check while the backend's MQTT connection is down or for 5 min after it is back.

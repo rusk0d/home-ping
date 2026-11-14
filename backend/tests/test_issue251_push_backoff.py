@@ -51,7 +51,8 @@ def test_issue251_push_backoff(env):
     check("a muted alert also starts over", abs(retry_in() - 60) <= 1)
 
     # The 2026-10-19 outage, replayed through the real offline check: both nodes silent for
-    # an hour and every push failing. Every minute before; now 7 attempts per node.
+    # an hour and every push failing. Every minute before; now 7 attempts. Since #476 every
+    # node silent is one "Home offline" push, so the attempts are that one's.
     state.LAST_NOTIFICATION.clear(); state.PUSH_FAILURES.clear(); state.NODE_OFFLINE.clear()
     conn = sqlite3.connect(config.DB)
     conn.execute("DELETE FROM events")
@@ -64,6 +65,5 @@ def test_issue251_push_backoff(env):
     for minute in range(60):
         with mock.patch("time.time", return_value=t0 + minute * 60 + 1):
             nodes.check_nodes()
-    attempts = conn.execute("SELECT device, COUNT(*) FROM events WHERE type = 'NODE_OFFLINE' GROUP BY device").fetchall()
-    check(f"an hour of outage: 7 attempts per node, not 60 (got {attempts})",
-          sorted(attempts) == [("hallway_presence_esp32", 7), ("home_ping_esp32", 7)])
+    attempts = conn.execute("SELECT device, type, COUNT(*) FROM events WHERE type LIKE '%_OFFLINE' GROUP BY 1, 2").fetchall()
+    check(f"an hour of outage: 7 attempts, not 60 (got {attempts})", attempts == [("home", "HOME_OFFLINE", 7)])
