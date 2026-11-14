@@ -118,7 +118,7 @@ PubSubClient mqttClient(espClient);
 // ========================
 struct TramDeparture {
   String route;
-  bool bus;          // route type BUS (e.g. the 223E while the 2B is replaced): bus icon
+  bool bus;          // route type BUS (e.g. a bus replacing the tram): bus icon
   String headsign;
   int minutes;
   long secondsLeft;  // at the fetch, by BKK's clock: a kept list counts down from it (#429)
@@ -541,7 +541,7 @@ void render(const DepartureResult &r) {
           drawTramIcon(5, yPos - 15, 18);
         }
 
-        // Route number, then the separator after it: "223E" is twice as wide as "2B"
+        // Route number, then the separator after it: a four-character route is twice as wide as a two-character one
         display.setFont(&FreeSans9pt7b);
         display.setTextColor(GxEPD_BLACK);
         display.setCursor(30, yPos);

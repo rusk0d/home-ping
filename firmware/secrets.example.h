@@ -16,5 +16,5 @@ const char* const OTA_PASS    = "ota-password";
 // not =true: the node only needs those, and the full references (nearby stops, routes, alerts)
 // are ~100 KB, ~1-5 KB without them. More stops: repeat stopId=...; the routes shown are the
 // includeRouteId=... ones (filtered on the node), so leave out includeRouteTypes=TRAM when a bus
-// is among them (the 223E at BKK_F04126 is BKK_2235).
+// is among them (a replacement bus has a route ID of its own, e.g. BKK_1234).
 const char* const BKK_URL = "https://futar.bkk.hu/api/...";
