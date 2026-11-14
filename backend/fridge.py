@@ -29,7 +29,8 @@ from datetime import timedelta
 import alerts
 import state
 from config import (
-    FRIDGE_DEVICE, FRIDGE_LIMITS_DEFAULT, FRIDGE_VALID, FRIDGE_DOOR_CLOSED_C, FRIDGE_DOOR_FALL_C, FRIDGE_DOOR_OPEN_MINUTES, FRIDGE_DOOR_RISE_C,
+    FRIDGE_DEVICE, FRIDGE_LIMITS_DEFAULT, FRIDGE_VALID, FRIDGE_DOOR_CLOSED_C, FRIDGE_DOOR_FALL_C, FRIDGE_DOOR_OPEN_MINUTES,
+    FRIDGE_DOOR_PEAK_C, FRIDGE_DOOR_RISE_C,
     FRIDGE_DOOR_RISE_MINUTES, NOTIFICATION_COOLDOWN,
 )
 from store import db, get_state, parse_ts, set_state, utcnow
@@ -196,8 +197,9 @@ def door_step(rise, recent):
     [rise]: (start datetime, base °C, peak °C) of the fast rise being watched, or None.
     [recent]: the fridge's (datetime, °C) readings of the last FRIDGE_DOOR_RISE_MINUTES or more,
     oldest first, the newest last. Returns (rise, event): event "open" while the door looks
-    left open (every reading: the push itself is once), "closed" when a watched rise is over:
-    back near the base, or cooling down from its peak (#411).
+    left open, FRIDGE_DOOR_OPEN_MINUTES in and still near its peak (#420; every such reading,
+    the push itself is once), "closed" when a watched rise is over: back near the base, or
+    cooling down from its peak (#411).
     """
     ts, temp = recent[-1]
     if rise is None:
@@ -211,8 +213,12 @@ def door_step(rise, recent):
     start, base, peak = rise
     if temp <= base + FRIDGE_DOOR_CLOSED_C or temp <= peak - FRIDGE_DOOR_FALL_C:
         return None, "closed"
-    rise = (start, base, max(peak, temp))
-    return rise, "open" if ts - start >= timedelta(minutes=FRIDGE_DOOR_OPEN_MINUTES) else None
+    peak = max(peak, temp)
+    # Open only while still near the peak (#420): a reading already falling from it is a shut
+    # door cooling down, not "not cooling down". Rounded: the node sends 0.1 °C steps.
+    near_peak = round(peak - temp, 2) <= FRIDGE_DOOR_PEAK_C
+    late = ts - start >= timedelta(minutes=FRIDGE_DOOR_OPEN_MINUTES)
+    return (start, base, peak), "open" if late and near_peak else None
 
 
 def door_state():

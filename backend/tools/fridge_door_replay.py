@@ -4,7 +4,7 @@ watched. For tuning the FRIDGE_DOOR_* limits in config.py against real door open
 readings are kept 2 days (RAW_RETENTION_DAYS).
 
     sudo -u iot venv/bin/python tools/fridge_door_replay.py [--rise 2.0] [--rise-minutes 5]
-        [--open-minutes 10] [--closed 1.0] [--fall 0.5]
+        [--open-minutes 10] [--closed 1.0] [--fall 0.5] [--peak 0.2]
 
 The options override the config values for this run only. Read-only; never pushes.
 """
@@ -25,11 +25,12 @@ def main():
     ap.add_argument("--open-minutes", type=float, default=config.FRIDGE_DOOR_OPEN_MINUTES)
     ap.add_argument("--closed", type=float, default=config.FRIDGE_DOOR_CLOSED_C)
     ap.add_argument("--fall", type=float, default=config.FRIDGE_DOOR_FALL_C)
+    ap.add_argument("--peak", type=float, default=config.FRIDGE_DOOR_PEAK_C)
     args = ap.parse_args()
     # door_step reads them from its module
     fridge.FRIDGE_DOOR_RISE_C, fridge.FRIDGE_DOOR_RISE_MINUTES = args.rise, args.rise_minutes
     fridge.FRIDGE_DOOR_OPEN_MINUTES, fridge.FRIDGE_DOOR_CLOSED_C = args.open_minutes, args.closed
-    fridge.FRIDGE_DOOR_FALL_C = args.fall
+    fridge.FRIDGE_DOOR_FALL_C, fridge.FRIDGE_DOOR_PEAK_C = args.fall, args.peak
 
     conn = connect_ro()
     rows = [(parse_ts(r["ts"]), r["temp"]) for r in conn.execute(
@@ -41,7 +42,7 @@ def main():
         return
     print(f"{len(rows)} fridge readings, {rows[0][0]} .. {rows[-1][0]} UTC; rise {args.rise} °C in "
           f"{args.rise_minutes} min, open after {args.open_minutes} min, closed within {args.closed} °C "
-          f"or {args.fall} °C below the peak")
+          f"or {args.fall} °C below the peak; open only within {args.peak} °C of it")
 
     keep = timedelta(minutes=args.rise_minutes + 1)
     rise, pushed, rises, opens = None, False, 0, 0
