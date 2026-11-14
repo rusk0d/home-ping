@@ -16,8 +16,8 @@ def test_issue296_notification_history(env):
     log_event("home_ping_esp32", "HUMIDITY_HIGH_ALERT", "sent, humidity=70")
     log_event("home_ping_esp32", "TEMP_ALERT", "muted (quiet hours), temp=17")
     log_event("home_ping_esp32", "TEMP_ALERT", "failed, temp=17")
-    for _ in range(30):   # a busy hour of radar flips must not push the pushes out
-        log_event("home_ping_esp32", "OCCUPANCY_CHANGE", "occupied")
+    for _ in range(30):   # many non-push events must not push the pushes out
+        log_event("system", "FLAT_OCCUPANCY", "occupied")
     log_event("fridge_temp_esp32", "FRIDGE_ALERT", "sent, alert=warm_low (was: normal)")
 
     events = get()

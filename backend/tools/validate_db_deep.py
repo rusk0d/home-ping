@@ -268,52 +268,30 @@ def run_deep_checks(days=7):
     # ========== EVENT CONSISTENCY ==========
     print("\n📝 Event Consistency")
 
-    # Check 8: OCCUPANCY_CHANGE events should correspond to actual changes
-    print("  8. Checking OCCUPANCY_CHANGE events match data...")
+    # Check 8: the flat's occupied / vacant changes alternate (#422; until then it compared the
+    # raw per-radar OCCUPANCY_CHANGE events with the readings)
+    print("  8. Checking FLAT_OCCUPANCY events alternate...")
     try:
         conn = connect()
         c = conn.cursor()
-
-        # Get all OCCUPANCY_CHANGE events
         c.execute(f"""
-            SELECT ts, device, value FROM events
-            WHERE type = 'OCCUPANCY_CHANGE' AND {since}
-            ORDER BY ts DESC LIMIT 20
+            SELECT ts, value FROM events
+            WHERE type = 'FLAT_OCCUPANCY' AND {since}
+            ORDER BY id
         """, since_args)
-        events = c.fetchall()
-
-        orphaned = []
-        for event in events:
-            # Check if there's an occupancy change at that timestamp
-            c.execute("""
-                SELECT occupied FROM presence_readings
-                WHERE device = ? AND ts = ?
-                LIMIT 1
-            """, (event['device'], event['ts']))
-            reading = c.fetchone()
-
-            if not reading:
-                # No reading at exact timestamp, check nearby (within 2 seconds; events log ~1s after reading)
-                c.execute("""
-                    SELECT occupied FROM presence_readings
-                    WHERE device = ? AND ts >= datetime(?, '-2 seconds') AND ts <= datetime(?, '+2 seconds')
-                    LIMIT 1
-                """, (event['device'], event['ts'], event['ts']))
-                reading = c.fetchone()
-
-                if not reading:
-                    orphaned.append((event['device'], event['ts'], event['value']))
-
-        if orphaned:
-            for device, ts, value in orphaned[:3]:
-                issues.append(f"📝 Orphaned OCCUPANCY_CHANGE: {device} {ts} {value} (no supporting reading)")
-                print(f"   ⚠️  No reading for {device} at {ts}")
+        events = [(r['ts'], r['value'].split(" ")[0]) for r in c.fetchall()]
+        repeats = [f"{events[i][1]} twice ({events[i-1][0]}, {events[i][0]})"
+                   for i in range(1, len(events)) if events[i][1] == events[i-1][1]]
+        if repeats:
+            for r in repeats[:3]:
+                issues.append(f"📝 FLAT_OCCUPANCY: {r}")
+                print(f"   ❌ {r}")
         else:
-            print("   ✅ All OCCUPANCY_CHANGE events have supporting readings")
+            print(f"   ✅ {len(events)} FLAT_OCCUPANCY events alternate")
 
         conn.close()
     except Exception as e:
-        issues.append(f"📝 Error checking OCCUPANCY_CHANGE: {e}")
+        issues.append(f"📝 Error checking FLAT_OCCUPANCY: {e}")
 
     # Check 9: Window events should alternate (open→close→open)
     print("  9. Checking window event state machine...")

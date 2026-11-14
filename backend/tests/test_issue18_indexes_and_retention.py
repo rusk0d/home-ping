@@ -22,7 +22,7 @@ def test_issue18_indexes_and_retention(env):
     con.execute("INSERT INTO devices VALUES ('retired_node', datetime('now','-31 days'))")
     con.execute("INSERT INTO devices VALUES ('quiet_node', datetime('now','-29 days'))")
     con.commit(); con.close()
-    store.log_event("home_ping_esp32", "OCCUPANCY_CHANGE", "occupied")
+    store.log_event("system", "FLAT_OCCUPANCY", "occupied")
     nodes.touch_device("home_ping_esp32")
     store.prune()   # once per summaries pass since #304, not on every insert
     vals = [r[0] for r in db().execute("SELECT value FROM events WHERE device='x'")]

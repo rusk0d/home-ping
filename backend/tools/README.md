@@ -7,7 +7,7 @@ these need the real `data.db` and a running backend, so they don't run in CI.
 | Script | Checks | Needs the API |
 |---|---|---|
 | `validate_db.py` | invariants that must always hold: occupied ≤ coverage hours, hourly rows match the raw rows, raw retention, RESTART events vs. uptimes, `devices.last_seen` | no |
-| `validate_db_deep.py` | edge cases: future or backwards timestamps, value bounds, 0→1→0 occupancy spikes, OCCUPANCY_CHANGE events vs. readings, window events alternating, min ≤ avg ≤ max (room and fridge), cooldowns between sent alerts | no |
+| `validate_db_deep.py` | edge cases: future or backwards timestamps, value bounds, 0→1→0 occupancy spikes, occupied / vacant events alternating (`FLAT_OCCUPANCY`), window events alternating, min ≤ avg ≤ max (room and fridge), cooldowns between sent alerts | no |
 | `validate_api.py` | re-implements occupancy stats, confidence, combined occupancy and the 3 h pressure change from their docstrings and compares with `/api/stats24h_combined`, `/api/latest`, `/api/air` | yes |
 | `api_regressions.py` | value ranges, shapes and freshness of the API responses | yes |
 | `fridge_door_replay.py` | not a check: replays the stored fridge readings through the door rule (#336) and prints the rises and pushes it would have sent; `--rise`, `--rise-minutes`, `--open-minutes`, `--closed`, `--fall`, `--peak` try other limits | no |
@@ -27,7 +27,7 @@ sudo -u iot venv/bin/python tools/api_regressions.py
 sudo -u iot venv/bin/python tools/fridge_door_replay.py [--open-minutes 15 ...]
 ```
 
-- `validate_db_deep.py --days N`: its event checks (OCCUPANCY_CHANGE, window events, cooldowns)
+- `validate_db_deep.py --days N`: its event checks (FLAT_OCCUPANCY, window events, cooldowns)
   look at the last N days, default 7; `--days 0` checks every stored event (kept 30 days). So a
   bug fixed last week stops showing after a week instead of a month (#423).
 - `validate_db.py --db <file> --now "YYYY-MM-DD HH:MM:SS"` checks another database (a restored
