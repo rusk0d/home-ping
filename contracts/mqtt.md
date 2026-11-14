@@ -10,7 +10,7 @@ inferred then and hasn't been confirmed since.
 
 The web page has no shared account any more: each person signs in with their own
 Mosquitto account. `web/config.js` holds only `url`. The page keeps the login only after
-the broker accepted it (sessionStorage, or localStorage with "remember me"), and shows
+the broker accepted it (sessionStorage, or localStorage with "remember me", which is off unless ticked), and shows
 the login form again on CONNACK 4/5 (bad user name or password / not authorized).
 
 Each web user needs a password-file entry and a read-only ACL entry on the broker:
@@ -69,7 +69,7 @@ with the new `MQTT_PASS` (OTA works without MQTT). A node is off MQTT until both
 
 | Setting | Firmware (main_node, eink_node) | Backend (`ingest.py`, `server.py`) | Web (`app.js`) |
 |---|---|---|---|
-| Library | PubSubClient, via the HomePing library (#75) | paho-mqtt 2.2.0, callback API v2 (#66) | mqtt.js 5.16.0 from unpkg (pinned, with SRI, #62) |
+| Library | PubSubClient, via the HomePing library (#75) | paho-mqtt 2.2.0, callback API v2 (#66) | mqtt.js 5.16.0 from the site itself, `web/vendor/` (pinned with SRI, #62) |
 | Host / port | `MQTT_BROKER` / `MQTT_PORT` from `secrets.h`: the certificate's host name, 8883 | `localhost:1883`, hard-coded | `MQTT_CONFIG.url` from `web/config.js` (WebSockets) |
 | TLS | `WiFiClientSecure`, trusts ISRG Root X1 and Root YR (`HomePingTls.h`), checks the host name; certificate dates not checked (no clock needed) | none (localhost) | `wss://` through nginx |
 | Auth | `MQTT_USER` / `MQTT_PASS` from `secrets.h`: account `sensor` | `MQTT_USER` / `MQTT_PASS` from `.env`: account `backend` | each person's own read-only account, typed into the page's login form (since #99; see "Web users") |

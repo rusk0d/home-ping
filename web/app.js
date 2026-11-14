@@ -500,6 +500,8 @@ setInterval(tick, 1000);
 // ---------- login (#99) ----------
 // Each person has their own read-only MQTT account. The login is kept only after the
 // broker accepted it: in sessionStorage (this tab) or, with "remember me", localStorage.
+// "Remember me" is off unless ticked: localStorage keeps the password in clear text for
+// whoever uses that browser next.
 const LOGIN_KEY = 'homeping.login';
 function store(remember) {
   try { return remember ? localStorage : sessionStorage; } catch (e) { return null; }

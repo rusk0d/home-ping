@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Home Ping</title>
 <script src="config.js"></script>
-<!-- Pinned with a hash (#62): the browser refuses the file if the CDN serves anything else.
-     After a version bump: openssl dgst -sha384 -binary mqtt.min.js | openssl base64 -A -->
-<script src="https://unpkg.com/mqtt@5.16.0/dist/mqtt.min.js"
-        integrity="sha384-9WWboT9UtuPFRlOLq4FygQkcJxzYcpz8SXGkNyCEXM+44n14xzjNlrRKYZwuF/A6"
-        crossorigin="anonymous"></script>
+<!-- mqtt.js 5.16.0, served from this site (vendor/, the file from the npm package's dist/), so
+     the CSP allows no other script host. Still pinned with a hash (#62): the browser refuses
+     a file that was changed. After a version bump:
+     openssl dgst -sha384 -binary vendor/mqtt.min.js | openssl base64 -A -->
+<script src="vendor/mqtt.min.js"
+        integrity="sha384-9WWboT9UtuPFRlOLq4FygQkcJxzYcpz8SXGkNyCEXM+44n14xzjNlrRKYZwuF/A6"></script>
 <style>
   :root {
     --bg: #0f1218;
@@ -231,7 +232,7 @@
     <h2 data-i18n="signIn">Sign in</h2>
     <label><span data-i18n="user">User</span> <input type="text" id="loginUser" name="username" autocomplete="username" required></label>
     <label><span data-i18n="password">Password</span> <input type="password" id="loginPass" name="password" autocomplete="current-password" required></label>
-    <label class="remember"><input type="checkbox" id="loginRemember" checked> <span data-i18n="remember">Remember me on this device</span></label>
+    <label class="remember"><input type="checkbox" id="loginRemember"> <span data-i18n="remember">Remember me on this device</span></label>
     <p class="error" id="loginError"></p>
     <button type="submit" data-i18n="signIn">Sign in</button>
   </form>
