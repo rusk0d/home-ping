@@ -184,9 +184,8 @@ Full example (abridged):
 
 ```json
 {
-  "home_ping_esp32": {"ts":"2026-10-13T17:42:15Z","temp":22.4,"humidity":48.3,"uptime":86405,"co2":null,"pressure":1013.6,"online":true,"co2_ok":null,"occupied":1,"confidence":73,"presence":1,"stationary":1,"moving":0,"distance":142,"signal":37,"rssi":-61,"radar_connected":1},
+  "home_ping_esp32": {"ts":"2026-10-13T17:42:15Z","temp":22.4,"humidity":48.3,"uptime":86405,"co2":812,"pressure":1013.6,"online":true,"co2_ok":true,"occupied":1,"confidence":73,"presence":1,"stationary":1,"moving":0,"distance":142,"signal":37,"rssi":-61,"radar_connected":1},
   "hallway_presence_esp32": {"temp":null,"humidity":null,"co2":null,"pressure":null,"ts":"2026-10-13T17:42:13Z","uptime":3605,"occupied":0,"confidence":0,"online":true,"presence":0,"stationary":0,"moving":0,"distance":0,"signal":0,"rssi":-70,"radar_connected":1},
-  "co2_sensor_esp32": {"ts":"2026-10-13T17:41:58Z","temp":null,"humidity":null,"uptime":7260,"co2":812,"pressure":null,"online":true,"co2_ok":true},
   "combined": {"occupied":1,"confidence":73}
 }
 ```
