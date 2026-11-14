@@ -87,11 +87,13 @@ class DevicesActivity : AppCompatActivity() {
         val issues = DeviceIssues.list(devices, restarts, server)
         val shown = DeviceIssues.visible(this, issues, complete = restarts != null && server != null)
         val ignored = issues.size - shown.size
+        // An ignored issue's rows on its device card are muted too, not red (#428)
+        val ignoredKeys = issues.filter { it !in shown }.map { it.key }.toSet()
         if (shown.isNotEmpty()) b.cards.addView(issuesCard(shown, ignored))
         else if (ignored > 0) b.cards.addView(newCard().apply { addView(ignoredLine(ignored)) })
         for (i in 0 until devices.length()) {
             val d = devices.optJSONObject(i) ?: continue
-            b.cards.addView(card(d, restarts?.optJSONObject(d.optString("device"))))
+            b.cards.addView(card(d, restarts?.optJSONObject(d.optString("device")), ignoredKeys))
         }
         server?.let {
             b.cards.addView(heading("Server"))
@@ -178,8 +180,12 @@ class DevicesActivity : AppCompatActivity() {
         }
     }
 
-    private fun card(d: JSONObject, restarts: JSONObject?): AccentCard {
+    /** One node's card; what's red on it is muted instead while its issue is in [ignored] (#428). */
+    private fun card(d: JSONObject, restarts: JSONObject?, ignored: Set<String>): AccentCard {
         val id = d.optString("device")
+        /** Red for a value worth a look, muted while its issue ([DeviceIssues] key) is ignored. */
+        fun bad(issue: String) = if ("$issue:$id" in ignored) R.color.muted else R.color.bad
+        val offlineIgnored = "offline:$id" in ignored
         val name = d.optString("name").ifEmpty { id }
         val online = d.optBoolean("online")
         val known = d.optBoolean("known", true)   // in the backend's registry (#359)
@@ -194,17 +200,19 @@ class DevicesActivity : AppCompatActivity() {
         ).joinToString(" · ")
 
         return newCard().apply {
-            // A node not in the registry (e.g. retired) being offline is no issue: grey, not red
+            // A node not in the registry (e.g. retired) being offline is no issue: grey, not red;
+            // nor is one whose "offline" was ignored (#428)
+            val flagged = online || (known && !offlineIgnored)
             accentColor = Levels.color(context, when {
                 online -> R.color.good
-                known -> R.color.bad
+                flagged -> R.color.bad
                 else -> R.color.faint
             })
-            addView(HomeFormat.statusLine(context, name, meta, if (online || known) online else null))
+            addView(HomeFormat.statusLine(context, name, meta, if (flagged) online else null))
 
             val rows = mutableListOf<Triple<String, String, Int?>>()
             h.optNum("rssi")?.toInt()?.let { rssi ->
-                val (quality, color) = signal(rssi)
+                val (quality, color) = signal(rssi).let { (q, c) -> q to if (c == R.color.bad) bad("wifi") else c }
                 rows += Triple("WiFi", "$rssi dBm · $quality", color)
             }
             h.optNum("uptime")?.toInt()?.let { rows += Triple("Uptime", HomeFormat.uptime(it), null) }
@@ -221,13 +229,13 @@ class DevicesActivity : AppCompatActivity() {
                 rows += Triple("Radar", if (ok) "sending frames" else "not responding", if (ok) null else R.color.bad)
             }
             h.optString("reset_reason").takeIf { it.isNotEmpty() }?.let { reason ->
-                rows += Triple("Last reset", reason, if (HomeFormat.BAD_RESET_REASONS.any { reason.contains(it) }) R.color.bad else null)
+                rows += Triple("Last reset", reason, if (HomeFormat.BAD_RESET_REASONS.any { reason.contains(it) }) bad("restarts") else null)
             }
             restarts?.let { r ->
                 val day = r.optInt("last_24h")
                 val week = r.optInt("last_7d")
                 val last = r.optTs("last_restart")?.let { " · last ${HomeFormat.whenText(it)}" }.orEmpty()
-                rows += Triple("Restarts", "$day in 24 h · $week in 7 d$last", if (day > DeviceIssues.MAX_RESTARTS_24H) R.color.bad else null)
+                rows += Triple("Restarts", "$day in 24 h · $week in 7 d$last", if (day > DeviceIssues.MAX_RESTARTS_24H) bad("restarts") else null)
             }
             if (rows.isEmpty()) rows += Triple("", "No recent health data from this node", null)
             rows.forEach { (label, value, color) -> addView(row(label, value, color)) }
