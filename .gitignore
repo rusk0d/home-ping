@@ -47,3 +47,7 @@ web/config.js
 
 # Deploy target for backend/deploy.sh (user@host)
 backend/.deploy-host
+
+# Audit and review reports (#452): written from live data and the server's state, so they
+# stay on this machine
+audit/

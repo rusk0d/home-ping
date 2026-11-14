@@ -25,7 +25,7 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 | `web/` | Dashboard (`index.html` + `app.js`, English/Hungarian texts in `i18n.js`), connects to MQTT directly from the browser; `nginx/` has its security headers |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
 | `contracts/` | MQTT topics/payloads, REST API, push notifications, DB schema: the source of truth |
-| `audit/` | Audit and code-review reports |
+| `audit/` | Audit and code-review reports: local only, not in the repo (#452) |
 
 ## Configuration
 
