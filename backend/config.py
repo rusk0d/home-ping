@@ -24,6 +24,10 @@ DB = "data.db"
 BIND_HOST = os.environ.get("BIND_HOST", "127.0.0.1")   # API listen address (#59); nginx proxies to it
 PORT = int(os.environ.get("PORT", "5000"))
 FIREBASE_CRED = "firebase_service_account.json"
+# HTTP timeout of a push (and of the token refresh before it), seconds (#449). firebase-admin's
+# default is 120 s, and alerts send from the MQTT thread: one hanging request stopped all
+# ingestion that long and the broker dropped the backend. Well under the 60 s MQTT keep-alive.
+FIREBASE_TIMEOUT = 10
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
 MQTT_USER = os.environ["MQTT_USER"]

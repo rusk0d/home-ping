@@ -9,7 +9,9 @@ inferred then and hasn't been confirmed since.
 ## Transport
 
 - Backend: `firebase_admin.messaging.send()`, using the service account at
-  `firebase_service_account.json` (relative to the backend's working directory).
+  `firebase_service_account.json` (relative to the backend's working directory). The send runs
+  in the thread that raised the alert (the MQTT thread for most), with a 10 s HTTP timeout
+  (`config.FIREBASE_TIMEOUT`, #449); a timed-out send counts as failed and is retried (#251).
 - Target: **FCM topic `env`** for every push. No per-device tokens are targeted.
 - **Data-only messages** (since #12): no `notification` block. `title` and `body` travel
   in the `data` map next to `event`, `device`, etc., so the Android app always builds the
@@ -500,3 +502,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #421: "Fridge door closed" says "Cooling down again, <t> °C now" when it ended by cooling from the peak while still warm.
 - #419: "Loading the fridge" holds the fridge's warm and door pushes for up to 3 h; still on afterwards → pushed then.
 - #427: weekly summary push (`WEEKLY`, switch `weekly`).
+- #449: a push times out after 10 s (was firebase-admin's 120 s, which held up MQTT ingestion).

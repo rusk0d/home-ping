@@ -13,7 +13,7 @@ import firebase_admin
 from firebase_admin import credentials
 
 import state
-from config import BIND_HOST, PORT, LOG_LEVEL, FIREBASE_CRED, MQTT_HOST, MQTT_PASS, MQTT_PORT, MQTT_USER
+from config import BIND_HOST, PORT, LOG_LEVEL, FIREBASE_CRED, FIREBASE_TIMEOUT, MQTT_HOST, MQTT_PASS, MQTT_PORT, MQTT_USER
 from store import load_alert_state, prune, rollup_hourly
 from schema import init_db
 from nodes import node_check_loop
@@ -28,7 +28,8 @@ def init_firebase():
     try:
         firebase_admin.get_app()   # already initialised (e.g. start() called twice)
     except ValueError:
-        firebase_admin.initialize_app(credentials.Certificate(FIREBASE_CRED))
+        # httpTimeout: a push that hangs must not hold the MQTT thread for long (#449)
+        firebase_admin.initialize_app(credentials.Certificate(FIREBASE_CRED), {"httpTimeout": FIREBASE_TIMEOUT})
 
 
 def prepare():
