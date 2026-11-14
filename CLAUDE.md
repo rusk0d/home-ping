@@ -18,7 +18,8 @@ notifications via Firebase. A small web page and an Android app display the data
              directly from the browser; nginx/ has the site's security headers
 - /android   Kotlin app, talks only to the backend's REST API
 - /contracts MQTT topics/payloads, REST API, DB schema (source of truth)
-- /audit     read-only audit reports
+- /audit     audit and review reports: local only, gitignored (#452); they quote live data
+             and the server's state, which don't belong in a public repo
 
 # How the pieces connect
 ESP32 -> MQTT broker -> Flask (SQLite) -> REST API -> Android app
@@ -35,7 +36,9 @@ Backend -> Firebase Cloud Messaging -> Android push notifications
 When a build or test needs these, use the example files with fake values.
 
 # Rules
-- Audits are read-only: don't modify code, write findings to /audit.
+- Audits are read-only: don't modify code, write findings to /audit (never committed).
+- Issues, PRs and commit messages are public: no host names, IPs, account names, places or
+  times that show when someone is home.
 - Don't change the MQTT topics, payload formats, REST endpoints or DB schema
   without updating /contracts in the same change.
 - Keep changes small and focused, one component per change where possible.
