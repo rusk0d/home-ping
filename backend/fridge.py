@@ -20,14 +20,16 @@ A step down between two alert states (cooling from warm_critical to warm_low) is
 the more severe notification stays.
 """
 
+import json
 import logging
+import math
 import time
 from datetime import timedelta
 
 import alerts
 import state
 from config import (
-    FRIDGE_DEVICE, FRIDGE_DOOR_CLOSED_C, FRIDGE_DOOR_FALL_C, FRIDGE_DOOR_OPEN_MINUTES, FRIDGE_DOOR_RISE_C,
+    FRIDGE_DEVICE, FRIDGE_LIMITS_DEFAULT, FRIDGE_VALID, FRIDGE_DOOR_CLOSED_C, FRIDGE_DOOR_FALL_C, FRIDGE_DOOR_OPEN_MINUTES, FRIDGE_DOOR_RISE_C,
     FRIDGE_DOOR_RISE_MINUTES, NOTIFICATION_COOLDOWN,
 )
 from store import db, get_state, parse_ts, set_state, utcnow
@@ -37,26 +39,81 @@ log = logging.getLogger(__name__)
 DEVICE = FRIDGE_DEVICE
 EVENT = "FRIDGE_ALERT"   # alert and recovery share it: one notification slot on the phone
 
-MESSAGES = {
-    "cold": ("Fridge too cold", "Below 0 °C for 30+ minutes"),
-    "warm_low": ("Fridge warming up", "Above 7 °C for 30+ minutes"),
-    "warm_critical": ("Fridge too warm", "Above 8 °C for 30+ minutes"),
-    "warm_critical_duration": ("Fridge too warm (sustained)", "Above 7 °C for 2+ hours"),
-}
 URGENT = ("warm_critical", "warm_critical_duration")
 SEVERITY = {"": 0, "cold": 1, "warm_low": 1, "warm_critical": 2, "warm_critical_duration": 2}
 
-# Mirrors the firmware (fridge_node.ino): its longest timer, and the range where no condition
-# can hold (thresholds 0 / 7 °C, 0.5 °C hysteresis; 5 °C before #406)
-NODE_TIMERS_S = 2 * 60 * 60
-NORMAL_RANGE = (0.5, 6.5)
+
+# ---- The node's limits (#417) ----
+# The node decides the alert from its own limits and publishes them; everything here that names
+# a limit (the push texts, the reboot hold's normal range, its longest timer) reads them, so a
+# limit change is a flash only.
+
+def valid_limits(value):
+    """The limits dict if [value] is a complete, sane set, else None. Extra keys are ignored."""
+    if not isinstance(value, dict):
+        return None
+    out = {}
+    for key in FRIDGE_LIMITS_DEFAULT:
+        v = value.get(key)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+            return None
+        out[key] = v
+    lo, hi = FRIDGE_VALID
+    if not (lo <= out["cold"] < out["warm"] <= out["hot"] <= hi and 0 <= out["hysteresis"] <= 5
+            and 1 <= out["minutes"] <= out["long_minutes"] <= 24 * 60):
+        return None
+    return out
+
+
+def limits():
+    """The newest limits the node published, or FRIDGE_LIMITS_DEFAULT before it has."""
+    try:
+        saved = valid_limits(json.loads(get_state("fridge_limits", "") or "null"))
+    except ValueError:
+        saved = None
+    return saved or dict(FRIDGE_LIMITS_DEFAULT)
+
+
+def note_limits(value):
+    """Keep the limits from a fridge reading when they're valid and new; a bad set is logged and
+    the previous one stays."""
+    new = valid_limits(value)
+    if new is None:
+        log.warning("%s: bad limits %.120r, ignored", DEVICE, value)
+        return
+    text = json.dumps(new, sort_keys=True)
+    if text != get_state("fridge_limits", ""):
+        log.info("%s: alert limits %s", DEVICE, text)
+        set_state("fridge_limits", text)
+
+
+def _n(v):
+    """7.0 -> "7", -0.5 -> "-0.5": a limit in a push text."""
+    return f"{v:g}"
+
+
+def message(alert, lim):
+    """(title, body) of the push for [alert] under the limits [lim]."""
+    m, hours = _n(lim["minutes"]), _n(lim["long_minutes"] / 60)
+    return {
+        "cold": ("Fridge too cold", f"Below {_n(lim['cold'])} °C for {m}+ minutes"),
+        "warm_low": ("Fridge warming up", f"Above {_n(lim['warm'])} °C for {m}+ minutes"),
+        "warm_critical": ("Fridge too warm", f"Above {_n(lim['hot'])} °C for {m}+ minutes"),
+        "warm_critical_duration": ("Fridge too warm (sustained)",
+                                   f"Above {_n(lim['warm'])} °C for {hours}+ hours"),
+    }.get(alert, ("Fridge alert", f"Alert: {alert}"))
+
+
+def normal_range(lim):
+    """Where no condition can hold: past both limits by the hysteresis (the reboot hold, #300)."""
+    return lim["cold"] + lim["hysteresis"], lim["warm"] - lim["hysteresis"]
 
 
 def _push(current, last, urgent):
     """Push the alert for [current] ("" = back to normal, after [last]); [urgent]: through
     quiet hours."""
     if current:
-        title, body = MESSAGES.get(current, ("Fridge alert", f"Alert: {current}"))
+        title, body = message(current, limits())
         detail = f"alert={current} (was: {last or 'normal'})"
     else:
         title, body = "Fridge back to normal", "Temperature is within normal range"
@@ -98,8 +155,11 @@ def check_fridge_alerts(now=None):
         return
 
     milder = SEVERITY.get(current, 1) < SEVERITY.get(last, 1)
-    if milder and uptime is not None and uptime < NODE_TIMERS_S and not (
-            temp is not None and NORMAL_RANGE[0] <= temp <= NORMAL_RANGE[1]):
+    # The node's longest timer and the range where no condition can hold, from its limits
+    lim = limits()
+    lo, hi = normal_range(lim)
+    if milder and uptime is not None and uptime < lim["long_minutes"] * 60 and not (
+            temp is not None and lo <= temp <= hi):
         return   # rebooted node, timers not run yet: hold the last state
 
     if now - state.LAST_NOTIFICATION.get(f"fridge:{current or 'normal'}", 0) <= NOTIFICATION_COOLDOWN:

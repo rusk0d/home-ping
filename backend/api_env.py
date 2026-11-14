@@ -147,8 +147,10 @@ def latest_all():
     for device, entry in result.items():
         entry["room"] = device_info(device)["role"] == "room"
     # The fridge's door (#361): open while the door push's excursion is on (#336)
+    # and its alert limits (#417), so the app's gauge and texts follow the node
     if FRIDGE_DEVICE in result:
         result[FRIDGE_DEVICE].update(fridge.door_state())
+        result[FRIDGE_DEVICE]["limits"] = fridge.limits()
     result["combined"] = {
         "occupied": get_combined_occupancy(),
         "confidence": calculate_combined_confidence()

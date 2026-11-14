@@ -146,8 +146,11 @@ BME280), so each group comes from its own newest row (#11):
 - The fridge (`FRIDGE_DEVICE`) also has `door_open` (bool) and `door_open_since` (ISO time or
   null) since #361: open while the "Fridge door open?" push's excursion is on (sent, or muted by
   quiet hours / the switch), from the push (`FRIDGE_DOOR_OPEN_MINUTES` after the rise started)
-  until the temperature is back near where it started; `door_open_since` is the start of the rise
-  (`notifications.md` 11b).
+  until the rise is over (back near where it started, or cooling from its peak, #411);
+  `door_open_since` is the start of the rise (`notifications.md` 11b).
+- The fridge also has `limits` since #417: the node's alert limits as in `mqtt.md`
+  (`cold`, `warm`, `hot`, `hysteresis`, `minutes`, `long_minutes`), the newest valid set it sent,
+  or the backend's defaults (`FRIDGE_LIMITS_DEFAULT`, 0 / 7 / 8 °C, 0.5, 30, 120) before it has.
 
 For each device with `presence_readings` rows, the radar fields are merged in.
 If the device has no env rows, a stub with `temp`/`humidity`/`co2`/`pressure` = null is used.
@@ -313,7 +316,7 @@ every copy: `backend/api_env.py` (`/api/air` `band`, CO₂ only), `web/app.js`
 | CO₂ (ppm) | Fresh `good` < 800 ≤ OK `fair` < 1200 ≤ Stuffy `stuffy` < 2000 ≤ Poor `bad` |
 | Humidity (%) | Very dry < 30 ≤ Dry < 40 ≤ Comfortable ≤ 60 < Humid ≤ 70 < Very humid |
 | Temperature (°C) | Cold < 18 ≤ Cool < 20 ≤ Comfortable ≤ 24 < Warm ≤ 27 < Hot |
-| Fridge (°C, gauge colours only, #326) | too cold < 0 ≤ fine < 7 ≤ warming < 8 ≤ too warm (5 before #406): the fridge node's `alert` limits (mqtt.md); the chip shows the alert itself |
+| Fridge (°C, gauge colours only, #326) | too cold < `cold` ≤ fine < `warm` ≤ warming < `hot` ≤ too warm: the fridge node's own limits (`limits`, #417; 0 / 7 / 8 until it sends them); the chip shows the alert itself |
 
 Gauge ranges (drawing only): CO₂ 400–3000 ppm (web and Android), humidity 0–100 %,
 temperature 14–30 °C (Android only) and fridge −2–10 °C (web and Android, #360).
@@ -606,3 +609,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #361: `/api/latest_all`'s fridge entry has `door_open` and `door_open_since`.
 - #402: app only: the fridge card's age comes from `env_ts`; no endpoint changed.
 - #406: Level bands: the fridge's "warming" starts at 7 °C (was 5 °C).
+- #417: `/api/latest_all`'s fridge entry has `limits`; the fridge's Level bands come from it.
