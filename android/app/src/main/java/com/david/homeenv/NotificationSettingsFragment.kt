@@ -40,7 +40,8 @@ class NotificationSettingsFragment : Fragment() {
             "pressure" to b.pressure,
             "air" to b.air,
             "baseline" to b.baseline,
-            "fridge" to b.fridge
+            "fridge" to b.fridge,
+            "weekly" to b.weekly   // #427
         )
     }
 

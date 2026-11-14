@@ -20,6 +20,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         const val CHANNEL_OCCUPANCY = "occupancy"
         /** Air-out hints (#245): no sound or vibration, they're not urgent. */
         const val CHANNEL_AIR = "air"
+        /** The weekly summary (#427): silent too, and its own so it can be turned off on the phone. */
+        const val CHANNEL_WEEKLY = "weekly"
 
         /** Creates the channels; called at app start so FCM can use them before the first message. */
         fun createChannels(context: Context) {
@@ -32,6 +34,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             )
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL_AIR, "Air quality", NotificationManager.IMPORTANCE_LOW)
+            )
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL_WEEKLY, "Weekly summary", NotificationManager.IMPORTANCE_LOW)
             )
         }
     }
@@ -66,6 +71,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val channelId = when (event) {
             "OCCUPIED" -> CHANNEL_OCCUPANCY
             "AIR" -> CHANNEL_AIR
+            "WEEKLY" -> CHANNEL_WEEKLY
             else -> CHANNEL_SENSORS
         }
 
