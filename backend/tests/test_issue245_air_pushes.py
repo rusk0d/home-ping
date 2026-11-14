@@ -5,9 +5,9 @@ after it), "Close the window?" once per spell and "Window still open?" when the 
 
 import base64
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from support import check
+from support import check, quiet_now
 
 
 def test_issue245_air_pushes(env):
@@ -51,11 +51,7 @@ def test_issue245_air_pushes(env):
                          (config.PRESENCE_DEVICE,))
         conn.commit()
 
-    def quiet(on):
-        local = datetime.now()
-        store.set_state("quiet_hours", "1" if on else "0")
-        store.set_state("quiet_start", (local - timedelta(hours=1)).strftime("%H:%M"))
-        store.set_state("quiet_end", (local + timedelta(hours=1)).strftime("%H:%M"))
+    quiet = quiet_now
 
     t = store.utcnow().replace(microsecond=0) - timedelta(hours=10)
     home(True)

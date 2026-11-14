@@ -1,9 +1,8 @@
 """#351: a fridge too warm comes through quiet hours, and so does its "back to normal"; too cold
 and warming up still wait for the end of quiet hours; the "fridge" switch mutes them all."""
 import time
-from datetime import datetime, timedelta
 
-from support import check
+from support import check, quiet_now
 
 
 def test_issue351_fridge_warm_quiet(env):
@@ -26,11 +25,7 @@ def test_issue351_fridge_warm_quiet(env):
         state.LAST_NOTIFICATION.clear()   # each step past its cooldown
         fridge.check_fridge_alerts(time.time())
 
-    def quiet(on):
-        now = datetime.now()
-        set_state("quiet_hours", "1" if on else "0")
-        set_state("quiet_start", (now - timedelta(hours=1)).strftime("%H:%M"))
-        set_state("quiet_end", (now + timedelta(hours=1)).strftime("%H:%M"))
+    quiet = quiet_now
 
     quiet(True)
     check("quiet hours are on now", alerts.in_quiet_hours())

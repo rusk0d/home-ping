@@ -1,7 +1,7 @@
 """#176: watchdog pushes for an overdue backup and low disk space.
 """
 
-from support import check
+from support import check, quiet_now
 
 
 def test_issue176_watchdog(env):
@@ -30,7 +30,7 @@ def test_issue176_watchdog(env):
 
     # Folder without backups: overdue, but postponed during quiet hours
     backups.mkdir()
-    store.set_state("quiet_hours", "1"); store.set_state("quiet_start", "00:00"); store.set_state("quiet_end", "23:59")
+    quiet_now()
     server_checks.check_watchdogs()
     check("quiet hours: postponed, not dropped", pushes() == [] and store.get_state("watchdog:backup") in ("", "0"))
     store.set_state("quiet_hours", "0")

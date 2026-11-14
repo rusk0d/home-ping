@@ -1,6 +1,6 @@
 """#305: one helper for once-per-excursion alerts (alerts.Excursion), and the one-time
 conversion of the old state values."""
-from support import check
+from support import check, quiet_now
 
 
 def test_issue305_excursion(env):
@@ -56,7 +56,7 @@ def test_issue305_excursion(env):
 
     # --- postponed by quiet hours: not saved, pushed after them
     quiet = alerts.Excursion("test:q", "nodes", "dev", {"event": "Q", "device": "dev"}, postpone_quiet=True)
-    store.set_state("quiet_hours", "1"); store.set_state("quiet_start", "00:00"); store.set_state("quiet_end", "23:59")
+    quiet_now()
     check("quiet hours: held back", quiet.start("Q_ON", "q", "Q", "b") is None and quiet.current() == (None, None))
     store.set_state("quiet_hours", "0")
     check("after them: pushed", quiet.start("Q_ON", "q", "Q", "b") == "sent")
