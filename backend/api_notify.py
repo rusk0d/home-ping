@@ -8,13 +8,14 @@ import re
 from flask import Blueprint, jsonify, request
 
 from config import (
-    HHMM, NOTIFY_KINDS,
+    FRIDGE_LOADING_MAX_MINUTES, HHMM, NOTIFY_KINDS,
 )
 from store import (
     db, get_state, log_event, set_state,
 )
 from alerts import notification_settings
 from air import window_open_on_leave
+import fridge
 from api_common import iso, json_body, require_auth
 
 log = logging.getLogger(__name__)
@@ -40,6 +41,23 @@ def occupancy_arm():
         except Exception as e:
             log.warning("window check on leaving failed: %s", e)
     return jsonify({"armed": armed == "1"})
+
+
+@bp.route("/api/fridge/loading", methods=["POST"])
+@require_auth
+def fridge_loading():
+    """"Loading the fridge" (#419): {"minutes": 60} holds the fridge's warm and door pushes that
+    long, {"minutes": 0} ends the hold. Returns when it ends (null when none is on)."""
+    minutes = json_body().get("minutes")
+    if isinstance(minutes, bool) or not isinstance(minutes, int) or not 0 <= minutes <= FRIDGE_LOADING_MAX_MINUTES:
+        return jsonify({"error": f'"minutes" must be a whole number 0-{FRIDGE_LOADING_MAX_MINUTES}'}), 400
+    until = fridge.set_loading(minutes)
+    if not minutes:   # ended early: whatever was held is pushed now, not at the next 5-min check
+        try:
+            fridge.check_fridge_alerts()
+        except Exception as e:
+            log.warning("fridge check after loading failed: %s", e)
+    return jsonify({"loading_until": iso(until)})
 
 
 @bp.route("/api/occupancy_status")

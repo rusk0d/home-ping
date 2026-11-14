@@ -329,6 +329,10 @@ brackets until it has sent them):
   are muted only by the `fridge` switch, like the occupancy alert ignores quiet hours. So is the
   "back to normal" that replaces one of them (also after cooling down via `warm_low`). `cold`,
   `warm_low` and their recoveries are muted by quiet hours as above.
+- **Loading the fridge** (#419, `POST /api/fridge/loading`): while the app's hold is on, a new
+  `warm_low`, `warm_critical` or `warm_critical_duration` isn't pushed or saved (logged once as
+  `FRIDGE_LOADING` `held <state>`), so if it still holds when the hold ends (or is ended early)
+  it's pushed then. `cold` and recoveries aren't held.
 - **Cooling down** from `warm_critical*` to `warm_low`/`cold`: saved without a push, the more
   severe notification stays until "back to normal".
 - **Node reboots**: the node keeps its timers in RAM, so after a reboot it reports `""` (or a
@@ -362,6 +366,9 @@ The backend's own rule, from the readings (the node's `alert` doesn't know about
   few minutes cools back before 10 min: nothing is pushed.
 - data `{"event": "FRIDGE_DOOR", "device": "fridge_temp_esp32"}`: its own notification slot (not
   the temperature alert's). Logs `FRIDGE_DOOR_OPEN` / `FRIDGE_DOOR_CLOSED`.
+- **Loading the fridge** (#419, `POST /api/fridge/loading`): while the app's hold is on, an
+  "open" isn't pushed (logged once as `FRIDGE_LOADING` `held door`); if the door still looks
+  open when the hold ends, it's pushed then.
 - Switch `fridge` only: **comes through quiet hours** (since #393; muted before, so a door left
   open in the evening was never pushed), open and closed alike. Switched off, an open is saved
   as `muted` and its close only logged.
@@ -469,3 +476,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #417: the fridge push texts and the reboot hold's range and timer come from the node's published `limits`.
 - #420: "Fridge door open?" only while the reading is within 0.2 °C of the rise's peak.
 - #421: "Fridge door closed" says "Cooling down again, <t> °C now" when it ended by cooling from the peak while still warm.
+- #419: "Loading the fridge" holds the fridge's warm and door pushes for up to 3 h; still on afterwards → pushed then.

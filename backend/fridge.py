@@ -33,7 +33,7 @@ from config import (
     FRIDGE_DOOR_PEAK_C, FRIDGE_DOOR_RISE_C,
     FRIDGE_DOOR_RISE_MINUTES, NOTIFICATION_COOLDOWN,
 )
-from store import db, get_state, parse_ts, set_state, utcnow
+from store import db, get_state, log_event, parse_ts, set_state, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -173,9 +173,48 @@ def check_fridge_alerts(now=None):
     elif milder and shown:
         _save(current, shown)   # cooling down between alerts: keep the more severe notification
     else:
+        if current in HELD and _held(current):
+            return   # loading the fridge (#419): not saved, so pushed once it's over if still on
         result = _push(current, last, current in URGENT)
         if result:
             _save(current, result, result == "sent" and current in URGENT)
+
+
+# ---------- loading the fridge (#419) ----------
+# The app's "Loading the fridge" button: with the door open while it's loaded, the probe's air
+# warms fast and the door push, then "too warm" 30 min later, were near certain. For the chosen
+# time the start of a warm alert or a door push is held, not saved, so whatever is still on
+# when it ends is pushed then. Cold, recoveries and node or sensor problems aren't held.
+# system_state: fridge_loading_until = its end (UTC), "" when none; fridge_loading_held = what
+# was last logged as held, so each is logged once.
+
+HELD = ("warm_low", "warm_critical", "warm_critical_duration")
+_TS = "%Y-%m-%d %H:%M:%S"
+
+
+def loading_until(now=None):
+    """The end of the hold ("YYYY-MM-DD HH:MM:SS", UTC) while one is on, else None."""
+    until = get_state("fridge_loading_until", "") or ""
+    return until if until and parse_ts(until) > (now or utcnow()) else None
+
+
+def set_loading(minutes):
+    """Start a hold of [minutes] from now, or end it (0). Returns its end, or None."""
+    until = (utcnow() + timedelta(minutes=minutes)).strftime(_TS) if minutes else None
+    set_state("fridge_loading_until", until or "")
+    set_state("fridge_loading_held", "")
+    log_event(DEVICE, "FRIDGE_LOADING", f"until {until} UTC ({minutes} min)" if until else "ended")
+    return until
+
+
+def _held(what):
+    """True while a hold is on: [what] (an alert state, or "door") isn't pushed yet."""
+    if loading_until() is None:
+        return False
+    if get_state("fridge_loading_held", "") != what:
+        set_state("fridge_loading_held", what)
+        log_event(DEVICE, "FRIDGE_LOADING", f"held {what}")
+    return True
 
 
 # ---------- door left open (#336) ----------
@@ -252,7 +291,7 @@ def check_door(now=None):
     if new != saved:
         set_state("fridge_door_rise", new)
     ts, temp = recent[-1]
-    if event == "open":
+    if event == "open" and not _held("door"):   # loading the fridge (#419): pushed after, if still open
         minutes = round((ts - rise[0]).total_seconds() / 60)
         DOOR.start("FRIDGE_DOOR_OPEN", f"temp={temp} (was {rise[1]} {minutes} min ago)",
                    "Fridge door open?", f"Up from {rise[1]:.1f} to {temp:.1f} °C in {minutes} min and not cooling down")
