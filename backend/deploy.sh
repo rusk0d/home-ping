@@ -123,7 +123,7 @@ restart=no
 pip=no
 for f in "${changed[@]}"; do
   case "$f" in
-    requirements.txt) pip=yes; restart=yes ;;
+    requirements.lock) pip=yes; restart=yes ;;
     backup_db.py|backup_drill.py|test_push.py|*/*) ;;   # scripts the backend never imports
     *.py) restart=yes ;;
   esac
@@ -137,8 +137,9 @@ git -c core.autocrlf=false -c core.eol=lf -c tar.umask=022 archive --format=tar 
 echo "Copied ${#changed[@]} file(s)."
 
 if [ "$pip" = yes ]; then
-  echo "requirements.txt changed: pip install..."
-  ssh "$host" "cd $APP && sudo -u iot venv/bin/pip install -q -r requirements.txt"
+  # Every package, also the indirect ones, at the version and hash CI tested (#480)
+  echo "requirements.lock changed: pip install..."
+  ssh "$host" "cd $APP && sudo -u iot venv/bin/pip install -q --require-hashes -r requirements.lock"
 fi
 
 if [ "$restart" = yes ]; then
