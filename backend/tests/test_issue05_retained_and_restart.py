@@ -7,6 +7,8 @@ from support import check
 def test_issue05_retained_and_restart(env):
     import json, sqlite3, types, time
     import server
+    from support import add_devices
+    add_devices('t_node')
     import config, state, store, alerts, ingest
     server.prepare()   # importing does no work (#73)
     m = alerts.messaging   # what server.py actually calls

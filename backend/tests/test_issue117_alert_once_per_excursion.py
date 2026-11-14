@@ -7,6 +7,8 @@ from support import check
 def test_issue117_alert_once_per_excursion(env):
     import json, types
     import server, alerts, ingest, state, store
+    from support import add_devices
+    add_devices('other_node')
     server.prepare()
 
     pushes = []
