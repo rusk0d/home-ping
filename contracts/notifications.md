@@ -37,9 +37,10 @@ inferred then and hasn't been confirmed since.
   a `notification` block (older backends). Tapping the notification opens the screen it's about
   (`Screens.forPushEvent`, #354), with Home under it: `TEMP` / `HUMIDITY_*` / `PRESSURE` /
   `FRIDGE_ALERT` / `FRIDGE_DOOR` the History chart, `BASELINE` History, `NODE_STATUS` /
-  `SENSOR_STATUS` / `WATCHDOG` / `RADAR_DISCONNECTED` Devices, the rest (`OCCUPIED`, `AIR`) Home.
+  `SENSOR_STATUS` / `WATCHDOG` / `RADAR_DISCONNECTED` Devices, the rest (`OCCUPIED`, `AIR`, `WEEKLY`) Home.
 - Channels (created at app start, IMPORTANCE_HIGH): `occupancy` ("Occupancy alerts") for
   `OCCUPIED`, `air` ("Air quality", IMPORTANCE_LOW: no sound or vibration, #245) for `AIR`,
+  `weekly` ("Weekly summary", IMPORTANCE_LOW, #427) for `WEEKLY`,
   `homeenv_channel` ("Sensor alerts") for everything else. The manifest makes
   `homeenv_channel` FCM's default channel for notification messages it shows itself.
 - Notification ID = hash of `event/device`: a repeat of the same alert replaces the
