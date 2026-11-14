@@ -27,7 +27,7 @@ def test_issue14_migration_and_nulls(env):
             con.close()
 
     import server
-    import config, store, ingest, api
+    import config, ingest, api, schema
     server.prepare()   # importing does no work (#73)
     assert config.DB == "data.db", config.DB
 
@@ -35,7 +35,7 @@ def test_issue14_migration_and_nulls(env):
     check("migration dropped occupied/occupancy_confidence/dark", not {"occupied", "occupancy_confidence", "dark"} & set(cols))
     check("migration kept the other columns", cols == ["id", "device", "ts", "temp", "humidity", "uptime", "co2", "pressure", "co2_ok", "alert"])
     check("migration kept the rows", q("SELECT COUNT(*) FROM readings")[0][0] == 2)
-    store.init_db()   # second start: no-op
+    schema.init_db()   # second start: no-op
     check("second start leaves layout alone", [r[1] for r in q("PRAGMA table_info(readings)")] == cols)
 
     c = api.app.test_client()
@@ -80,7 +80,7 @@ def test_issue14_migration_and_nulls(env):
     check("new env message stored and served", get("/api/latest")["temp"] == 23.0)
 
     # Empty DB
-    os.remove("data.db"); store.init_db()
+    os.remove("data.db"); schema.init_db()
     l = get("/api/latest")
     check("empty DB: /api/latest 200 with nulls", l == {"ts": None, "temp": None, "humidity": None, "uptime": None, "online": False, "occupied": None, "confidence": None})
     check("empty DB: stats nulls", all(get("/api/stats24h_combined")[k] is None for k in ("avg_temp", "avg_humidity", "avg_occupancy")))

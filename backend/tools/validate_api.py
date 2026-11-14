@@ -40,7 +40,7 @@ def load_db():
 # ---- Reimplemented functions from contracts ----
 
 def occupancy_stats(presence, hours=24):
-    """From store.py docstring: 'Occupancy over a window, using each radar's real sample spacing.'
+    """From occupancy.py docstring: 'Occupancy over a window, using each radar's real sample spacing.'
 
     Returns: {avg_occupancy: %, occupied_hours: hours, coverage_hours: span}
     """
@@ -87,7 +87,7 @@ def occupancy_stats(presence, hours=24):
 
 
 def calculate_combined_confidence(presence, minutes=CONFIDENCE_MINUTES):
-    """From store.py: 'Per-radar confidence over the window, then the highest of them;
+    """From occupancy.py: 'Per-radar confidence over the window, then the highest of them;
     None without data.'
 
     Confidence = % of rows occupied. Returns 0-100 or None.
@@ -110,7 +110,7 @@ def calculate_combined_confidence(presence, minutes=CONFIDENCE_MINUTES):
 
 
 def get_combined_occupancy(presence):
-    """From store.py: '1 if any radar has 2+ occupied rows in its last 3 reports
+    """From occupancy.py: '1 if any radar has 2+ occupied rows in its last 3 reports
     (last 2 min), 0 if not, None if no radar reported in the last 2 minutes.'
     """
     now = utcnow()

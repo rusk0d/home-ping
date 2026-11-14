@@ -5,7 +5,7 @@ from support import check, quiet_now
 
 def test_issue305_excursion(env):
     import server
-    import alerts, state, store
+    import alerts, state, store, schema
     server.prepare()
 
     m = alerts.messaging
@@ -76,8 +76,8 @@ def test_issue305_excursion(env):
     for k, v in old.items():
         store.set_state(k, v)
     store.set_state("schema_version", "3")   # before the #305 migration (#306)
-    store.init_db()
-    store.init_db()   # twice: runs once
+    schema.init_db()
+    schema.init_db()   # twice: runs once
     got = {k: store.get_state(k) for k in old}
     check(f"converted ({got})", got == {
         "watchdog:backup": "sent", "watchdog:disk": "", "sensor_silent:n:env": "muted",

@@ -47,7 +47,7 @@ def _fakes(env):
 
 def test_issue339_restore_drill(env):
     import server
-    import config, store
+    import config, store, schema
     from datetime import timedelta
     from store import db, utcnow
     server.prepare()
@@ -91,7 +91,7 @@ def test_issue339_restore_drill(env):
     check("run time recorded", res["ran"].endswith("Z"))
 
     check(f"started at the current version ({res.get('schema_version_started')})",
-          res["schema_version_started"] == str(store.SCHEMA_VERSION))
+          res["schema_version_started"] == str(schema.SCHEMA_VERSION))
 
     # A backup from before #306: no schema_version, only the old #65 flag; still good (init_db
     # migrates it like any older database)
@@ -115,7 +115,7 @@ def test_issue339_restore_drill(env):
     upload("data-2026-11-02c.db.gz", gzip.compress((env / "data.db").read_bytes()))
     r, res = run()
     check(f"fridge-mixed hours, no fridge columns: still OK ({res.get('error')}, {res.get('validate')})",
-          r.returncode == 0 and res["ok"] and res["schema_version_started"] == str(store.SCHEMA_VERSION))
+          r.returncode == 0 and res["ok"] and res["schema_version_started"] == str(schema.SCHEMA_VERSION))
 
     upload("data-2026-11-03.db.gz", b"not gzip at all")
     r, res = run()
@@ -126,7 +126,7 @@ def test_issue339_restore_drill(env):
     with db() as conn:
         conn.execute("UPDATE hourly SET temp_avg = temp_avg + 5")
         conn.execute("INSERT OR REPLACE INTO system_state (key, value) VALUES ('schema_version', ?)",
-                     (str(store.SCHEMA_VERSION),))
+                     (str(schema.SCHEMA_VERSION),))
     upload("data-2026-11-04.db.gz", gzip.compress((env / "data.db").read_bytes()))
     r, res = run()
     check(f"validate_db failure: failed ({res['error']})", r.returncode == 1 and "validate_db.py failed" in res["error"])

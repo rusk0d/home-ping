@@ -7,14 +7,14 @@ from support import check
 def test_issue18_indexes_and_retention(env):
     import base64, sqlite3
     import server
-    import config, store, nodes, api
+    import config, store, nodes, api, schema
     server.prepare()   # importing does no work (#73)
     db = lambda: sqlite3.connect(config.DB)
     idx = {r[0] for r in db().execute("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'ix_%'")}
     check("6 indexes created", idx == {"ix_presence_device_id", "ix_presence_device_ts", "ix_readings_device_id", "ix_readings_device_ts", "ix_events_type_ts",
                                        "ix_presence_occupied_id"})
     check("ANALYZE ran (sqlite_stat1 exists)", db().execute("SELECT COUNT(*) FROM sqlite_master WHERE name='sqlite_stat1'").fetchone()[0] == 1)
-    store.init_db()
+    schema.init_db()
     check("second start is fine (IF NOT EXISTS)", len({r[0] for r in db().execute("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'ix_%'")}) == 6)
     con = db()
     con.execute("INSERT INTO events (device, ts, type, value) VALUES ('x', datetime('now','-31 days'), 'RESTART', 'old')")

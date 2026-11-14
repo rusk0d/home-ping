@@ -8,9 +8,9 @@ def test_arrival_alert(env):
     import sqlite3, time
     from datetime import timedelta
     import server
-    import config, store, alerts, ingest
+    import config, store, alerts, ingest, schema
     server.prepare()   # importing does no work (#73)
-    store.init_db()
+    schema.init_db()
 
     pushes = []
     alerts.send_push = lambda title, body, data: pushes.append(body) or True

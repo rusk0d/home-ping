@@ -6,8 +6,9 @@ notifications via Firebase. A small web page and an Android app display the data
 # Layout
 - /firmware  Arduino sketches: main_node (radar, BME280, CO2), eink_node; shared code in
              firmware/libraries/HomePing (an Arduino library)
-- /backend   Flask app: server.py (entry point), config, state, store (SQLite,
-             creates the DB schema on start), alerts, nodes,
+- /backend   Flask app: server.py (entry point), config, state, store (SQLite
+             access, writes, system_state), schema (creates the DB schema and runs the
+             migrations on start), occupancy (radar queries), alerts, nodes,
              server_checks (watchdog pushes), ingest (MQTT), air (weather,
              window/CO₂ observation), metrics (Prometheus), api (Flask app; routes in api_env,
              api_history, api_notify, api_server); nginx/ the Tailscale-only
