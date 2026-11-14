@@ -3,6 +3,7 @@ package com.david.homeenv
 import android.content.Context
 import android.view.View
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import com.david.homeenv.HomeFormat.valueWithUnit
 import com.david.homeenv.databinding.FragmentHomeBinding
 import com.david.homeenv.ui.FridgeLimits
@@ -150,8 +151,13 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
 
     private var limits = FridgeLimits.current
 
+    /** Set by Home: start a "Loading the fridge" hold of n minutes, or end it (0) (#419). */
+    var onLoading: ((Int) -> Unit)? = null
+    private var loadingUntil: Date? = null
+
     init {
         b.fridgeGauge.scale = limits.scale
+        b.fridgeLoading.setOnClickListener { askLoading() }
     }
 
     fun render(latest: JSONObject, devices: List<Device>) {
@@ -163,6 +169,8 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
             b.fridgeGauge.scale = newLimits.scale
         }
         FridgeLimits.current = newLimits
+        loadingUntil = fridge?.optTs("loading_until")
+        showLoading(System.currentTimeMillis())
         val temp = fridge?.optNum("temp")
         // optString() turns a JSON null into "null"
         val alert = fridge?.takeUnless { it.isNull("alert") }?.optString("alert").orEmpty()
@@ -196,7 +204,38 @@ class FridgeCard(b: FragmentHomeBinding) : HomeCard(b) {
         if (lo != null && hi != null) b.fridgeRange.text = "today %.1f–%.1f°".format(Locale.US, lo, hi)
     }
 
+    /** The hold while it's on, else null: it runs out on its own, between two loads too. */
+    private fun activeHold(now: Long) = loadingUntil?.takeIf { it.time > now }
+
+    private fun showLoading(now: Long) {
+        b.fridgeLoading.text = activeHold(now)
+            ?.let { "Alerts paused until ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)} · resume" }
+            ?: "Loading it? Pause alerts"
+    }
+
+    /**
+     * Loading the fridge (#419): with the door open the probe's air warms fast, so the door push
+     * and "too warm" are near certain. Pausing holds them; anything still on afterwards is pushed.
+     */
+    private fun askLoading() {
+        val until = activeHold(System.currentTimeMillis())
+        val dialog = AlertDialog.Builder(ctx).setTitle("Loading the fridge")
+        if (until != null) {
+            dialog.setMessage("The door and \"too warm\" alerts are paused until " +
+                    "${SimpleDateFormat("HH:mm", Locale.getDefault()).format(until)}. Anything still on " +
+                    "when they resume is pushed then.")
+                .setPositiveButton("Resume now") { _, _ -> onLoading?.invoke(0) }
+                .setNegativeButton("Keep paused", null)
+        } else {
+            dialog.setItems(arrayOf("Pause alerts for 1 hour", "Pause alerts for 2 hours")) { _, which ->
+                onLoading?.invoke(if (which == 0) 60 else 120)
+            }.setNegativeButton("Cancel", null)
+        }
+        dialog.show()
+    }
+
     override fun updateAge(now: Long) {
+        showLoading(now)
         val age = ageS(fridgeTs, now)
         b.fridgeAge.text = HomeFormat.age(age)
         b.cardFridge.stale = age != null && age > STALE_S
