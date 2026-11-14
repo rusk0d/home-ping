@@ -1,12 +1,16 @@
 # Firmware compile and the HomePing library test (#76). Uses only the example config files with fake values, no secrets.
-# Runs only on PRs that touch these paths, and not again on the merge to main: a full run
-# of all three workflows takes ~12 minutes (Actions minutes were capped while the repo was
-# private; public repos don't use them up on standard runners). Run it by hand from the
-# Actions tab with "Run workflow".
+# Runs on PRs that touch these paths and again on the merge to main (#451): a full run of all
+# three workflows takes ~12 minutes, which mattered while the repo was private; public repos
+# don't use up Actions minutes on standard runners. By hand: the Actions tab, "Run workflow".
 name: Firmware
 
 on:
   pull_request:
+    paths:
+      - firmware/**
+      - .github/workflows/firmware.yml
+  push:
+    branches: [main]
     paths:
       - firmware/**
       - .github/workflows/firmware.yml
