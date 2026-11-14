@@ -13,6 +13,8 @@ from support import check
 
 def test_node_merge_env(env, caplog):
     import server, api, ingest, alerts, store
+    from support import add_devices
+    add_devices('x', 'co2_sensor_esp32', 'old_co2')
     server.prepare()
     pushes = []
     alerts.send_push = lambda title, body, data=None: pushes.append(data["event"]) or True

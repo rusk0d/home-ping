@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 import state
 from config import (
-    ALERT_MAX, ARRIVAL_CONFIRM_SECONDS, CO2_VALID, DEVICE_ID_MAX, ENV_VALID, FRIDGE_DEVICE, FRIDGE_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
+    ALERT_MAX, ARRIVAL_CONFIRM_SECONDS, CO2_VALID, DEVICE_ID_MAX, DEVICES, ENV_VALID, FRIDGE_DEVICE, FRIDGE_VALID, HUMIDITY_HIGH_THRESHOLD, HUMIDITY_HYSTERESIS, HUMIDITY_LOW_THRESHOLD,
     HISTORY_24H_TOPIC, ROOM_DEVICES_SQL, NOTIFICATION_COOLDOWN, OCCUPANCY_HOURLY_INTERVAL, OCCUPANCY_HOURLY_TOPIC,
     NON_ROOM_DEVICES, PRESENCE_DEVICE, PRESENCE_SIGNAL_THRESHOLD, PRESSURE_DROP_THRESHOLD, PRESSURE_HYSTERESIS,
     PRESSURE_WINDOW_HOURS, QUIET_MINUTES_BEFORE_ALERT, TEMP_HYSTERESIS, TEMP_THRESHOLD, TOPIC,
@@ -54,6 +54,20 @@ def read_int(data, key):
         return int(data[key])
     except (KeyError, TypeError, ValueError, OverflowError):   # OverflowError: inf
         return None
+
+
+def read_num(data, key, device):
+    """data[key] as a number, or None if missing. A string ("21.5"), a bool or an object is
+    None with a warning: SQLite would store the string as text, which breaks every reader
+    that does arithmetic on the column, and true would be 1.0 °C (#461)."""
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value \
+            or value in (float("inf"), float("-inf")):
+        log.warning("%s: %s is not a number (%.50r), stored as null", device, key, value)
+        return None
+    return value
 
 
 def handle_presence_data(data):
@@ -165,7 +179,14 @@ def on_message(client, userdata, msg):
         # home/esp32/<device>/status carries plain "online"/"offline" (#13)
         parts = msg.topic.split("/")
         if len(parts) == 4 and parts[3] == "status":
-            handle_status(parts[2], payload.strip())
+            # Only our own nodes and the two known values (#462): anything else would add a
+            # device row and an event per message, with no limit
+            status = payload.strip()
+            if parts[2] not in DEVICES or status not in ("online", "offline"):
+                log.warning("status from an unknown device or with an unknown value on %.100s, "
+                            "dropped: %.50s", msg.topic, payload)
+                return
+            handle_status(parts[2], status)
             return
 
         # Name the problem in the log instead of the generic "MQTT error" below: a firmware
@@ -189,16 +210,22 @@ def on_message(client, userdata, msg):
                         msg.topic, DEVICE_ID_MAX, payload)
             return
 
+        # A device that isn't in config.DEVICES (#462) would count as a room: its values would
+        # join the room averages and its readings could push alerts
+        if device not in DEVICES:
+            log.warning("payload on %s from an unknown device %.50r, dropped", msg.topic, device)
+            return
+
         if "presence" in data:
             handle_presence_data(data)
             return
 
         # ---- Everything else: environmental sensors. PIR fields are ignored. ----
-        temp = data.get("temp_c")
-        hum = data.get("humidity")
+        temp = read_num(data, "temp_c", device)
+        hum = read_num(data, "humidity", device)
         uptime = read_int(data, "uptime")
-        co2 = data.get("co2")
-        pressure = data.get("pressure")
+        co2 = read_num(data, "co2", device)
+        pressure = read_num(data, "pressure", device)
         node_alert = data.get("alert")
         # Stored as-is per reading (#290): a non-string would make sqlite drop the whole reading (#294)
         if node_alert is not None and not (isinstance(node_alert, str) and len(node_alert) <= ALERT_MAX):
@@ -208,8 +235,9 @@ def on_message(client, userdata, msg):
         # A broken or disconnected sensor reports values outside its range (e.g. 178 °C,
         # 100 %, -121 hPa): drop temperature, humidity and pressure together, since they
         # come from the same chip (#57)
-        bad = {k: data[k] for k, (lo, hi) in ENV_VALID.items()
-               if isinstance(data.get(k), (int, float)) and not lo <= data[k] <= hi}
+        values = {"temp_c": temp, "humidity": hum, "pressure": pressure}
+        bad = {k: values[k] for k, (lo, hi) in ENV_VALID.items()
+               if values.get(k) is not None and not lo <= values[k] <= hi}
         if bad:
             log.warning("%s: implausible env reading %s, dropped", device, bad)
             temp = hum = pressure = None
