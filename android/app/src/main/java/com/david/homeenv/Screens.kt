@@ -35,7 +35,7 @@ object Screens {
         "FRIDGE_ALERT", "FRIDGE_DOOR" -> HistoryActivity.open(ctx, Metric.FRIDGE)
         "BASELINE" -> HistoryActivity.open(ctx)
         "NODE_STATUS", "SENSOR_STATUS", "WATCHDOG", "RADAR_DISCONNECTED" -> Intent(ctx, DevicesActivity::class.java)
-        else -> null   // OCCUPIED, AIR and anything new: Home
+        else -> null   // OCCUPIED, AIR, WEEKLY and anything new: Home
     }
 
     /** Home: it may already be open under the other screens, so go back to it, not a second one. */
