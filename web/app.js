@@ -81,15 +81,31 @@ function dewPoint(t, rh) {
   const g = Math.log(rh / 100) + 17.62 * t / (243.12 + t);
   return 243.12 * g / (17.62 - g);
 }
+// The fridge node's own alert limits (#417): `limits` in its message (contracts/mqtt.md), so
+// the gauge and texts follow a flash; these until a message has them, or when they're not sane
+const FRIDGE_LIMITS = { cold: 0, warm: 7, hot: 8, minutes: 30, long_minutes: 120 };
+function fridgeLimits(d) {
+  const l = d && d.limits;
+  const ok = l && ['cold', 'warm', 'hot', 'minutes', 'long_minutes'].every(k => Number.isFinite(l[k]))
+    && l.cold < l.warm && l.warm <= l.hot && l.minutes > 0 && l.long_minutes >= l.minutes;
+  return ok ? l : FRIDGE_LIMITS;
+}
+// The gauge's range: −2…10 °C like the app, wider if a limit is near an end
+function fridgeRange(l) {
+  return [Math.min(-2, l.cold - 1), Math.max(10, l.hot + 2)];
+}
+// 7 -> "7", -0.5 -> "-0,5" in Hungarian
+const limitNum = v => localNum(String(Math.round(v * 10) / 10));
 // The fridge's chip from the node's own `alert` (#290), like android Levels.fridge; the gauge
 // shows the reading (contracts/api.md "Level bands": fridge). [chip, colour, why]
-function fridgeLevel(alert) {
+function fridgeLevel(alert, l) {
+  const m = l.minutes, h = limitNum(l.long_minutes / 60);
   switch (alert) {
     case '': return [t('fridgeOk'), 'good', ''];
-    case 'cold': return [t('fridgeTooCold'), 'poor', t('fridgeWhyCold')];
-    case 'warm_low': return [t('fridgeWarming'), 'poor', t('fridgeWhyWarm')];
-    case 'warm_critical': return [t('fridgeTooWarm'), 'bad', t('fridgeWhyHot')];
-    case 'warm_critical_duration': return [t('fridgeTooWarm'), 'bad', t('fridgeWhyLong')];
+    case 'cold': return [t('fridgeTooCold'), 'poor', t('fridgeWhyCold', { t: limitNum(l.cold), m })];
+    case 'warm_low': return [t('fridgeWarming'), 'poor', t('fridgeWhyWarm', { t: limitNum(l.warm), m })];
+    case 'warm_critical': return [t('fridgeTooWarm'), 'bad', t('fridgeWhyHot', { t: limitNum(l.hot), m })];
+    case 'warm_critical_duration': return [t('fridgeTooWarm'), 'bad', t('fridgeWhyLong', { t: limitNum(l.warm), h })];
     default: return [t('fridgeAlert'), 'poor', alert];
   }
 }
@@ -242,14 +258,37 @@ function onCo2(d, retained) {
 }
 
 let lastFridgeMsg = null;
+let shownFridgeLimits = null;
+// The gauge's colour bands and scale labels at the node's limits (#417)
+function drawFridgeScale(l) {
+  const key = JSON.stringify([LANG, l.cold, l.warm, l.hot]);   // HU has a decimal comma
+  if (key === shownFridgeLimits) return;
+  shownFridgeLimits = key;
+  const [lo, hi] = fridgeRange(l);
+  const pct = v => ((v - lo) / (hi - lo) * 100).toFixed(1) + '%';
+  const [c, w, h] = [pct(l.cold), pct(l.warm), pct(l.hot)];
+  $('fridge-gauge').style.background = `linear-gradient(90deg, var(--hum) 0 ${c}, var(--good) ${c} ${w}, ` +
+    `var(--poor) ${w} ${h}, var(--bad) ${h} 100%)`;
+  const scale = $('fridge-scale');
+  scale.replaceChildren(...[[lo, '0'], [l.cold, c], [l.warm, w], [l.hot, h], [hi, '100%']].map(([v, left]) => {
+    const span = document.createElement('span');
+    span.style.left = left;
+    span.textContent = v < 0 ? '−' + limitNum(-v) : limitNum(v);
+    return span;
+  }));
+}
+
 function renderFridge(d) {
   const temp = typeof d.temp_c === 'number' ? d.temp_c : null;
+  const l = fridgeLimits(d);
+  const [lo, hi] = fridgeRange(l);
+  drawFridgeScale(l);
   $('fridge').textContent = fmt(temp, 1);
   const needle = $('fridge-needle');
   needle.hidden = temp === null;
-  if (temp !== null) needle.style.left = Math.min(100, Math.max(0, (temp + 2) / 12 * 100)) + '%';
+  if (temp !== null) needle.style.left = Math.min(100, Math.max(0, (temp - lo) / (hi - lo) * 100)) + '%';
   if (typeof d.alert === 'string') {
-    const [text, color, why] = fridgeLevel(d.alert);
+    const [text, color, why] = fridgeLevel(d.alert, l);
     setSub('fridge-sub', text, color);
     if (why) $('fridge-sub').append(' ' + why);
   } else setSub('fridge-sub', '');
