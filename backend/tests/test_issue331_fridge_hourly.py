@@ -58,7 +58,9 @@ def test_issue331_fridge_hourly(env):
     # --- the endpoints
     auth = {"Authorization": "Basic " + base64.b64encode(b"u:p").decode()}
     client = api.app.test_client()
-    add(fridge, utcnow() - timedelta(minutes=1), 6.5)
+    # At the start of the current hour, not a minute ago: in the first minute of an hour that is
+    # the previous one, which isn't "today's hour" (#424)
+    add(fridge, utcnow().replace(minute=0, second=0, microsecond=0), 6.5)
     for path in ("/api/hourly?days=2", "/api/daily?days=2"):
         rows = client.get(path, headers=auth).get_json()
         check(f"{path}: fridge fields", rows and all({"avg_fridge", "min_fridge", "max_fridge"} <= set(r) for r in rows))

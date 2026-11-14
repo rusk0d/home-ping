@@ -1,7 +1,7 @@
 """#224: push when a sensor on a live node goes silent (BME280, MH-Z19C), and when it's back.
 """
 
-from support import check
+from support import check, quiet_now
 
 
 def test_issue224_sensor_silent(env):
@@ -87,7 +87,7 @@ def test_issue224_sensor_silent(env):
     state.NODE_OFFLINE.pop(main)
 
     # Quiet hours postpone the push; the switch off mutes it (no "back" push later)
-    store.set_state("quiet_hours", "1"); store.set_state("quiet_start", "00:00"); store.set_state("quiet_end", "23:59")
+    quiet_now()
     nodes.check_sensors()
     check("quiet hours: postponed", pushes() == [] and store.get_state(f"sensor_silent:{main}:env", "0") in ("", "0"))
     store.set_state("quiet_hours", "0")

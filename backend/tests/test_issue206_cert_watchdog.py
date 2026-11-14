@@ -1,7 +1,7 @@
 """#206: watchdog push before a TLS certificate expires.
 """
 
-from support import check
+from support import check, quiet_now
 
 
 def test_issue206_cert_watchdog(env):
@@ -62,7 +62,7 @@ def test_issue206_cert_watchdog(env):
     check("...and 'renewed' once it's fine", pushes() == [("cert_web.test_443", "Certificate renewed")])
 
     # Quiet hours postpone it, like the other watchdogs
-    store.set_state("quiet_hours", "1"); store.set_state("quiet_start", "00:00"); store.set_state("quiet_end", "23:59")
+    quiet_now()
     run(5)
     check("quiet hours: postponed", pushes() == [] and store.get_state("watchdog:cert_web.test_443") in ("", "0"))
     store.set_state("quiet_hours", "0")
