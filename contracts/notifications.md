@@ -356,9 +356,10 @@ The backend's own rule, from the readings (the node's `alert` doesn't know about
   Once per rise (`alerts.Excursion`).
 - **Closed**: back within `FRIDGE_DOOR_CLOSED_C` of the base, or `FRIDGE_DOOR_FALL_C` (0.5 °C)
   below the rise's peak (since #411: warm food keeps a shut fridge warm for hours, a door left
-  open doesn't cool down) → the rise is over; after a sent push `Fridge door closed` /
-  `Back to 3.6 °C` replaces it. A door shut within a few minutes
-  cools back before 10 min: nothing is pushed.
+  open doesn't cool down) → the rise is over; after a sent push `Fridge door closed` replaces it:
+  `Back to 3.6 °C` when back near the base, `Cooling down again, 12.8 °C now` when the fall from
+  the peak ended it while still warm (#421; logged `temp=12.8 (cooling)`). A door shut within a
+  few minutes cools back before 10 min: nothing is pushed.
 - data `{"event": "FRIDGE_DOOR", "device": "fridge_temp_esp32"}`: its own notification slot (not
   the temperature alert's). Logs `FRIDGE_DOOR_OPEN` / `FRIDGE_DOOR_CLOSED`.
 - Switch `fridge` only: **comes through quiet hours** (since #393; muted before, so a door left
@@ -467,3 +468,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #411: the fridge door counts as closed once it cools `FRIDGE_DOOR_FALL_C` (0.5 °C) below its peak, too.
 - #417: the fridge push texts and the reboot hold's range and timer come from the node's published `limits`.
 - #420: "Fridge door open?" only while the reading is within 0.2 °C of the rise's peak.
+- #421: "Fridge door closed" says "Cooling down again, <t> °C now" when it ended by cooling from the peak while still warm.
