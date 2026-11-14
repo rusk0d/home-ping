@@ -1,0 +1,16 @@
+# /etc/mosquitto/acl (owner mosquitto, mode 640). One block per account; the passwords are
+# in /etc/mosquitto/passwd (mosquitto_passwd, never with -c) and are not in the repo.
+
+# Sensor nodes: publish only (#31)
+user sensor
+topic write home/esp32/#
+
+# Backend: reads the sensors, publishes its own topics (#31)
+user backend
+topic read home/esp32/#
+topic write home/backend/#
+
+# One read-only account per person or screen that uses the web page (#99)
+user <name>
+topic read home/esp32/#
+topic read home/backend/#
