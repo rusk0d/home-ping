@@ -486,3 +486,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #461: `temp_c`, `humidity`, `pressure` and `co2` must be JSON numbers: a string, a bool or an object is stored as null (with a warning), the rest of the reading is kept.
 - #462: the backend drops messages from a `device` that isn't in `config.DEVICES`, and status messages from an unknown device or with a value other than `online`/`offline`. A new node needs its entry in `backend/config.py` first.
 - #468: no topic or payload change: a node restarts after 15 min of failed MQTT connects with WiFi up (the backend logs it as a `RESTART`).
+- #470: no topic or payload change: a node resets when its `loop()` hangs for 60 s (the backend logs it as a `RESTART`).

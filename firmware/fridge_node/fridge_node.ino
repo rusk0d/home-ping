@@ -147,6 +147,7 @@ void setup() {
   // Network
   hpConnectWiFi(WIFI_SSID, WIFI_PASS);
   hpStartOTA(DEVICE_NAME, OTA_PASS);
+  hpStartLoopWatchdog();   // #470
 
   // MQTT
   hpSetupTls(espClient);   // roots and timeouts (#394)
