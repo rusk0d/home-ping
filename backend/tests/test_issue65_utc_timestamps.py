@@ -6,7 +6,7 @@ from support import check
 
 def test_issue65_utc_timestamps(env):
     import json, base64, sqlite3, types, time, re
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     # Old DB with server-local timestamps (Budapest): one in summer time, one after the DST change
     con = sqlite3.connect("data.db")
@@ -14,7 +14,11 @@ def test_issue65_utc_timestamps(env):
     con.execute("CREATE TABLE devices (device TEXT PRIMARY KEY, last_seen TIMESTAMP)")
     con.execute("CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT, ts TIMESTAMP, type TEXT, value TEXT)")
     con.execute("INSERT INTO readings (device, ts, temp) VALUES ('a', '2026-10-15 20:00:00', 20), ('b', '2026-10-30 20:00:00', 21)")
-    con.execute("INSERT INTO devices VALUES ('a', '2026-10-15 20:00:00')")
+    # The device row is dated from today (#450): server.prepare() prunes devices not seen for
+    # DEVICES_RETENTION_DAYS (30), and with a fixed date the test failed once that had passed
+    # (noon: never inside a DST change, where the local time doesn't exist or exists twice)
+    seen = (datetime.now() - timedelta(days=10)).replace(hour=12, minute=0, second=0, microsecond=0)
+    con.execute("INSERT INTO devices VALUES ('a', ?)", (seen.strftime("%Y-%m-%d %H:%M:%S"),))
     con.execute("INSERT INTO events (device, ts, type, value) VALUES ('a', '2026-10-15 20:00:00', 'RESTART', 'x')")
     con.commit(); con.close()
 
@@ -26,7 +30,8 @@ def test_issue65_utc_timestamps(env):
 
     check("migration: summer row -2 h (CEST)", q("SELECT ts FROM readings WHERE device='a'")[0][0] == "2026-10-15 18:00:00")
     check("migration: winter row -1 h (CET)", q("SELECT ts FROM readings WHERE device='b'")[0][0] == "2026-10-30 19:00:00")
-    check("migration: devices + events converted", q("SELECT last_seen FROM devices")[0][0] == "2026-10-15 18:00:00" and q("SELECT ts FROM events")[0][0] == "2026-10-15 18:00:00")
+    seen_utc = seen.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")   # local -> UTC, by its own date's offset
+    check("migration: devices + events converted", q("SELECT last_seen FROM devices")[0][0] == seen_utc and q("SELECT ts FROM events")[0][0] == "2026-10-15 18:00:00")
     schema.init_db()
     check("second start doesn't convert again", q("SELECT ts FROM readings WHERE device='a'")[0][0] == "2026-10-15 18:00:00")
     check("schema_version set (#306)", store.get_state("schema_version", None) == str(schema.SCHEMA_VERSION))
