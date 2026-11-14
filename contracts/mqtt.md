@@ -69,7 +69,7 @@ with the new `MQTT_PASS` (OTA works without MQTT). A node is off MQTT until both
 
 | Setting | Firmware (main_node, eink_node) | Backend (`ingest.py`, `server.py`) | Web (`app.js`) |
 |---|---|---|---|
-| Library | PubSubClient, via the HomePing library (#75) | paho-mqtt 2.1.0, callback API v2 (#66) | mqtt.js 5.16.0 from unpkg (pinned, with SRI, #62) |
+| Library | PubSubClient, via the HomePing library (#75) | paho-mqtt 2.2.0, callback API v2 (#66) | mqtt.js 5.16.0 from unpkg (pinned, with SRI, #62) |
 | Host / port | `MQTT_BROKER` / `MQTT_PORT` from `secrets.h`: the certificate's host name, 8883 | `localhost:1883`, hard-coded | `MQTT_CONFIG.url` from `web/config.js` (WebSockets) |
 | TLS | `WiFiClientSecure`, trusts ISRG Root X1 and Root YR (`HomePingTls.h`), checks the host name; certificate dates not checked (no clock needed) | none (localhost) | `wss://` through nginx |
 | Auth | `MQTT_USER` / `MQTT_PASS` from `secrets.h`: account `sensor` | `MQTT_USER` / `MQTT_PASS` from `.env`: account `backend` | each person's own read-only account, typed into the page's login form (since #99; see "Web users") |
@@ -296,7 +296,7 @@ Example:
 
 ```json
 {"device":"fridge_temp_esp32","temp_c":3.5,"alert":"","rssi":-62,"uptime":3600,"reset_reason":1,
- "limits":{"cold":0,"warm":7,"hot":8,"hysteresis":0.5,"minutes":30,"long_minutes":120}}
+ "limits":{"cold":-1,"warm":7,"hot":8,"hysteresis":0.5,"minutes":30,"long_minutes":120}}
 ```
 
 Backend handling: env handler (no `presence`). Stores a `readings` row with `temp_c`
@@ -406,10 +406,10 @@ So the web page's sparklines start with the last day instead of empty.
   `home/backend/history_24h` (since #132),
   `home/esp32/presence` and `home/esp32/+/status` (read-only user). Topics the broker's ACL
   refuses (SUBACK 128) are logged as a warning in the browser console.
-- **Devices list** (#81): one entry per node (main node, hallway radar, CO₂ node, plus any
+- **Devices list** (#81): one entry per node (main node, hallway radar, fridge node, plus any
   unknown `device` that shows up), with uptime, RSSI and state, from all of the topics above:
   - *online* while **live** messages keep coming: limit 30 s for the radar nodes (5 s interval),
-    180 s for the CO₂ node. Retained replays update uptime/RSSI but don't prove the node is up.
+    180 s for the fridge node and unknown devices. Retained replays update uptime/RSSI but don't prove the node is up.
   - *offline* when the status topic says `offline` (the last will) and nothing newer has
     arrived, or when live data stopped ("no data for …").
   - A retained `online` status counts as online until the first live message.

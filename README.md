@@ -20,8 +20,8 @@ Backend     -> Firebase Cloud Messaging -> Android push notifications
 
 | Folder | What |
 |---|---|
-| `firmware/` | Arduino sketches: `main_node` (radar, BME280, MH-Z19 CO₂; merged with the former CO₂ node in #57), `eink_node` (hallway radar + e-ink display) |
-| `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `server_checks`, `ingest` (MQTT) and `api` modules; `test_push.py`, nightly `backup_db.py`, monthly `backup_drill.py` |
+| `firmware/` | Arduino sketches: `main_node` (radar, BME280, MH-Z19 CO₂; merged with the former CO₂ node in #57), `eink_node` (hallway radar + e-ink display), `fridge_node` (DS18B20 probe in the fridge); shared code in `libraries/HomePing` |
+| `backend/` | Flask app: `server.py` (entry point) with `config`, `store` (SQLite), `alerts`, `nodes`, `server_checks`, `ingest` (MQTT), `metrics` (Prometheus) and `api` modules; `test_push.py`, nightly `backup_db.py`, monthly `backup_drill.py` |
 | `web/` | Dashboard (`index.html` + `app.js`, English/Hungarian texts in `i18n.js`), connects to MQTT directly from the browser; `nginx/` has its security headers |
 | `android/` | Kotlin app "Home Ping", talks only to the backend's REST API |
 | `contracts/` | MQTT topics/payloads, REST API, push notifications, DB schema: the source of truth |
@@ -63,8 +63,8 @@ in its working directory.
   `backend/` with a `.env` next to it (serves the API on 127.0.0.1:5000 with waitress).
   In production it runs as the systemd unit `iot-backend` as user `iot` from `/opt/iot`
   (see "Production setup"; `sudo systemctl restart iot-backend`, logs:
-  `journalctl -u iot-backend -f`). Deploy: copy all `backend/*.py` to `/opt/iot`, then
-  restart. Test a push with `sudo -u iot venv/bin/python test_push.py ["Title" "Text"]`
+  `journalctl -u iot-backend -f`). Deploy: `backend/deploy.sh --check`, then
+  `backend/deploy.sh --yes` from a clean, pulled `main` (#259). Test a push with `sudo -u iot venv/bin/python test_push.py ["Title" "Text"]`
   in `/opt/iot`.
   Tests: `pip install -r backend/requirements-dev.txt`, then `pytest backend/tests` (no
   broker, Firebase or real config needed) and `ruff check backend` (lint, #175). CI runs them, compiles the firmware and builds
