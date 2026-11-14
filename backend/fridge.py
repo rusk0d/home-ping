@@ -246,6 +246,7 @@ def check_door(now=None):
     start, base, *peak = saved.split("|") if saved else ("", "")
     rise = (parse_ts(start), float(base), float(peak[0]) if peak else float(base)) if saved else None
 
+    watched = rise
     rise, event = door_step(rise, recent)
     new = f"{rise[0].strftime('%Y-%m-%d %H:%M:%S')}|{rise[1]}|{rise[2]}" if rise else ""
     if new != saved:
@@ -256,5 +257,9 @@ def check_door(now=None):
         DOOR.start("FRIDGE_DOOR_OPEN", f"temp={temp} (was {rise[1]} {minutes} min ago)",
                    "Fridge door open?", f"Up from {rise[1]:.1f} to {temp:.1f} °C in {minutes} min and not cooling down")
     elif event == "closed":
-        DOOR.end("FRIDGE_DOOR_CLOSED", f"temp={temp}", "Fridge door closed", f"Back to {temp:.1f} °C")
+        # Back near where it started, or closed by the fall from the peak (#411) while still
+        # warm: "Back to 12.8 °C" read as if it were fine again (#421)
+        back = temp <= watched[1] + FRIDGE_DOOR_CLOSED_C
+        body = f"Back to {temp:.1f} °C" if back else f"Cooling down again, {temp:.1f} °C now"
+        DOOR.end("FRIDGE_DOOR_CLOSED", f"temp={temp}" + ("" if back else " (cooling)"), "Fridge door closed", body)
     return event
