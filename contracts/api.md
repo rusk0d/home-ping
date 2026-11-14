@@ -61,6 +61,7 @@ inferred then and hasn't been confirmed since.
 | GET | `/api/restarts` | Basic | Android Home, Devices |
 | POST | `/api/occupancy_arm` | Basic | Android notification settings |
 | GET | `/api/occupancy_status` | Basic | Android notification settings |
+| POST | `/api/fridge/loading` | Basic | Android Home: fridge card (#419) |
 | GET, POST | `/api/notification_settings` | Basic | Android notification settings |
 | GET | `/api/notification_history` | Basic | Android notification settings, History tab (#289) |
 | GET | `/api/health` | **none** | external uptime monitor (#77) |
@@ -148,6 +149,8 @@ BME280), so each group comes from its own newest row (#11):
   quiet hours / the switch), from the push (`FRIDGE_DOOR_OPEN_MINUTES` after the rise started)
   until the rise is over (back near where it started, or cooling from its peak, #411);
   `door_open_since` is the start of the rise (`notifications.md` 11b).
+- The fridge also has `loading_until` since #419: the end of a "Loading the fridge" hold (ISO
+  time), `null` when none is on (`POST /api/fridge/loading`).
 - The fridge also has `limits` since #417: the node's alert limits as in `mqtt.md`
   (`cold`, `warm`, `hot`, `hysteresis`, `minutes`, `long_minutes`), the newest valid set it sent,
   or the backend's defaults (`FRIDGE_LIMITS_DEFAULT`, 0 / 7 / 8 °C, 0.5, 30, 120) before it has.
@@ -389,6 +392,18 @@ Arming with `"source": "location"` (the phone left home) also pushes "Window sti
 window-open spell is running (#245, `notifications.md` → `AIR`); that push never fails the request.
 Clients: Android Home toggle switch (manual); the phone's home/away geofence sends `"source": "location"` (#239).
 
+### POST `/api/fridge/loading` (since #419)
+
+"Loading the fridge": holds the fridge's warm alert and door pushes while it's loaded (the door
+open makes them near certain; `notifications.md` 11 and 11b).
+Request: `{"minutes": 60}`, a whole number 1…`FRIDGE_LOADING_MAX_MINUTES` (180) from now, or
+`{"minutes": 0}` to end it early. Anything else (a bool, a string, a fraction, out of range, no
+body) is a `400` and changes nothing. Sets `system_state.fridge_loading_until` and logs
+`FRIDGE_LOADING`. Ending it early checks the fridge alert at once, so a held "too warm" is pushed
+then rather than at the next 5-minute check.
+Response: `{"loading_until": "2026-11-14T15:30:00Z"}`, `null` after `0`.
+Client: Android Home's fridge card.
+
 ### GET `/api/occupancy_status`
 
 Current arm state for occupancy-arrival pushes, read from `system_state.occupancy_armed`.
@@ -610,3 +625,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #402: app only: the fridge card's age comes from `env_ts`; no endpoint changed.
 - #406: Level bands: the fridge's "warming" starts at 7 °C (was 5 °C).
 - #417: `/api/latest_all`'s fridge entry has `limits`; the fridge's Level bands come from it.
+- #419: `POST /api/fridge/loading`; `/api/latest_all`'s fridge entry has `loading_until`.

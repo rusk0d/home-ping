@@ -125,6 +125,8 @@ FRIDGE_DOOR_FALL_C = 0.5
 # "Fridge door open?" only while the reading is within this of the peak (#420): one already
 # cooling is a shut door, and the next reading closes the rise or pushes after all
 FRIDGE_DOOR_PEAK_C = 0.2
+# "Loading the fridge" (#419): the app can hold the warm and door pushes for up to this long
+FRIDGE_LOADING_MAX_MINUTES = 180
 # A fridge temperature outside this is a sensor glitch, not the fridge (#352): the DS18B20
 # reads exactly 85.0 °C after a brownout or a data-line glitch, inside ENV_VALID. Stored as null.
 FRIDGE_VALID = (-30, 50)

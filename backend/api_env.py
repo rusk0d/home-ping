@@ -151,6 +151,7 @@ def latest_all():
     if FRIDGE_DEVICE in result:
         result[FRIDGE_DEVICE].update(fridge.door_state())
         result[FRIDGE_DEVICE]["limits"] = fridge.limits()
+        result[FRIDGE_DEVICE]["loading_until"] = iso(fridge.loading_until())   # #419
     result["combined"] = {
         "occupied": get_combined_occupancy(),
         "confidence": calculate_combined_confidence()

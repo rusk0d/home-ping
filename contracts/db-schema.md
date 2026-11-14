@@ -149,6 +149,8 @@ Known keys:
 | `sensor_silent:<device>:<sensor>` | `'sent'` / `'muted'` while that sensor (`env`, `co2`) is silent, `''` once it's back (#224, #305) | no | `nodes._sensor_state()` | `nodes._sensor_state()` |
 | `fridge_alert_state` | the fridge node's alert state last handled (`''` = normal) | no | `fridge.check_fridge_alerts()` (#294) | `fridge.check_fridge_alerts()` |
 | `fridge_alert_shown` | `'sent'` / `'muted'` for that state's push, `''` when none (#300) | no | `fridge.check_fridge_alerts()` | `fridge.check_fridge_alerts()` |
+| `fridge_loading_until` | the end of a "Loading the fridge" hold (UTC `YYYY-MM-DD HH:MM:SS`), `''` when none (#419) | no | `POST /api/fridge/loading` (`fridge.set_loading()`) | `fridge.loading_until()` |
+| `fridge_loading_held` | what the current hold last logged as held (`warm_critical`, `door`, …), so each is logged once (#419) | no | `fridge._held()` | `fridge._held()` |
 | `fridge_limits` | the fridge node's newest valid `limits` as JSON (`mqtt.md`, #417); missing = `FRIDGE_LIMITS_DEFAULT` | no | `fridge.note_limits()` (ingest) | `fridge.limits()` |
 | `fridge_door_rise` | `"<start ts UTC>\|<base °C>\|<peak °C>"` of the fast rise being watched (the peak since #411; an older `start\|base` still reads, its peak from the base), `''` when none (#336) | no | `fridge.check_door()` | `fridge.check_door()` |
 | `fridge_door` | `'sent'` / `'muted'` for the door-open push of that rise, `''` when none (#336, Excursion format) | no | `fridge.check_door()` | `fridge.check_door()` |
@@ -218,6 +220,7 @@ Event types written by `server.py`:
 | `BASELINE_DEVIATION` | `system` | `sent, temp=30.0 °C, typical 22.0 °C at 15:00, z=+16.0` (local hour) | "Unusual reading" push attempted: \|z\| > 3 for 2 consecutive hours against the same local hour of the day over 28 days (#229, #297, #302) |
 | `BASELINE_NORMAL` | `system` | `sent, temp=23.0 °C, typical 22.0 °C at 17:00, z=+2.0` | "Back to normal" push attempted: \|z\| < 2 after a pushed excursion (#297) |
 | `FRIDGE_ALERT` / `FRIDGE_ALERT_RECOVERY` | `fridge_temp_esp32` | `sent, alert=warm_low (was: normal)` / `sent, back to normal (was: warm_low)` | the fridge node's alert state changed (#290, #294; `notifications.md`) |
+| `FRIDGE_LOADING` | `fridge_temp_esp32` | `until 2026-11-14 15:30:00 UTC (60 min)` / `ended` / `held warm_critical` / `held door` | "Loading the fridge" started, ended early, or held a push (#419) |
 | `FRIDGE_DOOR_OPEN` / `FRIDGE_DOOR_CLOSED` | `fridge_temp_esp32` | `sent, temp=7.5 (was 3.0 10 min ago)` / `sent, temp=3.6` | the door looks left open / the fridge cooled back (#336; `notifications.md`) |
 
 For the push events above, the value starts with `sent, ` or `failed, ` (since #12), or
@@ -276,3 +279,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #397: `watchdog:cert_<port>` becomes `watchdog:cert_<host>_<port>`; no migration (no cert alert was ever on, so the new key starts fresh).
 - #411: `fridge_door_rise` keeps the rise's peak: `start|base|peak`.
 - #417: `system_state` key `fridge_limits`.
+- #419: `system_state` keys `fridge_loading_until`, `fridge_loading_held`; event type `FRIDGE_LOADING`.
