@@ -265,6 +265,9 @@ skipped because `temp_c` and `humidity` are absent.
   the most severe condition that has lasted long enough: `warm_critical` (>8 °C for 30 min),
   `warm_critical_duration` (>7 °C for 2 h), `warm_low` (>7 °C for 30 min), `cold` (<0 °C for
   30 min); `""` otherwise. The timers are in RAM, so a reboot starts them over.
+- The limits above are the node's own, and it publishes them in `limits` (#417): the backend,
+  the app and the web page take the gauge bands and texts from there, so a limit change is a
+  flash only.
 - The backend stores the `alert` field (see "Common fields") and sends notifications via
   the "fridge" notification kind (#290) when the alert state changes.
 
@@ -274,6 +277,7 @@ skipped because `temp_c` and `humidity` are absent.
 | `temp_c` | float | °C | DS18B20 reading, rounded to 1 decimal on the node (since #300; before: the raw 0.0625 °C steps). **Missing** when the sensor couldn't be read (since #395) |
 | `sensor_error` | boolean | n/a | `true` when the DS18B20 couldn't be read (disconnected: -127, or its 85.0 °C power-on value); only present then (#395) |
 | `alert` | string | n/a | `""` (normal), `"cold"`, `"warm_low"`, `"warm_critical"`, or `"warm_critical_duration"` |
+| `limits` | object | °C / min | the node's alert limits (#417): `cold`, `warm`, `hot` (°C), `hysteresis` (°C), `minutes` (how long a condition must last), `long_minutes` (for `warm_critical_duration`); all numbers, with `cold < warm ≤ hot`. Optional: older firmware doesn't send it |
 | `rssi` | integer | dBm | |
 | `uptime` | integer | s | `hpUptimeSeconds()` (64-bit, doesn't wrap; `millis() / 1000` before #294) |
 | `reset_reason` | integer | n/a | |
@@ -282,7 +286,8 @@ skipped because `temp_c` and `humidity` are absent.
 Example:
 
 ```json
-{"device":"fridge_temp_esp32","temp_c":3.5,"alert":"","rssi":-62,"uptime":3600,"reset_reason":1}
+{"device":"fridge_temp_esp32","temp_c":3.5,"alert":"","rssi":-62,"uptime":3600,"reset_reason":1,
+ "limits":{"cold":0,"warm":7,"hot":8,"hysteresis":0.5,"minutes":30,"long_minutes":120}}
 ```
 
 Backend handling: env handler (no `presence`). Stores a `readings` row with `temp_c`
@@ -466,3 +471,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - Metrics: `heap_free`, `heap_min`, `heap_block` on presence (both nodes, shared library); MQTT packet buffer 512 bytes.
 - Payload validation: CO₂ outside 0…5000 ppm stored as null; device IDs over 255 characters dropped; non-JSON and non-object payloads logged by name.
 - #406: the fridge node's warm limit is 7 °C (was 5 °C): `warm_low` and `warm_critical_duration`.
+- #417: optional `limits` on `fridge_temp`: the node's alert limits, so the other components needn't copy them.

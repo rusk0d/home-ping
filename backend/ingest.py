@@ -22,7 +22,7 @@ from alerts import Excursion, alert, set_radar_alerted
 from metrics import note_node
 from nodes import handle_status, touch_device
 from baseline import check_baseline
-from fridge import check_door, check_fridge_alerts
+from fridge import check_door, check_fridge_alerts, note_limits
 from server_checks import check_watchdogs
 
 log = logging.getLogger(__name__)
@@ -240,6 +240,9 @@ def on_message(client, userdata, msg):
         # The fridge's door (#336): on every reading, so the push isn't up to 5 min late
         if device == FRIDGE_DEVICE and temp is not None:
             check_door()
+        # The node's alert limits (#417), before the alert check reads them
+        if device == FRIDGE_DEVICE and "limits" in data:
+            note_limits(data["limits"])
 
         # Each alert only needs its own value (a node may send just one of them)
 
