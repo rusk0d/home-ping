@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.david.homeenv.databinding.ActivityHistoryBinding
+import com.david.homeenv.ui.FridgeLimits
 import com.david.homeenv.ui.HistoryChartView
 import com.david.homeenv.ui.Level
 import com.david.homeenv.ui.Levels
@@ -68,7 +69,7 @@ class HistoryActivity : AppCompatActivity() {
         b.tempChart.bands = Levels.TEMPERATURE
         b.humidityChart.bands = Levels.HUMIDITY
         b.co2Chart.bands = Levels.CO2
-        b.fridgeChart.bands = Levels.FRIDGE
+        b.fridgeChart.bands = FridgeLimits.current.scale   // the node's limits as Home last saw them (#417)
         range = savedInstanceState?.getString(KEY_RANGE)
             ?.let { runCatching { Range.valueOf(it) }.getOrNull() } ?: Range.WEEK
         for ((view, r) in rangeViews()) view.setOnClickListener { if (range != r) { range = r; clear(); load() } }
