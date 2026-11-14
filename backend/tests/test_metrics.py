@@ -14,6 +14,8 @@ from support import check
 def test_metrics(env):
     os.environ["METRICS_TOKEN"] = "t0ken"
     import server
+    from support import add_devices
+    add_devices('od"d\\node')
     import config, ingest, metrics, state, api
     server.prepare()
     c = api.app.test_client()

@@ -9,6 +9,10 @@ def test_issue12_push_alerts(env):
     import json, sqlite3, types
 
     import server
+
+    from support import add_devices
+
+    add_devices('fail_node', 'temp_only_node', 'hum_only_node')
     import config, state, store, alerts, ingest
     server.prepare()   # importing does no work (#73)
 

@@ -483,3 +483,5 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #417: optional `limits` on `fridge_temp`: the node's alert limits, so the other components needn't copy them.
 - #418: the fridge node's cold limit is −1 °C (was 0 °C); it publishes it in `limits`.
 - #459: broker only, no topic or payload change: 8883 has its own password file with only `sensor`; nginx limits new `/mqtt` connections per address; 9001 binds to localhost on Mosquitto 2.0.18.
+- #461: `temp_c`, `humidity`, `pressure` and `co2` must be JSON numbers: a string, a bool or an object is stored as null (with a warning), the rest of the reading is kept.
+- #462: the backend drops messages from a `device` that isn't in `config.DEVICES`, and status messages from an unknown device or with a value other than `online`/`offline`. A new node needs its entry in `backend/config.py` first.

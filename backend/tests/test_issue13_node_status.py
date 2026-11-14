@@ -12,6 +12,8 @@ def test_issue13_node_status(env):
         def emit(self, r): errors.append(r.getMessage())
     logging.getLogger("ingest").addHandler(_Errors(level=logging.ERROR))
     import server
+    from support import add_devices
+    add_devices('co2_sensor_esp32')
     import config, state, store, alerts, nodes, ingest
     server.prepare()   # importing does no work (#73)
     m = alerts.messaging

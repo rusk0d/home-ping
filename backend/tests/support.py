@@ -19,3 +19,11 @@ def quiet_now(on=True):
     set_state("quiet_hours", "1" if on else "0")
     set_state("quiet_start", (now - timedelta(hours=1)).strftime("%H:%M"))
     set_state("quiet_end", (now + timedelta(hours=1)).strftime("%H:%M"))
+
+
+def add_devices(*ids):
+    """Make [ids] known room devices for this test: the backend drops messages from a device
+    that isn't in config.DEVICES (#462). config is fresh in every test, so nothing leaks."""
+    import config
+    for device in ids:
+        config.DEVICES.setdefault(device, {"name": device, "role": "room"})

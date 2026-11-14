@@ -9,6 +9,8 @@ def test_issue14_errors_and_heartbeat(env):
     from datetime import timedelta
     from unittest import mock
     import server
+    from support import add_devices
+    add_devices('co2_sensor_esp32')
     import config, store, ingest, api
     server.prepare()   # importing does no work (#73)
     c = api.app.test_client()
