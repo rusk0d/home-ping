@@ -121,6 +121,7 @@ struct TramDeparture {
   bool bus;          // route type BUS (e.g. the 223E while the 2B is replaced): bus icon
   String headsign;
   int minutes;
+  long secondsLeft;  // at the fetch, by BKK's clock: a kept list counts down from it (#429)
   bool valid;
 };
 
@@ -132,11 +133,19 @@ struct DepartureResult {
   TramDeparture departures[10];
   int count = 0;
   bool loaded = false;
+  unsigned long fetchedAt = 0;   // millis() when it came in
 };
 DepartureResult fetched;            // the newest result, guarded by fetchLock
 volatile bool fetchedNew = false;   // set by the task, cleared by loop() after drawing
 SemaphoreHandle_t fetchLock;
 const uint32_t FETCH_TASK_STACK = 16384;   // TLS + HTTP + JSON; the buffers are on the heap
+
+// A failed fetch keeps the last good list on screen (#429), counted down from its fetch time
+// with the departed ones dropped, so one BKK blip doesn't blank it for a minute. "BKK
+// unavailable" only once there's been no good fetch for this long.
+const unsigned long BKK_KEEP_MS = 5UL * 60 * 1000;
+DepartureResult lastGood;     // loop() only
+bool haveGood = false;
 
 // ========================
 // HELPER FUNCTIONS
@@ -319,6 +328,7 @@ bool fetchAllDepartures(TramDeparture departures[], int &count) {
     departures[count].bus = references["routes"][routeId]["type"] == "BUS";
     departures[count].headsign = headsign;
     departures[count].minutes = diff;
+    departures[count].secondsLeft = (long)secondsLeft;
     departures[count].valid = true;
 
     Serial.printf("Found: %s to %s in %d mins\n", routeText.c_str(), headsign.c_str(), diff);
@@ -385,6 +395,7 @@ void fetchTask(void *) {
   for (;;) {
     DepartureResult r;
     r.loaded = fetchAllDepartures(r.departures, r.count);
+    r.fetchedAt = millis();
     // Two TLS connections (MQTT and BKK) can be open at once (#31)
     Serial.printf("Free heap: %u, lowest so far: %u\n", ESP.getFreeHeap(), ESP.getMinFreeHeap());
     xSemaphoreTake(fetchLock, portMAX_DELAY);
@@ -423,13 +434,42 @@ void loop() {
     r = fetched;
     fetchedNew = false;
     xSemaphoreGive(fetchLock);
-    render(r);
+    render(toShow(r, now));
     // The eink refresh blocked the loop for a moment (a full one ~2-3 s); clear the
     // backlog so the parser resumes on a frame boundary rather than mid-frame.
     while (Serial2.available()) Serial2.read();
   }
 
   delay(50);
+}
+
+// What to draw for the fetch result [r] (#429): a good one as it is (and kept); after a failed
+// one, the last good list counted down to [nowMs] while it's younger than BKK_KEEP_MS
+DepartureResult toShow(const DepartureResult &r, unsigned long nowMs) {
+  if (r.loaded) {
+    lastGood = r;
+    haveGood = true;
+    return r;
+  }
+  if (!haveGood || nowMs - lastGood.fetchedAt >= BKK_KEEP_MS) {
+    Serial.println("BKK: no good fetch to keep");
+    return r;
+  }
+  long elapsed = (long)((nowMs - lastGood.fetchedAt) / 1000);
+  DepartureResult kept;
+  kept.fetchedAt = lastGood.fetchedAt;
+  for (int i = 0; i < lastGood.count; i++) {
+    long left = lastGood.departures[i].secondsLeft - elapsed;
+    if (left < 0) continue;   // gone since (still sorted: the rest only shift down)
+    kept.departures[kept.count] = lastGood.departures[i];
+    kept.departures[kept.count].secondsLeft = left;
+    kept.departures[kept.count].minutes = (int)(left / 60);
+    kept.count++;
+  }
+  // All of them gone: that's not "No departures", BKK is still not answering
+  kept.loaded = kept.count > 0;
+  Serial.printf("BKK: fetch failed, keeping the list from %ld s ago (%d left)\n", elapsed, kept.count);
+  return kept;
 }
 
 // ========================
