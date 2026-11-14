@@ -30,7 +30,9 @@ const unsigned long TEMP_INTERVAL = 60000;  // publish every 60 s
 
 // Alert thresholds (#290, #294): a condition starts when its threshold is crossed and ends
 // HYSTERESIS past it, so a fridge hovering at 7.0 °C doesn't restart the timer on every dip
-const float COLD_BELOW = 0.0;   // cold: below 0 °C for 30 min
+// COLD_BELOW was 0 °C: this fridge's normal low point is −0.1…−0.4 °C, so "too cold" pushed
+// every day or two for nothing (#418); food only starts to freeze around −1 to −2 °C
+const float COLD_BELOW = -1.0;  // cold: below −1 °C for 30 min
 // WARM_ABOVE was 5 °C: this old fridge reaches about 7 °C after food goes in, which is normal (#406)
 const float WARM_ABOVE = 7.0;   // warm_low: above 7 °C for 30 min, warm_critical_duration: for 2 h
 const float HOT_ABOVE  = 8.0;   // warm_critical: above 8 °C for 30 min
