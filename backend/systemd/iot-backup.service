@@ -8,6 +8,8 @@ Type=oneshot
 User=iot
 Group=iot
 WorkingDirectory=/opt/iot
+# The same local time as the backend (iot-backend.service)
+Environment=TZ=Europe/Budapest
 ExecStart=/opt/iot/venv/bin/python backup_db.py --keep 7
 NoNewPrivileges=true
 ProtectSystem=strict

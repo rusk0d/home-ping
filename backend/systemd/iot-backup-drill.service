@@ -10,6 +10,8 @@ Type=oneshot
 User=iot
 Group=iot
 WorkingDirectory=/opt/iot
+# The same local time as the backend (iot-backend.service)
+Environment=TZ=Europe/Budapest
 ExecStart=/opt/iot/venv/bin/python backup_drill.py
 NoNewPrivileges=true
 ProtectSystem=strict
