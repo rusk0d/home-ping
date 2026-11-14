@@ -464,6 +464,11 @@ def on_connect(client, userdata, flags, reason_code, properties):
     publish_summaries()
 
 
+def on_connect_fail(client, userdata):
+    """The broker can't be reached at all (not running, or not yet): paho tries again."""
+    log.warning("MQTT broker not reachable (retrying)")
+
+
 def on_disconnect(client, userdata, flags, reason_code, properties):
     state.BROKER_UP = False   # no node check meanwhile: it's the backend that hears nothing (#476)
     log.warning("MQTT disconnected: %s (reconnecting)", reason_code)

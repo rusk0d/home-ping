@@ -17,7 +17,7 @@ from config import BIND_HOST, PORT, LOG_LEVEL, FIREBASE_CRED, FIREBASE_TIMEOUT, 
 from store import get_state, load_alert_state, prune, rollup_hourly
 from schema import init_db
 from nodes import node_check_loop
-from ingest import summaries_loop, on_connect, on_disconnect, on_message
+from ingest import summaries_loop, on_connect, on_connect_fail, on_disconnect, on_message
 from air import air_loop
 from api import app
 
@@ -59,7 +59,14 @@ def start():
     state.mqttc.on_connect = on_connect
     state.mqttc.on_message = on_message
     state.mqttc.on_disconnect = on_disconnect
-    state.mqttc.connect(MQTT_HOST, MQTT_PORT)
+    state.mqttc.on_connect_fail = on_connect_fail
+    # connect_async: the connection is made by paho's own thread, which also retries it. A
+    # broker that isn't up yet (both start at boot) is then a warning per attempt, not a
+    # crash with a traceback and a systemd restart every 5 s. Retries back off from 1 to 30 s
+    # (paho's default goes up to 120 s), for the first connection and every later reconnect.
+    state.BROKER_UP = False   # until on_connect: no node check before the first connection (#476)
+    state.mqttc.reconnect_delay_set(min_delay=1, max_delay=30)
+    state.mqttc.connect_async(MQTT_HOST, MQTT_PORT)
     state.mqttc.loop_start()
     threading.Thread(target=summaries_loop, daemon=True).start()
     threading.Thread(target=node_check_loop, daemon=True).start()
