@@ -296,7 +296,8 @@ Latest CO2 and pressure from whichever device last reported them.
 
 ```json
 {"ts":"2026-10-13T17:42:10Z","co2":812,"band":"fair","pressure":1013.6,
- "pressure_3h_change":-1.2,"temp":22.4,"humidity":48.3,"mould_risk":false}
+ "pressure_3h_change":-1.2,"temp":22.4,"humidity":48.3,"mould_risk":false,
+ "aired_today":{"count":3,"minutes":41}}
 ```
 
 - `co2`: integer ppm or null. Latest non-null `readings.co2` from any device.
@@ -306,6 +307,11 @@ Latest CO2 and pressure from whichever device last reported them.
   band), over all devices' readings. An hour without humidity readings makes it false.
   Android shows a hint on the humidity card. The web page applies the same rule to
   `home/backend/history_24h` (its last 3 hours before `updated`).
+- `aired_today` (since #426): how often and how long the windows were open today, from the
+  window spells `air.py` detects (`WINDOW_OPEN` / `WINDOW_CLOSED`, `db-schema.md`). `count`: the
+  spells that ended since local midnight, plus one still open; `minutes`: their durations as
+  `WINDOW_CLOSED` logged them (`after 18 min …`), plus the open one up to now. `{"count": 0,
+  "minutes": 0}` when none. Android shows it on the CO₂ card.
 
 ### Level bands
 
@@ -626,3 +632,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #406: Level bands: the fridge's "warming" starts at 7 °C (was 5 °C).
 - #417: `/api/latest_all`'s fridge entry has `limits`; the fridge's Level bands come from it.
 - #419: `POST /api/fridge/loading`; `/api/latest_all`'s fridge entry has `loading_until`.
+- #426: `/api/air` has `aired_today`.
