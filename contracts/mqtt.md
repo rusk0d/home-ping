@@ -260,10 +260,10 @@ skipped because `temp_c` and `humidity` are absent.
 - Publisher: `firmware/fridge_node` (`DEVICE_NAME = "fridge_temp_esp32"`), DS18B20 on GPIO 4 (OneWire).
 - Interval: every 60 s (`TEMP_INTERVAL`).
 - Retained: yes. QoS 0.
-- Alert state, decided on the node (#294): each condition (<0 °C, >7 °C, >8 °C; >5 °C before #406) starts when the
+- Alert state, decided on the node (#294): each condition (<−1 °C, >7 °C, >8 °C; <0 °C before #418, >5 °C before #406) starts when the
   reading first crosses its threshold and ends only 0.5 °C back past it (hysteresis). `alert` is
   the most severe condition that has lasted long enough: `warm_critical` (>8 °C for 30 min),
-  `warm_critical_duration` (>7 °C for 2 h), `warm_low` (>7 °C for 30 min), `cold` (<0 °C for
+  `warm_critical_duration` (>7 °C for 2 h), `warm_low` (>7 °C for 30 min), `cold` (<−1 °C for
   30 min); `""` otherwise. The timers are in RAM, so a reboot starts them over.
 - The limits above are the node's own, and it publishes them in `limits` (#417): the backend,
   the app and the web page take the gauge bands and texts from there, so a limit change is a
@@ -472,3 +472,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - Payload validation: CO₂ outside 0…5000 ppm stored as null; device IDs over 255 characters dropped; non-JSON and non-object payloads logged by name.
 - #406: the fridge node's warm limit is 7 °C (was 5 °C): `warm_low` and `warm_critical_duration`.
 - #417: optional `limits` on `fridge_temp`: the node's alert limits, so the other components needn't copy them.
+- #418: the fridge node's cold limit is −1 °C (was 0 °C); it publishes it in `limits`.
