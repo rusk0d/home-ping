@@ -36,25 +36,34 @@ read-only `web` account (from before #99) were deleted on 2026-10-16.
 
 | Account | Used by | ACL (`/etc/mosquitto/acl`) |
 |---|---|---|
-| `sensor` | both nodes (`MQTT_USER` in `secrets.h`) | `topic write home/esp32/#` (publish only, also covers the last will) |
+| `sensor` | the nodes (`MQTT_USER` in `secrets.h`) | `topic write home/esp32/#` (publish only, also covers the last will) |
 | `backend` | the backend (`MQTT_USER` in `/opt/iot/.env`) | `topic read home/esp32/#`, `topic write home/backend/#` |
 | one per person (e.g. `david`) | the web page's login form (#99) | `topic read home/esp32/#`, `topic read home/backend/#` (see "Web users") |
 
-`per_listener_settings true`: each listener has its own `password_file` and `acl_file` line
-pointing to the same files.
+`per_listener_settings true`: each listener has its own `password_file` and `acl_file` line.
+All three use the same ACL file. 1883 and 9001 use `/etc/mosquitto/passwd` (every account);
+the public 8883 uses `/etc/mosquitto/passwd-nodes`, which holds only `sensor` (#459), so the
+people's accounts and `backend` can't be tried from the internet on 8883.
 - 8883 (MQTT over TLS, #31), public: the nodes connect from home. `certfile`/`keyfile` are
   copies of the web server's Let's Encrypt certificate (`ruskodavid.hu`) in
   `/etc/mosquitto/certs/`, made by the certbot deploy hook
   `/etc/letsencrypt/renewal-hooks/deploy/mosquitto.sh` (copies them on each renewal and
   restarts Mosquitto; the nodes reconnect by themselves).
 - 1883 (plain MQTT), localhost only (`listener 1883 127.0.0.1`): the backend.
-- 9001 (WebSockets): nginx `/mqtt` is its only client. The config says
-  `listener 9001 127.0.0.1` (#169), but Mosquitto 2.0.11 with Ubuntu's libwebsockets 4.0
-  binds websockets listeners to all interfaces anyway (`*:9001`), with `bind_interface lo`
-  too (tested 2026-10-17, #208). **ufw keeps 9001 closed**: never `ufw allow 9001`.
+- 9001 (WebSockets), localhost only (`listener 9001 127.0.0.1`, #169): nginx `/mqtt` is its
+  only client. nginx allows 20 new `/mqtt` connections a minute per client address (burst 10,
+  then 429; `limit_req zone=mqtt` in the site, the zone in
+  `/etc/nginx/conf.d/home-ping-limits.conf`, #459). Every login attempt from the web page is
+  one new connection. Mosquitto 2.0.11 bound websockets listeners to all interfaces (#208);
+  2.0.18 with libwebsockets 4.3 binds to 127.0.0.1 as configured (checked 2026-11-14).
+  ufw keeps 9001 closed anyway: never `ufw allow 9001`.
 Add users with `mosquitto_passwd /etc/mosquitto/passwd <name>` (never `-c`, which wipes the
 file), edit the ACL with `printf`/an editor, then `systemctl restart mosquitto`. The nodes
 reconnect within a keep-alive interval, the backend at once.
+
+Changing the `sensor` password: run `mosquitto_passwd` on **both** `/etc/mosquitto/passwd` and
+`/etc/mosquitto/passwd-nodes` with the same password, restart Mosquitto, and flash the nodes
+with the new `MQTT_PASS` (OTA works without MQTT). A node is off MQTT until both sides match.
 
 ## Broker and connection settings
 
@@ -473,3 +482,4 @@ Fixed mismatches, oldest first (issue number: what changed).
 - #406: the fridge node's warm limit is 7 °C (was 5 °C): `warm_low` and `warm_critical_duration`.
 - #417: optional `limits` on `fridge_temp`: the node's alert limits, so the other components needn't copy them.
 - #418: the fridge node's cold limit is −1 °C (was 0 °C); it publishes it in `limits`.
+- #459: broker only, no topic or payload change: 8883 has its own password file with only `sensor`; nginx limits new `/mqtt` connections per address; 9001 binds to localhost on Mosquitto 2.0.18.
