@@ -8,8 +8,13 @@ These checks look for:
 - Logical contradictions (min > max, wrong aggregations)
 - Temporal inconsistencies (backwards time, future dates, bad intervals)
 - Correlation failures (events without supporting data)
+
+The event checks (8, 9, 11) look at the last --days days only (default 7, 0 = all): events are
+kept 30 days, so a bug fixed last week would otherwise keep being reported until it ages out,
+looking just like a new one (#423).
 """
 
+import argparse
 import sys
 
 from _common import DB_PATH, connect_ro
@@ -25,13 +30,16 @@ def connect():
     return connect_ro()
 
 
-def run_deep_checks():
-    """Run aggressive edge-case checks."""
+def run_deep_checks(days=7):
+    """Run aggressive edge-case checks; the event checks over the last [days] days (0 = all)."""
     issues = []
+    # The event checks' window (#423), as an SQL condition with its parameters
+    since, since_args = ("ts >= datetime('now', ?)", (f"-{days} days",)) if days else ("1", ())
 
     print("🔬 Deep Database Validation (edge cases & state machines)")
     print(f"   Database: {DB}")
     print(f"   Time: {utcnow()}")
+    print(f"   Events: {f'the last {days} days' if days else 'all'}")
     print()
 
     # ========== TEMPORAL CHECKS ==========
@@ -267,11 +275,11 @@ def run_deep_checks():
         c = conn.cursor()
 
         # Get all OCCUPANCY_CHANGE events
-        c.execute("""
+        c.execute(f"""
             SELECT ts, device, value FROM events
-            WHERE type = 'OCCUPANCY_CHANGE'
+            WHERE type = 'OCCUPANCY_CHANGE' AND {since}
             ORDER BY ts DESC LIMIT 20
-        """)
+        """, since_args)
         events = c.fetchall()
 
         orphaned = []
@@ -313,11 +321,11 @@ def run_deep_checks():
         conn = connect()
         c = conn.cursor()
 
-        c.execute("""
+        c.execute(f"""
             SELECT ts, device, type FROM events
-            WHERE type IN ('WINDOW_OPEN', 'WINDOW_CLOSED')
+            WHERE type IN ('WINDOW_OPEN', 'WINDOW_CLOSED') AND {since}
             ORDER BY ts
-        """)
+        """, since_args)
         events = c.fetchall()
 
         bad_sequences = []
@@ -388,11 +396,11 @@ def run_deep_checks():
 
         # Only the pushes that went out (#387): a failed one is retried after a minute (#251)
         # and a muted one is logged too (#321), each its own row of the same type
-        c.execute("""
+        c.execute(f"""
             SELECT ts, device, type FROM events
-            WHERE type LIKE '%\\_ALERT' ESCAPE '\\' AND value LIKE 'sent%'
+            WHERE type LIKE '%\\_ALERT' ESCAPE '\\' AND value LIKE 'sent%' AND {since}
             ORDER BY ts
-        """)
+        """, since_args)
         alerts = c.fetchall()
 
         violations = []
@@ -437,4 +445,10 @@ def run_deep_checks():
 
 
 if __name__ == "__main__":
-    sys.exit(run_deep_checks())
+    ap = argparse.ArgumentParser(description="Deep database validation (see the docstring).")
+    ap.add_argument("--days", type=int, default=7,
+                    help="the event checks look at the last N days (default 7; 0 = all events)")
+    args = ap.parse_args()
+    if args.days < 0:
+        ap.error("--days must be 0 or more")
+    sys.exit(run_deep_checks(args.days))
