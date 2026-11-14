@@ -99,6 +99,13 @@ object HomeFormat {
         }
     }
 
+    /** A duration in minutes: "41 min", "1 h", "2 h 15 min". */
+    fun minutesText(minutes: Int): String = when {
+        minutes < 60 -> "$minutes min"
+        minutes % 60 == 0 -> "${minutes / 60} h"
+        else -> "${minutes / 60} h ${minutes % 60} min"
+    }
+
     fun hours(hours: Double): String {
         val h = hours.toInt()
         val m = ((hours - h) * 60).toInt()
