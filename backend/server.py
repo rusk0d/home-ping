@@ -14,7 +14,7 @@ from firebase_admin import credentials
 
 import state
 from config import BIND_HOST, PORT, LOG_LEVEL, FIREBASE_CRED, FIREBASE_TIMEOUT, MQTT_HOST, MQTT_PASS, MQTT_PORT, MQTT_USER
-from store import load_alert_state, prune, rollup_hourly
+from store import get_state, load_alert_state, prune, rollup_hourly
 from schema import init_db
 from nodes import node_check_loop
 from ingest import summaries_loop, on_connect, on_disconnect, on_message
@@ -44,6 +44,7 @@ def prepare():
     state.LAST_NOTIFICATION.update(cooldowns)
     state.RADAR_ALERTED.update(alerted)
     state.NODE_OFFLINE.update(offline)
+    state.HOME_OFFLINE = get_state("home_offline", "") in ("sent", "muted")
 
 
 def start():

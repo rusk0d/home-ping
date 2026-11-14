@@ -459,9 +459,11 @@ def on_connect(client, userdata, flags, reason_code, properties):
         log.warning("MQTT connect refused: %s", reason_code)
         return
     log.info("MQTT connected")
+    state.BROKER_UP, state.NODES_RESUMED_AT = True, time.time()   # the offline check waits for the nodes (#476)
     client.subscribe(TOPIC)
     publish_summaries()
 
 
 def on_disconnect(client, userdata, flags, reason_code, properties):
+    state.BROKER_UP = False   # no node check meanwhile: it's the backend that hears nothing (#476)
     log.warning("MQTT disconnected: %s (reconnecting)", reason_code)

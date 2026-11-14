@@ -29,6 +29,8 @@ def touch_device(device):
             DO UPDATE SET last_seen=datetime('now')
         """, (device,))
         # (nodes gone for DEVICES_RETENTION_DAYS are dropped by store.prune())
+    if state.HOME_OFFLINE:
+        home_back_online(device)
     if device in state.NODE_OFFLINE:
         node_back_online(device)
 
@@ -46,14 +48,26 @@ def touch_device(device):
 # 23:00 (the fridge's, with it every fridge alert) was never reported. The switch
 # "nodes" off still mutes it.
 def check_nodes():
-    # Right after a backend restart every last_seen is old: give the nodes time to report
-    if time.time() - state.STARTED_AT < NODE_OFFLINE_ALERT_SECONDS:
+    # Every last_seen is old right after a backend restart, a broker reconnect or a home
+    # outage: give the nodes time to report
+    if time.time() - max(state.STARTED_AT, state.NODES_RESUMED_AT) < NODE_OFFLINE_ALERT_SECONDS:
         return
+    if not state.BROKER_UP:
+        return   # the backend has lost the broker: it hears nothing, whatever the nodes do (#476)
     with db() as conn:
         rows = conn.execute("SELECT device, last_seen FROM devices").fetchall()
     now = utcnow()
+    ages = {device: (now - parse_ts(last_seen)).total_seconds() for device, last_seen in rows}
+    newest = min(ages.values(), default=0)
+    if len(ages) > 1 and newest >= NODE_OFFLINE_ALERT_SECONDS / 2:
+        # No node at all has sent for a while: that's the home (internet, power), not the
+        # nodes. One "Home offline" push once the last of them is over the limit, instead of
+        # one per node (#476); until then the nodes already over it wait for the rest.
+        if newest >= NODE_OFFLINE_ALERT_SECONDS:
+            home_offline(int(newest // 60))
+        return
     for device, last_seen in rows:
-        age = (now - parse_ts(last_seen)).total_seconds()
+        age = ages[device]
         if age < NODE_OFFLINE_ALERT_SECONDS:
             continue
         with state.NODE_LOCK:
@@ -72,6 +86,37 @@ def node_back_online(device):
             return
         _outage(device).end("NODE_ONLINE", "data again", "Node back online",
                             f"{device} is sending data again", data={"status": "online"})
+
+
+# -------------------------
+# HOME OFFLINE / BACK ONLINE (#476)
+# -------------------------
+# Every node silent at once. state.HOME_OFFLINE is on for as long as that lasts, pushed or
+# not (quiet hours postpone the push, a failed one is retried), so the first message always
+# starts the wait below. A node still silent NODE_OFFLINE_ALERT_SECONDS after the first one
+# is back gets its own "Node offline".
+def home_offline(minutes):
+    with state.NODE_LOCK:
+        state.HOME_OFFLINE = True
+        _home().start("HOME_OFFLINE", f"no node for {minutes} min", "Home offline",
+                      f"No node has sent data for {minutes} min: internet or power at home?",
+                      data={"status": "offline"})
+
+
+def home_back_online(device):
+    with state.NODE_LOCK:
+        if not state.HOME_OFFLINE:
+            return
+        state.HOME_OFFLINE = False
+        state.NODES_RESUMED_AT = time.time()
+        _home().end("HOME_ONLINE", f"{device} is sending data", "Home back online",
+                    "The nodes are sending data again", data={"status": "online"})
+
+
+def _home():
+    """home_offline, an Excursion like a node's; its own notification slot (device "home")."""
+    return Excursion("home_offline", "nodes", "home", {"event": "NODE_STATUS", "device": "home"},
+                     cooldown_key="NODE_home", postpone_quiet=True)
 
 
 def _outage(device):
