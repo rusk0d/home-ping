@@ -125,6 +125,11 @@ FRIDGE_DOOR_FALL_C = 0.5
 # A fridge temperature outside this is a sensor glitch, not the fridge (#352): the DS18B20
 # reads exactly 85.0 °C after a brownout or a data-line glitch, inside ENV_VALID. Stored as null.
 FRIDGE_VALID = (-30, 50)
+# The fridge node's alert limits (#417): the node publishes them as `limits` with each reading
+# and the newest valid set is kept (system_state fridge_limits). These are used until it has:
+# °C, hysteresis °C, and how long a condition must last (minutes; long_minutes for "sustained").
+FRIDGE_LIMITS_DEFAULT = {"cold": 0.0, "warm": 7.0, "hot": 8.0, "hysteresis": 0.5,
+                         "minutes": 30, "long_minutes": 120}
 ROOM_DEVICES_SQL = "device NOT IN (" + ", ".join(f"'{d}'" for d in NON_ROOM_DEVICES) + ")"
 
 # Air-out helper (#245): window spells and CO₂ excursions, pushes under the "air" switch since
