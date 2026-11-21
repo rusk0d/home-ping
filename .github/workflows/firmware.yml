@@ -37,7 +37,7 @@ jobs:
       ESP32_INDEX: https://espressif.github.io/arduino-esp32/package_esp32_index.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: arduino/setup-arduino-cli@81d310742121c928ea9c8bbd407b4217b432ae02 # v2
+      - uses: arduino/setup-arduino-cli@b3cda96fddef6af6c56b4c5efb5c47e2357935db # v2
       # Pinned to the versions the sketches were last built with (#121). Bump them on
       # purpose, together with a reflash test.
       - name: Install the ESP32 core and libraries
